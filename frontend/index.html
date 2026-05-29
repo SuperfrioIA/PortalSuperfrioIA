@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal SuperFrio</title>
+<link rel="icon" type="image/jpeg" href="img/superfrio-logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=20260529s">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="screen-login" class="login-shell">
+  <aside class="login-aside">
+    <div class="login-aside-brand">
+      <img src="img/superfrio-logo.jpg" alt="SuperFrio">
+      <span class="tag">Portal Interno</span>
+    </div>
+    <div class="login-aside-copy">
+      <h1>Tudo da operação SuperFrio e Icestar em um lugar só.</h1>
+      <p>Acesse os apps internos da SuperFrio e Icestar — Armazém, Backoffice e governança — com um único login e suas permissões já aplicadas.</p>
+    </div>
+    <div class="login-aside-foot">SuperFrio &amp; Icestar · POC v0.1</div>
+  </aside>
+
+  <main class="login-main">
+    <div class="login-card">
+      <h2>Entrar</h2>
+      <p class="sub">Use seu usuário corporativo para acessar o portal.</p>
+
+      <form id="form-login" autocomplete="on">
+        <div class="form-field">
+          <label for="login-username">Usuário</label>
+          <input id="login-username" name="username" type="text" autocomplete="username" required autofocus>
+        </div>
+        <div class="form-field">
+          <label for="login-password">Senha</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn-primary" id="login-submit">Entrar</button>
+        <div class="form-error" id="login-error"></div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<!-- ============ PORTAL ============ -->
+<div id="screen-portal" class="portal hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="img/superfrio-logo.jpg" alt="SuperFrio">
+      <div class="sidebar-brand-text">
+        <span class="name">SuperFrio</span>
+        <span class="sub">Portal Interno</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section-label">Navegação</div>
+    <button class="sidebar-link active" data-secao="__all__">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Todos os apps
+      <span class="count" id="count-all">0</span>
+    </button>
+
+    <div class="sidebar-section-label">Seções</div>
+    <div id="sidebar-secoes"></div>
+
+    <div class="sidebar-section-label admin-only hidden">Governança</div>
+    <button class="sidebar-link admin-only hidden" id="btn-open-admin">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.5v6c0 5-3.5 9.3-9 11-5.5-1.7-9-6-9-11v-6L12 2z"/><path d="M9 12l2 2 4-4"/></svg>
+      Administração
+    </button>
+
+    <div class="sidebar-foot">
+      <div class="avatar" id="user-avatar">··</div>
+      <div class="user-info">
+        <div class="name" id="user-nome">—</div>
+        <div class="role" id="user-role">—</div>
+      </div>
+      <button id="btn-logout" title="Sair">Sair</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="main-head">
+      <div class="eyebrow">Apps internos SuperFrio &amp; Icestar</div>
+      <h1 id="greeting">Bem-vinda</h1>
+      <p>Selecione um app abaixo. Você está vendo apenas o que está liberado para o seu perfil.</p>
+    </div>
+
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="search" type="search" placeholder="Buscar app pelo nome ou descrição...">
+    </div>
+
+    <div id="content">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ ADMIN ============ -->
+<div id="screen-admin" class="admin hidden">
+  <header class="admin-top">
+    <div class="admin-top-left">
+      <button class="back-link" id="btn-back-portal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        Voltar ao portal
+      </button>
+      <h1>Governança</h1>
+      <p>Cadastro de seções, apps, roles e usuários. Toggle desativa sem apagar (auditável).</p>
+    </div>
+  </header>
+
+  <nav class="admin-tabs">
+    <button class="admin-tab active" data-tab="apps">Apps</button>
+    <button class="admin-tab" data-tab="secoes">Seções</button>
+    <button class="admin-tab" data-tab="roles">Roles</button>
+    <button class="admin-tab" data-tab="usuarios">Usuários</button>
+  </nav>
+
+  <div class="admin-content">
+    <div class="admin-pane" id="pane-apps">
+      <div class="admin-pane-head">
+        <h2>Apps cadastrados</h2>
+        <button class="btn-primary inline" id="btn-new-app">+ Novo app</button>
+      </div>
+      <div class="admin-table-wrap"><table class="admin-table" id="table-apps"></table></div>
+    </div>
+
+    <div class="admin-pane hidden" id="pane-secoes">
+      <div class="admin-pane-head">
+        <h2>Seções</h2>
+        <button class="btn-primary inline" id="btn-new-secao">+ Nova seção</button>
+      </div>
+      <div class="admin-table-wrap"><table class="admin-table" id="table-secoes"></table></div>
+    </div>
+
+    <div class="admin-pane hidden" id="pane-roles">
+      <div class="admin-pane-head">
+        <h2>Roles</h2>
+        <button class="btn-primary inline" id="btn-new-role">+ Nova role</button>
+      </div>
+      <div class="admin-table-wrap"><table class="admin-table" id="table-roles"></table></div>
+    </div>
+
+    <div class="admin-pane hidden" id="pane-usuarios">
+      <div class="admin-pane-head">
+        <h2>Usuários</h2>
+        <button class="btn-primary inline" id="btn-new-usuario">+ Novo usuário</button>
+      </div>
+      <div class="admin-table-wrap"><table class="admin-table" id="table-usuarios"></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal genérico para formulários admin -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">—</h3>
+      <button class="modal-close" id="modal-close" aria-label="Fechar">×</button>
+    </div>
+    <form id="modal-form" class="modal-body"></form>
+    <div class="modal-foot">
+      <div class="modal-error" id="modal-error"></div>
+      <button class="btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn-primary inline" id="modal-save">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- iframe overlay para apps com tipo_acesso=iframe -->
+<div class="iframe-overlay" id="iframe-overlay">
+  <div class="iframe-shell">
+    <div class="iframe-head">
+      <span class="title" id="iframe-title">—</span>
+      <span class="url" id="iframe-url"></span>
+      <button id="iframe-close">Fechar</button>
+    </div>
+    <iframe id="iframe-content" src="about:blank" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+  </div>
+</div>
+
+<script src="js/app.js?v=20260529s"></script>
+<script src="js/admin.js?v=20260529s"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+services:
+  portal:
+    build: .
+    image: superfrio-portal:latest
+    container_name: superfrio-portal
+    ports:
+      - "8000:8000"
+    environment:
+      # Em prod, defina SUPERFRIO_JWT_SECRET no .env ou no host antes de subir.
+      # Quando SUPERFRIO_ENV=prod, o startup falha se o secret continuar no default.
+      SUPERFRIO_JWT_SECRET: ${SUPERFRIO_JWT_SECRET:-dev-secret-change-me}
+      SUPERFRIO_ENV: ${SUPERFRIO_ENV:-dev}
+      SUPERFRIO_DB_PATH: /app/data/portal.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

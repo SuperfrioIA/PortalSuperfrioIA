@@ -1,0 +1,112 @@
+# Portal SuperFrio
+
+Plataforma centralizadora dos apps internos da SuperFrio e Icestar. POC do CSC: vitrine de governança (cadastro de apps, permissionamento, deploy reprodutível).
+
+## Stack
+
+- **Backend:** FastAPI + SQLite (single-file, WAL) + bcrypt + JWT
+- **Frontend:** HTML único + JS vanilla + CSS (Nunito via Google Fonts), sem build step
+- **Deploy:** Docker (Linux container), volume persistente para o `.db`
+
+## Como rodar
+
+### Modo 1 — Dev local (sem Docker)
+
+```powershell
+.\run.ps1                 # cria .venv, instala deps, sobe uvicorn em :8000
+.\run.ps1 -Port 8080      # outra porta
+.\run.ps1 -NoReload       # sem auto-reload (mais próximo de prod)
+```
+
+Acesse http://127.0.0.1:8000
+
+### Modo 2 — Docker (produção / VM)
+
+```powershell
+# Antes do primeiro build, defina o segredo do JWT:
+$env:SUPERFRIO_JWT_SECRET = 'gere-uma-chave-forte-aqui'
+
+.\build.ps1               # build + up -d
+.\build.ps1 -Logs         # acompanha os logs do container
+.\build.ps1 -Down         # para o container
+.\build.ps1 -Reset        # apaga o .db (seed roda do zero no próximo up)
+.\build.ps1 -NoCache      # rebuild forçando sem cache
+```
+
+O `docker-compose.yml` monta `./data:/app/data` — o `.db` sobrevive entre restarts e rebuilds. Para descartar o estado, use `-Reset`.
+
+## Usuários de teste (seed inicial)
+
+| Usuário | Senha | Tipo | Vê |
+|---|---|---|---|
+| `admin` | `admin123` | admin | tudo + governança |
+| `operador.armazem` | `armazem123` | role `armazem-full` | só Armazém |
+| `analista.bo` | `backoffice123` | roles `backoffice-full` + `faq-leitor` | Backoffice + FAQs |
+
+Troque/desative essas senhas pela tela **Administração** assim que entrar em produção.
+
+## Variáveis de ambiente
+
+| Variável | Default | Descrição |
+|---|---|---|
+| `SUPERFRIO_JWT_SECRET` | `dev-secret-change-me` | Segredo HS256 dos tokens. **Trocar em produção.** |
+| `SUPERFRIO_DB_PATH` | `data/portal.db` (local) / `/app/data/portal.db` (container) | Caminho do SQLite |
+
+## Estrutura
+
+```
+backend/                # FastAPI app
+  main.py               # entrypoint, lifespan (init_db + seed), monta StaticFiles
+  database.py           # schema SQL, get_conn (WAL)
+  auth.py               # bcrypt + JWT, authenticate_user (boundary AD)
+  seed.py               # seed idempotente (2 seções, 7 apps, 3 roles, 3 usuários)
+  routers/
+    auth.py             # /api/auth/login, /api/auth/me
+    portal.py           # /api/portal/home (filtrado por permissão)
+    admin.py            # CRUD apps/seções/roles/usuários (require_admin)
+frontend/               # HTML único + CSS + JS vanilla
+  index.html            # login + portal + admin (toggle via classe .hidden)
+  css/styles.css        # paleta SuperFrio (--sf-dark #295494, Nunito)
+  js/
+    app.js              # login, portal, helpers (window.SF)
+    admin.js            # tela admin (tabs + tabelas + modais)
+  img/superfrio-logo.jpg
+data/                   # gitignored, contém portal.db em runtime
+Dockerfile              # python:3.12-slim + uvicorn em 0.0.0.0:8000
+docker-compose.yml      # porta 8000 + volume data + env
+run.ps1                 # dev local
+build.ps1               # docker build/up/down/reset/logs
+```
+
+## Endpoints principais
+
+- `POST /api/auth/login` — form `username` + `password` → JWT
+- `GET  /api/auth/me` — payload do token atual
+- `GET  /api/portal/home` — seções + apps liberados para o usuário
+- `GET  /api/admin/{secoes|apps|roles|usuarios}` — listas administrativas
+- `POST /api/admin/{entidade}` — criar
+- `PATCH /api/admin/{entidade}/{id}` — atualizar (parcial)
+- `POST /api/admin/{entidade}/{id}/toggle` — ativar/desativar
+- `POST /api/admin/usuarios/{id}/password` — reset de senha
+- `GET  /api/health` — healthcheck do container
+
+Documentação interativa (Swagger): http://127.0.0.1:8000/docs
+
+## Deploy em VM Windows
+
+1. Instale Docker Desktop com WSL2 na VM
+2. Clone o repositório
+3. `$env:SUPERFRIO_JWT_SECRET = 'chave-forte'`
+4. `.\build.ps1`
+5. Libere a porta 8000 no firewall da VM se outros usuários da rede precisam acessar
+6. Acesse `http://<ip-da-vm>:8000` da rede interna
+
+Para alterar a porta exposta, edite `docker-compose.yml` (a linha `"8000:8000"` — o primeiro número é a porta no host).
+
+## Princípios da POC
+
+- **Toggle ativo/inativo** em vez de DELETE — auditável
+- **Slug é stable** — nunca editado depois de criado, mantém rastreabilidade
+- **Trace Protheus sagrado** — campos do ERP nunca são renomeados (não aplicável a esta POC, mas é regra da casa)
+- **Idempotência** — seed e init_db podem rodar 2x sem corromper estado
+- **HTML único + JS vanilla** — sem build step, fácil de manter pelo time CSC
