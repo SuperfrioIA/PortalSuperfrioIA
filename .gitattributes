@@ -1,0 +1,10 @@
+# Garante quebras de linha LF nos arquivos que rodam dentro do container Linux,
+# independente do core.autocrlf de quem editar no Windows.
+* text=auto
+
+*.sh        text eol=lf
+entrypoint.sh text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+requirements.txt text eol=lf
