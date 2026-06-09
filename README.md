@@ -1,4 +1,4 @@
-# Portal SuperFrio
+# Hub SuperFrio & Icestar
 
 Plataforma centralizadora dos apps internos da SuperFrio e Icestar. POC do CSC: vitrine de governança (cadastro de apps, permissionamento, deploy reprodutível).
 

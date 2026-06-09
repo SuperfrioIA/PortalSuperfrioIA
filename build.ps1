@@ -1,4 +1,4 @@
-# Portal SuperFrio - build & deploy via Docker
+# Hub SuperFrio & Icestar - build & deploy via Docker
 # Uso:  .\build.ps1           (build + up -d + logs iniciais)
 #       .\build.ps1 -NoCache  (force rebuild sem cache)
 #       .\build.ps1 -Down     (para o container)
@@ -22,7 +22,7 @@ if (-not $dockerCheck) {
 }
 
 if ($Logs) {
-    docker compose logs -f portal
+    docker compose logs -f hub
     exit 0
 }
 
@@ -66,6 +66,6 @@ Write-Host "[status]"
 docker compose ps
 
 Write-Host ""
-Write-Host "[ok] Portal em http://127.0.0.1:8000"
+Write-Host "[ok] Hub em http://127.0.0.1:8000"
 Write-Host "     Logs:   .\build.ps1 -Logs"
 Write-Host "     Parar:  .\build.ps1 -Down"

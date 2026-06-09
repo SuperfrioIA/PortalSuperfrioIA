@@ -1,4 +1,4 @@
-/* Portal SuperFrio — frontend único (login + home) */
+/* Hub SuperFrio & Icestar — frontend único (login + home) */
 
 const API = ""; // mesmo host (FastAPI serve os estáticos)
 const TOKEN_KEY = "sf_portal_token";
@@ -15,6 +15,10 @@ const state = {
 window.SF = window.SF || {};
 window.SF.state = state;
 window.SF.TOKEN_KEY = TOKEN_KEY;
+
+// Atalhos i18n (i18n.js carrega antes deste arquivo)
+const t = (k) => window.SF.i18n.t(k);
+const pick = (rec, f) => window.SF.i18n.pick(rec, f);
 
 /* ---------- Ícones SVG ---------- */
 // Stroke icons (linha) — combinam com o estilo discreto da Maria.
@@ -44,7 +48,7 @@ async function login(username, password) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Falha na autenticação");
+    throw new Error(err.detail || t("login.err.auth"));
   }
   const data = await res.json();
   state.token = data.access_token;
@@ -59,9 +63,9 @@ async function fetchHome() {
   });
   if (res.status === 401) {
     logout();
-    throw new Error("Sessão expirada");
+    throw new Error(t("session.expired"));
   }
-  if (!res.ok) throw new Error("Erro ao carregar portal");
+  if (!res.ok) throw new Error(t("home.loaderr"));
   return res.json();
 }
 
@@ -98,17 +102,17 @@ function initials(nome) {
 
 function greet() {
   const h = new Date().getHours();
-  if (h < 5) return "Boa madrugada";
-  if (h < 12) return "Bom dia";
-  if (h < 18) return "Boa tarde";
-  return "Boa noite";
+  if (h < 5) return t("greet.dawn");
+  if (h < 12) return t("greet.morning");
+  if (h < 18) return t("greet.afternoon");
+  return t("greet.night");
 }
 
 function renderHeader() {
   const u = state.user;
   if (!u) return;
   document.getElementById("user-nome").textContent = u.nome || u.username;
-  document.getElementById("user-role").textContent = u.is_admin ? "Administrador" : "Usuário";
+  document.getElementById("user-role").textContent = u.is_admin ? t("role.admin") : t("role.user");
   document.getElementById("user-avatar").textContent = initials(u.nome || u.username);
   const primeiroNome = (u.nome || u.username).split(/\s+/)[0];
   document.getElementById("greeting").textContent = `${greet()}, ${primeiroNome}`;
@@ -128,7 +132,7 @@ function renderSidebar() {
     btn.dataset.secao = s.slug;
     btn.innerHTML = `
       ${iconSvg(s.icone || "default").replace('<svg ', '<svg class="icon" ')}
-      ${escapeHtml(s.nome)}
+      ${escapeHtml(pick(s, "nome"))}
       <span class="count">${s.apps.length}</span>
     `;
     btn.addEventListener("click", () => {
@@ -174,7 +178,7 @@ function badgeHtml(app) {
     return `<span class="app-card-badge ${cls}">${escapeHtml(app.badge)}</span>`;
   }
   if (app.tipo_acesso === "iframe") {
-    return `<span class="app-card-badge iframe">embed</span>`;
+    return `<span class="app-card-badge iframe">${escapeHtml(t("badge.embed"))}</span>`;
   }
   return "";
 }
@@ -183,7 +187,7 @@ function cardHtml(app) {
   const arrow = app.tipo_acesso === "iframe"
     ? `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`
     : `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>`;
-  const acessoLabel = app.tipo_acesso === "iframe" ? "Abrir aqui" : "Abrir em nova aba";
+  const acessoLabel = app.tipo_acesso === "iframe" ? t("card.open.iframe") : t("card.open.url");
 
   return `
     <a class="app-card" data-slug="${escapeHtml(app.slug)}" href="${escapeHtml(app.url)}">
@@ -191,10 +195,10 @@ function cardHtml(app) {
         <div class="app-card-icon">${iconSvg(app.icone || "default")}</div>
         ${badgeHtml(app)}
       </div>
-      <h3 class="app-card-title">${escapeHtml(app.nome)}</h3>
-      <p class="app-card-desc">${escapeHtml(app.descricao || "")}</p>
+      <h3 class="app-card-title">${escapeHtml(pick(app, "nome"))}</h3>
+      <p class="app-card-desc">${escapeHtml(pick(app, "descricao"))}</p>
       <div class="app-card-foot">
-        <span>${acessoLabel}</span>
+        <span>${escapeHtml(acessoLabel)}</span>
         ${arrow}
       </div>
     </a>
@@ -208,8 +212,8 @@ function renderContent() {
   if (secoes.length === 0) {
     cont.innerHTML = `
       <div class="empty-state">
-        <h3>Nenhum app encontrado</h3>
-        <p>${state.query ? "Tente outro termo de busca." : "Você não tem apps liberados nesta seção."}</p>
+        <h3>${escapeHtml(t("empty.title"))}</h3>
+        <p>${escapeHtml(state.query ? t("empty.search") : t("empty.noapps"))}</p>
       </div>
     `;
     return;
@@ -220,7 +224,7 @@ function renderContent() {
     html += `
       <section class="section-block">
         <div class="section-block-head">
-          <h2>${escapeHtml(s.nome)}</h2>
+          <h2>${escapeHtml(pick(s, "nome"))}</h2>
           <span class="count-chip">${s.apps.length} app${s.apps.length === 1 ? "" : "s"}</span>
           <span class="rule"></span>
         </div>
@@ -307,16 +311,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const err = document.getElementById("login-error");
     err.classList.remove("visible");
     btn.disabled = true;
-    btn.textContent = "Entrando...";
+    btn.textContent = t("login.submitting");
     try {
       await login(username, password);
       await loadPortal();
     } catch (e) {
-      err.textContent = e.message || "Falha ao entrar";
+      err.textContent = e.message || t("login.err.generic");
       err.classList.add("visible");
     } finally {
       btn.disabled = false;
-      btn.textContent = "Entrar";
+      btn.textContent = t("login.submit");
     }
   });
 
@@ -333,7 +337,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* Logout */
   document.getElementById("btn-logout").addEventListener("click", () => {
-    if (confirm("Sair do portal?")) logout();
+    if (confirm(t("confirm.logout"))) logout();
+  });
+
+  /* Troca de idioma: re-renderiza o conteúdo dinâmico do portal */
+  window.addEventListener("sf:langchange", () => {
+    if (!state.user) return;
+    renderHeader();
+    renderSidebar();
+    renderActiveSecao();
+    renderContent();
   });
 
   /* Abrir/voltar admin (handlers vivem em admin.js) */

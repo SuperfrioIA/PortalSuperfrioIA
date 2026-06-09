@@ -1,9 +1,9 @@
-# Auditoria de Segurança — Portal SuperFrio
+# Auditoria de Segurança — Hub SuperFrio & Icestar
 
 **Data:** 2026-05-29
 **Versão auditada:** 0.1.0 (POC, pré-deploy em VM Windows)
 **Auditor:** Claude Opus 4.7 (assistido por Maria Watanabe — CSC SuperFrio)
-**Escopo:** Backend FastAPI + frontend HTML/JS + Docker (Portal SuperFrio completo)
+**Escopo:** Backend FastAPI + frontend HTML/JS + Docker (Hub SuperFrio & Icestar completo)
 **Modelo de ameaça:** Rede interna SuperFrio + Icestar (atacante já dentro da rede corporativa — funcionário curioso, estação comprometida, sniff de pacote no segmento)
 
 ---

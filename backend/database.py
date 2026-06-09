@@ -99,6 +99,11 @@ def init_db() -> None:
         for stmt in SCHEMA:
             conn.execute(stmt)
         _ensure_column(conn, "usuarios", "token_version", "token_version INTEGER NOT NULL DEFAULT 1")
+        # i18n: tradução ES de seções e apps (PT fica nas colunas originais)
+        _ensure_column(conn, "secoes", "nome_es", "nome_es TEXT")
+        _ensure_column(conn, "secoes", "descricao_es", "descricao_es TEXT")
+        _ensure_column(conn, "apps", "nome_es", "nome_es TEXT")
+        _ensure_column(conn, "apps", "descricao_es", "descricao_es TEXT")
         conn.commit()
     finally:
         conn.close()

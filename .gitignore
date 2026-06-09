@@ -18,3 +18,5 @@ data/
 *.swp
 .DS_Store
 Thumbs.db
+
+guia_publicacao_rede.md

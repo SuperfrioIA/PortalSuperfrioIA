@@ -1,4 +1,4 @@
-# Portal SuperFrio - dev local
+# Hub SuperFrio & Icestar - dev local
 # Uso:  .\run.ps1            (sobe na porta 8000, so localhost)
 #       .\run.ps1 -Port 8080 (porta custom)
 #       .\run.ps1 -NoReload  (sem auto-reload, mais proximo de prod)

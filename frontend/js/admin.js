@@ -1,4 +1,4 @@
-/* Portal SuperFrio — tela administrativa (apps, seções, roles, usuários) */
+/* Hub SuperFrio & Icestar — tela administrativa (apps, seções, roles, usuários) */
 (() => {
   const SF = window.SF;
   if (!SF) {
@@ -7,6 +7,7 @@
   }
   const escapeHtml = SF.escapeHtml;
   const iconSvg = SF.iconSvg;
+  const t = (k) => SF.i18n.t(k);
 
   const ADM = {
     tab: "apps",
@@ -63,7 +64,7 @@
       await loadAll();
       renderActiveTab();
     } catch (e) {
-      alert("Erro ao carregar admin: " + e.message);
+      alert(t("admin.err.load") + e.message);
     }
   }
   SF.openAdmin = openAdmin;
@@ -87,20 +88,20 @@
 
   /* ---------- Render: APPS ---------- */
   function renderApps() {
-    const t = document.getElementById("table-apps");
+    const tbl = document.getElementById("table-apps");
     if (ADM.apps.length === 0) {
-      t.innerHTML = `<tbody><tr><td>Nenhum app cadastrado.</td></tr></tbody>`;
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.apps"))}</td></tr></tbody>`;
       return;
     }
     let html = `<thead><tr>
       <th style="width:42px"></th>
-      <th>App</th>
-      <th>Seção</th>
-      <th>Tipo</th>
-      <th>Badge</th>
-      <th>Ordem</th>
-      <th>Status</th>
-      <th style="width:160px;text-align:right">Ações</th>
+      <th>${escapeHtml(t("admin.col.app"))}</th>
+      <th>${escapeHtml(t("admin.col.secao"))}</th>
+      <th>${escapeHtml(t("admin.col.tipo"))}</th>
+      <th>${escapeHtml(t("admin.col.badge"))}</th>
+      <th>${escapeHtml(t("admin.col.ordem"))}</th>
+      <th>${escapeHtml(t("admin.col.status"))}</th>
+      <th style="width:160px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
     </tr></thead><tbody>`;
     ADM.apps.forEach((a) => {
       html += `<tr>
@@ -111,34 +112,34 @@
         </td>
         <td>${escapeHtml(a.secao_nome)}</td>
         <td><span class="pill ${a.tipo_acesso}">${escapeHtml(a.tipo_acesso)}</span></td>
-        <td>${a.badge ? `<span class="pill ${a.badge.toLowerCase()}">${escapeHtml(a.badge)}</span>` : '<span class="col-meta">—</span>'}</td>
+        <td>${a.badge ? `<span class="pill ${a.badge.toLowerCase()}">${escapeHtml(a.badge)}</span>` : `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</td>
         <td>${a.ordem}</td>
-        <td><span class="pill ${a.ativo ? "on" : "off"}">${a.ativo ? "ativo" : "inativo"}</span></td>
+        <td><span class="pill ${a.ativo ? "on" : "off"}">${escapeHtml(a.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
         <td class="actions">
-          <button data-act="edit" data-id="${a.id}">Editar</button>
-          <button class="danger" data-act="toggle" data-id="${a.id}">${a.ativo ? "Desativar" : "Reativar"}</button>
+          <button data-act="edit" data-id="${a.id}">${escapeHtml(t("admin.act.edit"))}</button>
+          <button class="danger" data-act="toggle" data-id="${a.id}">${escapeHtml(a.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`;
     });
     html += `</tbody>`;
-    t.innerHTML = html;
-    bindRowActions(t, "apps");
+    tbl.innerHTML = html;
+    bindRowActions(tbl, "apps");
   }
 
   /* ---------- Render: SEÇÕES ---------- */
   function renderSecoes() {
-    const t = document.getElementById("table-secoes");
+    const tbl = document.getElementById("table-secoes");
     if (ADM.secoes.length === 0) {
-      t.innerHTML = `<tbody><tr><td>Nenhuma seção cadastrada.</td></tr></tbody>`;
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.secoes"))}</td></tr></tbody>`;
       return;
     }
     let html = `<thead><tr>
-      <th>Seção</th>
-      <th>Ícone</th>
-      <th>Apps</th>
-      <th>Ordem</th>
-      <th>Status</th>
-      <th style="width:160px;text-align:right">Ações</th>
+      <th>${escapeHtml(t("admin.col.secao"))}</th>
+      <th>${escapeHtml(t("admin.col.icone"))}</th>
+      <th>${escapeHtml(t("admin.col.apps"))}</th>
+      <th>${escapeHtml(t("admin.col.ordem"))}</th>
+      <th>${escapeHtml(t("admin.col.status"))}</th>
+      <th style="width:160px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
     </tr></thead><tbody>`;
     ADM.secoes.forEach((s) => {
       html += `<tr>
@@ -146,34 +147,34 @@
           <div class="col-nome">${escapeHtml(s.nome)}</div>
           <div class="col-slug">${escapeHtml(s.slug)}</div>
         </td>
-        <td><span class="col-meta">${escapeHtml(s.icone || "—")}</span></td>
+        <td><span class="col-meta">${escapeHtml(s.icone || t("admin.dash"))}</span></td>
         <td>${s.apps_count}</td>
         <td>${s.ordem}</td>
-        <td><span class="pill ${s.ativo ? "on" : "off"}">${s.ativo ? "ativa" : "inativa"}</span></td>
+        <td><span class="pill ${s.ativo ? "on" : "off"}">${escapeHtml(s.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
         <td class="actions">
-          <button data-act="edit" data-id="${s.id}">Editar</button>
-          <button class="danger" data-act="toggle" data-id="${s.id}">${s.ativo ? "Desativar" : "Reativar"}</button>
+          <button data-act="edit" data-id="${s.id}">${escapeHtml(t("admin.act.edit"))}</button>
+          <button class="danger" data-act="toggle" data-id="${s.id}">${escapeHtml(s.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`;
     });
     html += `</tbody>`;
-    t.innerHTML = html;
-    bindRowActions(t, "secoes");
+    tbl.innerHTML = html;
+    bindRowActions(tbl, "secoes");
   }
 
   /* ---------- Render: ROLES ---------- */
   function renderRoles() {
-    const t = document.getElementById("table-roles");
+    const tbl = document.getElementById("table-roles");
     if (ADM.roles.length === 0) {
-      t.innerHTML = `<tbody><tr><td>Nenhuma role cadastrada.</td></tr></tbody>`;
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.roles"))}</td></tr></tbody>`;
       return;
     }
     let html = `<thead><tr>
-      <th>Role</th>
-      <th>Apps liberados</th>
-      <th>Usuários</th>
-      <th>Status</th>
-      <th style="width:160px;text-align:right">Ações</th>
+      <th>${escapeHtml(t("admin.col.role"))}</th>
+      <th>${escapeHtml(t("admin.col.appsLiberados"))}</th>
+      <th>${escapeHtml(t("admin.col.usuarios"))}</th>
+      <th>${escapeHtml(t("admin.col.status"))}</th>
+      <th style="width:160px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
     </tr></thead><tbody>`;
     ADM.roles.forEach((r) => {
       const pills = r.apps.map((a) => `<span class="pill url">${escapeHtml(a)}</span>`).join(" ");
@@ -182,34 +183,34 @@
           <div class="col-nome">${escapeHtml(r.nome)}</div>
           <div class="col-slug">${escapeHtml(r.slug)}</div>
         </td>
-        <td><div class="pill-stack">${pills || '<span class="col-meta">— sem apps —</span>'}</div></td>
+        <td><div class="pill-stack">${pills || `<span class="col-meta">${escapeHtml(t("admin.noApps"))}</span>`}</div></td>
         <td>${r.usuarios_count}</td>
-        <td><span class="pill ${r.ativo ? "on" : "off"}">${r.ativo ? "ativa" : "inativa"}</span></td>
+        <td><span class="pill ${r.ativo ? "on" : "off"}">${escapeHtml(r.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
         <td class="actions">
-          <button data-act="edit" data-id="${r.id}">Editar</button>
-          <button class="danger" data-act="toggle" data-id="${r.id}">${r.ativo ? "Desativar" : "Reativar"}</button>
+          <button data-act="edit" data-id="${r.id}">${escapeHtml(t("admin.act.edit"))}</button>
+          <button class="danger" data-act="toggle" data-id="${r.id}">${escapeHtml(r.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`;
     });
     html += `</tbody>`;
-    t.innerHTML = html;
-    bindRowActions(t, "roles");
+    tbl.innerHTML = html;
+    bindRowActions(tbl, "roles");
   }
 
   /* ---------- Render: USUÁRIOS ---------- */
   function renderUsuarios() {
-    const t = document.getElementById("table-usuarios");
+    const tbl = document.getElementById("table-usuarios");
     if (ADM.usuarios.length === 0) {
-      t.innerHTML = `<tbody><tr><td>Nenhum usuário cadastrado.</td></tr></tbody>`;
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.usuarios"))}</td></tr></tbody>`;
       return;
     }
     let html = `<thead><tr>
-      <th>Usuário</th>
-      <th>Email</th>
-      <th>Roles</th>
-      <th>Tipo</th>
-      <th>Status</th>
-      <th style="width:220px;text-align:right">Ações</th>
+      <th>${escapeHtml(t("admin.col.usuario"))}</th>
+      <th>${escapeHtml(t("admin.col.email"))}</th>
+      <th>${escapeHtml(t("admin.col.roles"))}</th>
+      <th>${escapeHtml(t("admin.col.tipo"))}</th>
+      <th>${escapeHtml(t("admin.col.status"))}</th>
+      <th style="width:220px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
     </tr></thead><tbody>`;
     ADM.usuarios.forEach((u) => {
       const pills = u.roles.map((s) => `<span class="pill url">${escapeHtml(s)}</span>`).join(" ");
@@ -219,20 +220,20 @@
           <div class="col-nome">${escapeHtml(u.nome || u.username)}</div>
           <div class="col-slug">${escapeHtml(u.username)}</div>
         </td>
-        <td><span class="col-meta">${escapeHtml(u.email || "—")}</span></td>
-        <td><div class="pill-stack">${pills || '<span class="col-meta">—</span>'}</div></td>
-        <td>${u.is_admin ? '<span class="pill admin">admin</span>' : '<span class="col-meta">usuário</span>'}</td>
-        <td><span class="pill ${u.ativo ? "on" : "off"}">${u.ativo ? "ativo" : "inativo"}</span></td>
+        <td><span class="col-meta">${escapeHtml(u.email || t("admin.dash"))}</span></td>
+        <td><div class="pill-stack">${pills || `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</div></td>
+        <td>${u.is_admin ? `<span class="pill admin">${escapeHtml(t("admin.type.admin"))}</span>` : `<span class="col-meta">${escapeHtml(t("admin.type.user"))}</span>`}</td>
+        <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
         <td class="actions">
-          <button data-act="edit" data-id="${u.id}">Editar</button>
-          <button data-act="passwd" data-id="${u.id}">Senha</button>
-          <button class="danger" data-act="toggle" data-id="${u.id}" ${meEu ? "disabled title='Não pode desativar a si mesmo'" : ""}>${u.ativo ? "Desativar" : "Reativar"}</button>
+          <button data-act="edit" data-id="${u.id}">${escapeHtml(t("admin.act.edit"))}</button>
+          <button data-act="passwd" data-id="${u.id}">${escapeHtml(t("admin.act.password"))}</button>
+          <button class="danger" data-act="toggle" data-id="${u.id}" ${meEu ? `disabled title="${escapeHtml(t("admin.cantDeactivateSelf"))}"` : ""}>${escapeHtml(u.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`;
     });
     html += `</tbody>`;
-    t.innerHTML = html;
-    bindRowActions(t, "usuarios");
+    tbl.innerHTML = html;
+    bindRowActions(tbl, "usuarios");
   }
 
   /* ---------- Row actions ---------- */
@@ -250,7 +251,7 @@
             await loadAll();
             renderActiveTab();
           } catch (e) {
-            alert("Erro: " + e.message);
+            alert(t("admin.err.generic") + e.message);
           }
         } else if (act === "passwd") {
           openPasswordModal(id);
@@ -269,10 +270,10 @@
     ADM.editing = { entity, record, mode: "form" };
     const isNew = !record;
     const titles = {
-      apps: isNew ? "Novo app" : `Editar app — ${record.nome}`,
-      secoes: isNew ? "Nova seção" : `Editar seção — ${record.nome}`,
-      roles: isNew ? "Nova role" : `Editar role — ${record.nome}`,
-      usuarios: isNew ? "Novo usuário" : `Editar usuário — ${record.username}`,
+      apps: isNew ? t("admin.new.app") : `${t("admin.edit.app")} — ${record.nome}`,
+      secoes: isNew ? t("admin.new.secao") : `${t("admin.edit.secao")} — ${record.nome}`,
+      roles: isNew ? t("admin.new.role") : `${t("admin.edit.role")} — ${record.nome}`,
+      usuarios: isNew ? t("admin.new.usuario") : `${t("admin.edit.usuario")} — ${record.username}`,
     };
     document.getElementById("modal-title").textContent = titles[entity];
     document.getElementById("modal-form").innerHTML = buildForm(entity, record);
@@ -288,12 +289,12 @@
     const u = findRecord("usuarios", userId);
     if (!u) return;
     ADM.editing = { entity: "usuarios", record: u, mode: "password" };
-    document.getElementById("modal-title").textContent = `Resetar senha — ${u.username}`;
+    document.getElementById("modal-title").textContent = `${t("admin.pwd.title")} — ${u.username}`;
     document.getElementById("modal-form").innerHTML = `
       <div class="form-field">
-        <label>Nova senha</label>
+        <label>${escapeHtml(t("admin.pwd.newPass"))}</label>
         <input name="senha" type="password" required minlength="8" autocomplete="new-password">
-        <div class="field-hint">Mínimo 8 caracteres. O usuário precisa entrar de novo após o reset.</div>
+        <div class="field-hint">${escapeHtml(t("admin.pwd.hint"))}</div>
       </div>
     `;
     document.getElementById("modal-error").textContent = "";
@@ -322,26 +323,37 @@
     return `
       <div class="row-2">
         <div class="form-field">
-          <label>Slug ${r ? "(não editável)" : ""}</label>
+          <label>${escapeHtml(t("admin.f.slug"))} ${r ? escapeHtml(t("admin.f.slugLocked")) : ""}</label>
           <input name="slug" required value="${attr(r && r.slug)}" ${r ? "disabled" : ""} placeholder="ex: tecnologia">
         </div>
         <div class="form-field">
-          <label>Ordem</label>
+          <label>${escapeHtml(t("admin.f.ordem"))}</label>
           <input name="ordem" type="number" value="${attr(r ? r.ordem : 0)}" step="1">
         </div>
       </div>
-      <div class="form-field">
-        <label>Nome</label>
-        <input name="nome" required value="${attr(r && r.nome)}">
+      <div class="row-2">
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.nomePt"))}</label>
+          <input name="nome" required value="${attr(r && r.nome)}">
+        </div>
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.nomeEs"))}</label>
+          <input name="nome_es" value="${attr(r && r.nome_es)}">
+        </div>
       </div>
       <div class="form-field">
-        <label>Descrição</label>
+        <label>${escapeHtml(t("admin.f.descricaoPt"))}</label>
         <textarea name="descricao">${attr(r && r.descricao)}</textarea>
       </div>
       <div class="form-field">
-        <label>Ícone</label>
+        <label>${escapeHtml(t("admin.f.descricaoEs"))}</label>
+        <textarea name="descricao_es">${attr(r && r.descricao_es)}</textarea>
+        <div class="field-hint">${escapeHtml(t("admin.f.nomeEsHint"))}</div>
+      </div>
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.f.icone"))}</label>
         <select name="icone">${iconOptions(r && r.icone)}</select>
-        <div class="field-hint">Ícone exibido na sidebar (warehouse, briefcase, etc).</div>
+        <div class="field-hint">${escapeHtml(t("admin.f.iconeHint"))}</div>
       </div>
     `;
   }
@@ -353,48 +365,59 @@
     return `
       <div class="row-2">
         <div class="form-field">
-          <label>Slug ${r ? "(não editável)" : ""}</label>
+          <label>${escapeHtml(t("admin.f.slug"))} ${r ? escapeHtml(t("admin.f.slugLocked")) : ""}</label>
           <input name="slug" required value="${attr(r && r.slug)}" ${r ? "disabled" : ""} placeholder="ex: faq-blueyonder">
         </div>
         <div class="form-field">
-          <label>Ordem</label>
+          <label>${escapeHtml(t("admin.f.ordem"))}</label>
           <input name="ordem" type="number" value="${attr(r ? r.ordem : 0)}" step="1">
         </div>
       </div>
-      <div class="form-field">
-        <label>Nome</label>
-        <input name="nome" required value="${attr(r && r.nome)}">
+      <div class="row-2">
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.nomePt"))}</label>
+          <input name="nome" required value="${attr(r && r.nome)}">
+        </div>
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.nomeEs"))}</label>
+          <input name="nome_es" value="${attr(r && r.nome_es)}">
+        </div>
       </div>
       <div class="form-field">
-        <label>Descrição</label>
+        <label>${escapeHtml(t("admin.f.descricaoPt"))}</label>
         <textarea name="descricao">${attr(r && r.descricao)}</textarea>
+      </div>
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.f.descricaoEs"))}</label>
+        <textarea name="descricao_es">${attr(r && r.descricao_es)}</textarea>
+        <div class="field-hint">${escapeHtml(t("admin.f.nomeEsHint"))}</div>
       </div>
       <div class="row-2">
         <div class="form-field">
-          <label>Seção</label>
+          <label>${escapeHtml(t("admin.f.secao"))}</label>
           <select name="secao_id" required>${secaoOpts}</select>
         </div>
         <div class="form-field">
-          <label>Ícone</label>
+          <label>${escapeHtml(t("admin.f.icone"))}</label>
           <select name="icone">${iconOptions(r && r.icone)}</select>
         </div>
       </div>
       <div class="form-field">
-        <label>URL</label>
+        <label>${escapeHtml(t("admin.f.url"))}</label>
         <input name="url" required value="${attr(r && r.url)}" placeholder="https://...">
       </div>
       <div class="row-2">
         <div class="form-field">
-          <label>Tipo de acesso</label>
+          <label>${escapeHtml(t("admin.f.tipoAcesso"))}</label>
           <select name="tipo_acesso">
-            <option value="url" ${(!r || r.tipo_acesso === "url") ? "selected" : ""}>URL — abre em nova aba</option>
-            <option value="iframe" ${r && r.tipo_acesso === "iframe" ? "selected" : ""}>Iframe — embute no portal</option>
+            <option value="url" ${(!r || r.tipo_acesso === "url") ? "selected" : ""}>${escapeHtml(t("admin.f.tipoUrl"))}</option>
+            <option value="iframe" ${r && r.tipo_acesso === "iframe" ? "selected" : ""}>${escapeHtml(t("admin.f.tipoIframe"))}</option>
           </select>
         </div>
         <div class="form-field">
-          <label>Badge</label>
+          <label>${escapeHtml(t("admin.f.badge"))}</label>
           <select name="badge">
-            <option value="" ${!r || !r.badge ? "selected" : ""}>— sem badge —</option>
+            <option value="" ${!r || !r.badge ? "selected" : ""}>${escapeHtml(t("admin.f.noBadge"))}</option>
             <option value="NEW" ${r && r.badge === "NEW" ? "selected" : ""}>NEW</option>
             <option value="BETA" ${r && r.badge === "BETA" ? "selected" : ""}>BETA</option>
           </select>
@@ -417,20 +440,20 @@
       .join("");
     return `
       <div class="form-field">
-        <label>Slug ${r ? "(não editável)" : ""}</label>
+        <label>${escapeHtml(t("admin.f.slug"))} ${r ? escapeHtml(t("admin.f.slugLocked")) : ""}</label>
         <input name="slug" required value="${attr(r && r.slug)}" ${r ? "disabled" : ""} placeholder="ex: armazem-full">
       </div>
       <div class="form-field">
-        <label>Nome</label>
+        <label>${escapeHtml(t("admin.f.nome"))}</label>
         <input name="nome" required value="${attr(r && r.nome)}">
       </div>
       <div class="form-field">
-        <label>Descrição</label>
+        <label>${escapeHtml(t("admin.f.descricao"))}</label>
         <textarea name="descricao">${attr(r && r.descricao)}</textarea>
       </div>
       <fieldset>
-        <legend>Apps liberados</legend>
-        ${appChecks || '<div class="col-meta">Nenhum app cadastrado ainda.</div>'}
+        <legend>${escapeHtml(t("admin.f.appsLiberados"))}</legend>
+        ${appChecks || `<div class="col-meta">${escapeHtml(t("admin.f.noAppsYet"))}</div>`}
       </fieldset>
     `;
   }
@@ -452,34 +475,34 @@
     return `
       <div class="row-2">
         <div class="form-field">
-          <label>Username ${r ? "(não editável)" : ""}</label>
+          <label>${escapeHtml(t("admin.f.username"))} ${r ? escapeHtml(t("admin.f.slugLocked")) : ""}</label>
           <input name="username" required value="${attr(r && r.username)}" ${r ? "disabled" : ""} placeholder="ex: jose.silva">
         </div>
         <div class="form-field">
-          <label>Email</label>
+          <label>${escapeHtml(t("admin.f.email"))}</label>
           <input name="email" type="email" value="${attr(r && r.email)}">
         </div>
       </div>
       <div class="form-field">
-        <label>Nome completo</label>
+        <label>${escapeHtml(t("admin.f.nomeCompleto"))}</label>
         <input name="nome" value="${attr(r && r.nome)}">
       </div>
       ${r ? "" : `
       <div class="form-field">
-        <label>Senha inicial</label>
+        <label>${escapeHtml(t("admin.f.senhaInicial"))}</label>
         <input name="senha" type="password" required minlength="8">
-        <div class="field-hint">Mínimo 8 caracteres. O usuário pode trocar depois.</div>
+        <div class="field-hint">${escapeHtml(t("admin.f.senhaHint"))}</div>
       </div>`}
       <div class="form-field">
         <label class="check-row" style="margin:0">
           <input type="checkbox" name="is_admin" ${r && r.is_admin ? "checked" : ""} ${meEu ? "disabled" : ""}>
-          <span>É administrador (acessa governança)</span>
-          ${meEu ? '<span class="meta">não pode editar o próprio bit</span>' : ""}
+          <span>${escapeHtml(t("admin.f.isAdmin"))}</span>
+          ${meEu ? `<span class="meta">${escapeHtml(t("admin.f.cantEditOwnBit"))}</span>` : ""}
         </label>
       </div>
       <fieldset>
-        <legend>Roles</legend>
-        ${roleChecks || '<div class="col-meta">Nenhuma role cadastrada ainda.</div>'}
+        <legend>${escapeHtml(t("admin.f.roles"))}</legend>
+        ${roleChecks || `<div class="col-meta">${escapeHtml(t("admin.f.noRolesYet"))}</div>`}
       </fieldset>
     `;
   }
@@ -487,7 +510,7 @@
   function iconOptions(current) {
     const opts = ["", "warehouse", "briefcase", "book", "scale", "chat", "cart", "document", "truck"];
     return opts
-      .map((o) => `<option value="${o}" ${o === (current || "") ? "selected" : ""}>${o || "— nenhum —"}</option>`)
+      .map((o) => `<option value="${o}" ${o === (current || "") ? "selected" : ""}>${o || t("admin.f.none")}</option>`)
       .join("");
   }
 
@@ -500,12 +523,12 @@
     const saveBtn = document.getElementById("modal-save");
     errEl.textContent = "";
     saveBtn.disabled = true;
-    saveBtn.textContent = "Salvando...";
+    saveBtn.textContent = t("admin.modal.saving");
 
     try {
       if (mode === "password") {
         const senha = form.querySelector("[name='senha']").value;
-        if (!senha || senha.length < 8) throw new Error("Senha deve ter ao menos 8 caracteres");
+        if (!senha || senha.length < 8) throw new Error(t("admin.pwd.tooShort"));
         await api("POST", `/api/admin/usuarios/${record.id}/password`, { senha });
       } else {
         const body = collectForm(entity, form, record);
@@ -519,10 +542,10 @@
       await loadAll();
       renderActiveTab();
     } catch (e) {
-      errEl.textContent = e.message || "Falha ao salvar";
+      errEl.textContent = e.message || t("admin.save.fail");
     } finally {
       saveBtn.disabled = false;
-      saveBtn.textContent = "Salvar";
+      saveBtn.textContent = t("admin.modal.save");
     }
   }
 
@@ -534,13 +557,17 @@
     if (entity === "secoes") {
       if (isNew) out.slug = (fd.get("slug") || "").trim();
       out.nome = (fd.get("nome") || "").trim();
+      out.nome_es = (fd.get("nome_es") || "").trim() || null;
       out.descricao = (fd.get("descricao") || "").trim() || null;
+      out.descricao_es = (fd.get("descricao_es") || "").trim() || null;
       out.icone = (fd.get("icone") || "").trim() || null;
       out.ordem = parseInt(fd.get("ordem") || "0", 10) || 0;
     } else if (entity === "apps") {
       if (isNew) out.slug = (fd.get("slug") || "").trim();
       out.nome = (fd.get("nome") || "").trim();
+      out.nome_es = (fd.get("nome_es") || "").trim() || null;
       out.descricao = (fd.get("descricao") || "").trim() || null;
+      out.descricao_es = (fd.get("descricao_es") || "").trim() || null;
       out.icone = (fd.get("icone") || "").trim() || null;
       out.secao_id = parseInt(fd.get("secao_id"), 10);
       out.url = (fd.get("url") || "").trim();
@@ -593,6 +620,12 @@
       if (ev.key === "Escape" && document.getElementById("modal-overlay").classList.contains("visible")) {
         closeModal();
       }
+    });
+
+    /* Troca de idioma: re-renderiza a tabela ativa se a tela admin estiver aberta */
+    window.addEventListener("sf:langchange", () => {
+      const adminVisible = !document.getElementById("screen-admin").classList.contains("hidden");
+      if (adminVisible) renderActiveTab();
     });
   });
 })();

@@ -1,4 +1,4 @@
-# MEMORY — Portal SuperFrio (POC)
+# MEMORY — Hub SuperFrio & Icestar (POC)
 
 Documento de transferência para retomar este projeto em outro chat.
 
@@ -215,6 +215,6 @@ Acesso: http://127.0.0.1:8000
 
 Cole o seguinte na primeira mensagem:
 
-> Estou retomando a POC do **Portal SuperFrio** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD) e 4 (Docker + smoke test) estão concluídos. Resta validar o deploy real em VM Windows (firewall, JWT_SECRET de produção, etc). Ative o modo SuperFrio (`/superfrio`) antes.
+> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD) e 4 (Docker + smoke test) estão concluídos. Resta validar o deploy real em VM Windows (firewall, JWT_SECRET de produção, etc). Ative o modo SuperFrio (`/superfrio`) antes.
 
 Stack: FastAPI + SQLite + Tailwind CDN + Docker. Ambiente: Windows + PowerShell.

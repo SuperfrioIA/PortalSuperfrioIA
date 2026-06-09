@@ -1,5 +1,5 @@
 """
-CRUD admin do Portal SuperFrio.
+CRUD admin do Hub SuperFrio & Icestar.
 
 Princípios:
 - Toggle ativo/inativo em vez de DELETE (auditável).
@@ -51,14 +51,18 @@ def _row_or_404(conn, table: str, row_id: int) -> dict:
 class SecaoCreate(BaseModel):
     slug: str
     nome: str
+    nome_es: Optional[str] = None
     descricao: Optional[str] = None
+    descricao_es: Optional[str] = None
     icone: Optional[str] = None
     ordem: int = 0
 
 
 class SecaoUpdate(BaseModel):
     nome: Optional[str] = None
+    nome_es: Optional[str] = None
     descricao: Optional[str] = None
+    descricao_es: Optional[str] = None
     icone: Optional[str] = None
     ordem: Optional[int] = None
 
@@ -86,9 +90,13 @@ def criar_secao(body: SecaoCreate, _: dict = Depends(require_admin)):
     try:
         try:
             cur = conn.execute(
-                """INSERT INTO secoes (slug, nome, descricao, icone, ordem)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (body.slug, body.nome, body.descricao, body.icone, body.ordem),
+                """INSERT INTO secoes
+                   (slug, nome, nome_es, descricao, descricao_es, icone, ordem)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    body.slug, body.nome, body.nome_es,
+                    body.descricao, body.descricao_es, body.icone, body.ordem,
+                ),
             )
         except sqlite3.IntegrityError as e:
             if "UNIQUE" in str(e):
@@ -135,9 +143,11 @@ def toggle_secao(secao_id: int, _: dict = Depends(require_admin)):
 class AppCreate(BaseModel):
     slug: str
     nome: str
+    nome_es: Optional[str] = None
     secao_id: int
     url: str
     descricao: Optional[str] = None
+    descricao_es: Optional[str] = None
     icone: Optional[str] = None
     tipo_acesso: str = "url"
     badge: Optional[str] = None
@@ -146,7 +156,9 @@ class AppCreate(BaseModel):
 
 class AppUpdate(BaseModel):
     nome: Optional[str] = None
+    nome_es: Optional[str] = None
     descricao: Optional[str] = None
+    descricao_es: Optional[str] = None
     icone: Optional[str] = None
     secao_id: Optional[int] = None
     url: Optional[str] = None
@@ -193,11 +205,13 @@ def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
         try:
             cur = conn.execute(
                 """INSERT INTO apps
-                   (slug, nome, descricao, icone, secao_id, url, tipo_acesso, badge, ordem)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (slug, nome, nome_es, descricao, descricao_es, icone, secao_id,
+                    url, tipo_acesso, badge, ordem)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    body.slug, body.nome, body.descricao, body.icone,
-                    body.secao_id, body.url, body.tipo_acesso, body.badge, body.ordem,
+                    body.slug, body.nome, body.nome_es, body.descricao, body.descricao_es,
+                    body.icone, body.secao_id, body.url, body.tipo_acesso, body.badge,
+                    body.ordem,
                 ),
             )
         except sqlite3.IntegrityError as e:

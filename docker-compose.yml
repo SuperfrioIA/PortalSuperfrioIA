@@ -1,8 +1,8 @@
 services:
-  portal:
+  hub:
     build: .
-    image: superfrio-portal:latest
-    container_name: superfrio-portal
+    image: superfrio-hub:latest
+    container_name: superfrio-hub
     ports:
       - "8000:8000"
     environment:

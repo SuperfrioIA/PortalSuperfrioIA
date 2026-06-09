@@ -21,7 +21,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Portal SuperFrio",
+    title="Hub SuperFrio & Icestar",
     description="Plataforma centralizadora de apps internos — POC",
     version="0.1.0",
     lifespan=lifespan,

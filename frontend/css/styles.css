@@ -64,10 +64,7 @@ body {
 }
 .login-aside-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 14px; }
 .login-aside-brand img {
-  height: 46px;
-  background: #fff;
-  padding: 5px 10px;
-  border-radius: 8px;
+  height: 40px;
   object-fit: contain;
 }
 .login-aside-brand .tag {
@@ -101,7 +98,39 @@ body {
   justify-content: center;
   padding: 48px 56px;
   background: var(--bg2);
+  position: relative;
 }
+
+/* ============ SELETOR DE IDIOMA ============ */
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.lang-switch button {
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.lang-switch button:hover { color: var(--text); }
+.lang-switch button.active {
+  background: #fff;
+  color: var(--sf-dark);
+  box-shadow: var(--shadow-sm);
+}
+.login-lang { position: absolute; top: 20px; right: 24px; }
+.sidebar-lang { margin: 0 10px; align-self: flex-start; }
 .login-card { width: 100%; max-width: 360px; }
 .login-card h2 {
   font-size: 22px;
@@ -195,23 +224,26 @@ body {
 }
 .sidebar-brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px 18px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 8px 16px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
 .sidebar-brand img {
-  height: 36px;
+  width: 100%;
+  max-width: 178px;
+  height: auto;
   object-fit: contain;
 }
-.sidebar-brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
+.sidebar-brand-sub {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  color: var(--text3);
+  text-transform: uppercase;
 }
-.sidebar-brand-text .name { font-size: 13px; font-weight: 700; color: var(--text); }
-.sidebar-brand-text .sub { font-size: 10px; letter-spacing: 0.10em; color: var(--text3); text-transform: uppercase; }
 
 .sidebar-section-label {
   font-size: 10px;
@@ -557,7 +589,8 @@ body {
   margin: 0 auto;
   padding: 32px 40px 60px;
 }
-.admin-top { margin-bottom: 22px; }
+.admin-top { margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.admin-lang { flex-shrink: 0; }
 .admin-top-left h1 {
   font-size: 26px;
   font-weight: 800;

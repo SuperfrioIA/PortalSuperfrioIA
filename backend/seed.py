@@ -5,14 +5,18 @@ SECOES = [
     {
         "slug": "armazem",
         "nome": "Armazém",
+        "nome_es": "Almacén",
         "descricao": "Operações de armazém, integrações WMS e inventário.",
+        "descricao_es": "Operaciones de almacén, integraciones WMS e inventario.",
         "icone": "warehouse",
         "ordem": 1,
     },
     {
         "slug": "backoffice",
         "nome": "Backoffice",
+        "nome_es": "Backoffice",
         "descricao": "Processos administrativos, financeiro e suporte interno.",
+        "descricao_es": "Procesos administrativos, finanzas y soporte interno.",
         "icone": "briefcase",
         "ordem": 2,
     },
@@ -24,7 +28,9 @@ APPS = [
         "secao": "armazem",
         "slug": "faq-blueyonder",
         "nome": "FAQ BlueYonder",
+        "nome_es": "FAQ BlueYonder",
         "descricao": "Perguntas frequentes e procedimentos do WMS BlueYonder.",
+        "descricao_es": "Preguntas frecuentes y procedimientos del WMS BlueYonder.",
         "icone": "book",
         "url": "https://example.internal/faq-blueyonder",
         "tipo_acesso": "url",
@@ -35,7 +41,9 @@ APPS = [
         "secao": "armazem",
         "slug": "faq-slin",
         "nome": "FAQ Slin",
+        "nome_es": "FAQ Slin",
         "descricao": "Base de conhecimento do sistema Slin.",
+        "descricao_es": "Base de conocimiento del sistema Slin.",
         "icone": "book",
         "url": "https://example.internal/faq-slin",
         "tipo_acesso": "url",
@@ -46,7 +54,9 @@ APPS = [
         "secao": "armazem",
         "slug": "conciliacao-estoque",
         "nome": "Conciliação de Estoque",
+        "nome_es": "Conciliación de Inventario",
         "descricao": "Comparação WMS x Protheus e tratativas de divergência.",
+        "descricao_es": "Comparación WMS x Protheus y tratamiento de divergencias.",
         "icone": "scale",
         "url": "https://example.internal/conciliacao-estoque",
         "tipo_acesso": "url",
@@ -58,7 +68,9 @@ APPS = [
         "secao": "backoffice",
         "slug": "duvidas-financeiro",
         "nome": "Dúvidas Financeiro",
+        "nome_es": "Consultas Finanzas",
         "descricao": "Canal de dúvidas e tratativas com o financeiro.",
+        "descricao_es": "Canal de consultas y tratativas con finanzas.",
         "icone": "chat",
         "url": "https://example.internal/duvidas-financeiro",
         "tipo_acesso": "url",
@@ -69,7 +81,9 @@ APPS = [
         "secao": "backoffice",
         "slug": "compras-2-0",
         "nome": "Compras 2.0",
+        "nome_es": "Compras 2.0",
         "descricao": "Fluxo renovado de solicitação e aprovação de compras.",
+        "descricao_es": "Flujo renovado de solicitud y aprobación de compras.",
         "icone": "cart",
         "url": "https://example.internal/compras-2-0",
         "tipo_acesso": "url",
@@ -80,7 +94,9 @@ APPS = [
         "secao": "backoffice",
         "slug": "conciliafat",
         "nome": "ConciliaFAT",
+        "nome_es": "ConciliaFAT",
         "descricao": "Conciliação automatizada de notas fiscais de transporte.",
+        "descricao_es": "Conciliación automatizada de facturas de transporte.",
         "icone": "document",
         "url": "https://example.internal/conciliafat",
         "tipo_acesso": "url",
@@ -91,7 +107,9 @@ APPS = [
         "secao": "backoffice",
         "slug": "controle-recebimento",
         "nome": "Controle de Recebimento",
+        "nome_es": "Control de Recepción",
         "descricao": "Acompanhamento de recebimentos e pendências.",
+        "descricao_es": "Seguimiento de recepciones y pendientes.",
         "icone": "truck",
         "url": "https://example.internal/controle-recebimento",
         "tipo_acesso": "url",
@@ -155,9 +173,19 @@ def seed_initial() -> None:
     try:
         for s in SECOES:
             conn.execute(
-                """INSERT OR IGNORE INTO secoes (slug, nome, descricao, icone, ordem)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (s["slug"], s["nome"], s["descricao"], s["icone"], s["ordem"]),
+                """INSERT OR IGNORE INTO secoes
+                   (slug, nome, nome_es, descricao, descricao_es, icone, ordem)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    s["slug"], s["nome"], s["nome_es"],
+                    s["descricao"], s["descricao_es"], s["icone"], s["ordem"],
+                ),
+            )
+            # Backfill ES em bancos já seedados (não sobrescreve edição do admin)
+            conn.execute(
+                """UPDATE secoes SET nome_es = ?, descricao_es = ?
+                   WHERE slug = ? AND nome_es IS NULL""",
+                (s["nome_es"], s["descricao_es"], s["slug"]),
             )
 
         secao_id = {
@@ -168,13 +196,20 @@ def seed_initial() -> None:
         for a in APPS:
             conn.execute(
                 """INSERT OR IGNORE INTO apps
-                   (slug, nome, descricao, icone, secao_id, url, tipo_acesso, badge, ordem)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (slug, nome, nome_es, descricao, descricao_es, icone, secao_id,
+                    url, tipo_acesso, badge, ordem)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    a["slug"], a["nome"], a["descricao"], a["icone"],
-                    secao_id[a["secao"]], a["url"], a["tipo_acesso"],
+                    a["slug"], a["nome"], a["nome_es"], a["descricao"], a["descricao_es"],
+                    a["icone"], secao_id[a["secao"]], a["url"], a["tipo_acesso"],
                     a["badge"], a["ordem"],
                 ),
+            )
+            # Backfill ES em bancos já seedados (não sobrescreve edição do admin)
+            conn.execute(
+                """UPDATE apps SET nome_es = ?, descricao_es = ?
+                   WHERE slug = ? AND nome_es IS NULL""",
+                (a["nome_es"], a["descricao_es"], a["slug"]),
             )
 
         app_id = {

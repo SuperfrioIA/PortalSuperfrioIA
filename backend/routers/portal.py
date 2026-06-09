@@ -13,6 +13,7 @@ def _apps_permitidos(user: dict) -> list[dict]:
         if user.get("is_admin"):
             rows = conn.execute(
                 """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome,
+                          s.nome_es AS secao_nome_es,
                           s.icone AS secao_icone, s.ordem AS secao_ordem
                    FROM apps a
                    JOIN secoes s ON s.id = a.secao_id
@@ -22,6 +23,7 @@ def _apps_permitidos(user: dict) -> list[dict]:
         else:
             rows = conn.execute(
                 """SELECT DISTINCT a.*, s.slug AS secao_slug, s.nome AS secao_nome,
+                                   s.nome_es AS secao_nome_es,
                                    s.icone AS secao_icone, s.ordem AS secao_ordem
                    FROM apps a
                    JOIN secoes s ON s.id = a.secao_id
@@ -49,6 +51,7 @@ def home(user: dict = Depends(get_current_user)):
             secoes[slug] = {
                 "slug": slug,
                 "nome": a["secao_nome"],
+                "nome_es": a["secao_nome_es"],
                 "icone": a["secao_icone"],
                 "ordem": a["secao_ordem"],
                 "apps": [],
@@ -56,7 +59,9 @@ def home(user: dict = Depends(get_current_user)):
         secoes[slug]["apps"].append({
             "slug": a["slug"],
             "nome": a["nome"],
+            "nome_es": a["nome_es"],
             "descricao": a["descricao"],
+            "descricao_es": a["descricao_es"],
             "icone": a["icone"],
             "url": a["url"],
             "tipo_acesso": a["tipo_acesso"],
