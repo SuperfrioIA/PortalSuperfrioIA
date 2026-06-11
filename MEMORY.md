@@ -2,6 +2,16 @@
 
 Documento de transferência para retomar este projeto em outro chat.
 
+> **Estado atual (2026-06-09):** código da POC **completo e blindado**. Lotes 1–4
+> (backend, frontend, admin CRUD, Docker) + Lote 5 (i18n PT/ES + identidade IceStar |
+> SuperFrio tema claro) + **auditoria de segurança** inteira (todos os itens
+> crítico/alto/médio resolvidos — ver [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.md)).
+> Falta **executar** o deploy real na VM (HTTPS, JWT_SECRET prod, firewall).
+> **Próximo lote decidido (2026-06-09):** migrar SQLite → **Postgres na própria VM** (servidor em
+> container, um database por app, via SQLAlchemy) **antes** do Degrau 2 — ver "Direção do banco" em
+> Decisões travadas. **Bloqueio:** a VM ainda não tem Docker configurado (espera só o *deploy*; o
+> código/migração dá pra fazer e testar local).
+
 ---
 
 ## Contexto
@@ -14,13 +24,14 @@ Não é só um portal — é a vitrine da governança: cadastro de apps, permiss
 
 ## Decisões travadas
 
-- **Stack**: FastAPI + SQLite (single-file, WAL) + HTML único + Tailwind via CDN. Sem build step. Padrão SuperFrio.
+- **Stack**: FastAPI + SQLite (single-file, WAL) + HTML único + CSS/JS vanilla. **Sem Tailwind, sem build step.** Padrão SuperFrio.
 - **Auth**: JWT + bcrypt. Função `authenticate_user()` é o único boundary — hoje valida local, amanhã faz LDAP bind (campo `auth_source` já no schema).
 - **Permissionamento**: por app individual + roles. Roles agrupam apps; usuários recebem N roles. Admin (`is_admin=1`) bypassa tudo.
 - **Linkagem dos apps**: campo `tipo_acesso` no cadastro (`url` ou `iframe`). Default `url`. Maria decide por app no Lote 3.
 - **Cadastro de apps**: seed inicial + CRUD admin pela UI (Lote 3). Demonstra governança ao vivo.
 - **Renomeação de campos do Protheus**: nunca. Etapas internas podem ser renomeadas.
 - **Migrations**: ALTER TABLE no startup, idempotente (`INSERT OR IGNORE` no seed).
+- **Direção do banco (decidido 2026-06-09, ainda NÃO executado):** sair do SQLite e ir pra um **servidor Postgres na PRÓPRIA VM** (container no mesmo `docker-compose`), com **um database por app** (`hub`, `contas`...) — isolamento lógico + backup central num lugar só. **Não depende da TI.** Migração via **SQLAlchemy** (hoje é `sqlite3` na mão, ~47 pontos) pra que trocar depois pro SQL Server corporativo (cenário 3) seja só `connection string`. Esse lote vem **antes** do Degrau 2 (auditoria de cliques nasce já no Postgres). O código/migração dá pra fazer e testar **local** com Docker; só o deploy aguarda a VM.
 
 ---
 
@@ -48,7 +59,11 @@ Backend FastAPI completo + auth + seed + smoke test passando.
 
 ## Lote 2 — CONCLUÍDO (Frontend)
 
-Frontend único HTML+CSS+JS vanilla, sem Tailwind/build step. Paleta herdada do app irmão Contas Recorrentes (Nunito, --sf-dark `#295494`, --sf-light `#29abe2`).
+Frontend único HTML+CSS+JS vanilla, sem Tailwind/build step.
+
+> ⚠️ **Paleta/tipografia desta seção foram SUBSTITUÍDAS no Lote 5.** Originalmente herdadas do
+> app irmão Contas Recorrentes (Nunito, `--sf-dark #295494`, `--sf-light #29abe2`). Hoje vale a
+> identidade IceStar | SuperFrio (Montserrat, tema claro) — ver Lote 5.
 
 **Arquivos criados:**
 - `frontend/index.html` — duas telas no mesmo arquivo (login e portal), trocadas via classe `.hidden`
@@ -139,12 +154,69 @@ CRUD completo (apps, seções, roles, usuários) via UI. Toggle ativo/inativo, s
 
 ---
 
+## Lote 5 — CONCLUÍDO (i18n PT/ES + Identidade IceStar | SuperFrio)
+
+Dois eixos entregues após a POC base: internacionalização e troca completa da identidade visual.
+
+**i18n PT/ES (sem dependência, sem build):**
+- `frontend/js/i18n.js` — **novo**. Dicionário `DICT` (pt/es) embutido, idioma em `localStorage` (`sf_lang`, default `pt`). Expõe `window.SF.i18n = { t, getLang, setLang, pick, applyStatic }`.
+  - Estáticos traduzidos por atributo no HTML: `data-i18n` (texto), `data-i18n-ph` (placeholder), `data-i18n-title` (title).
+  - Conteúdo dinâmico (apps/seções) usa `pick(rec, "nome")` → lê `nome_es`/`descricao_es` com **fallback para PT** se ES vazio.
+  - Trocar idioma dispara evento `sf:langchange`; `app.js`/`admin.js` re-renderizam o conteúdo dinâmico.
+  - Switch PT/ES (`.lang-switch button[data-lang]`) em 3 lugares: login, sidebar do portal, header do admin.
+- **Schema** (`backend/database.py`): colunas `nome_es` e `descricao_es` em `secoes` e `apps`, via `_ensure_column` (ALTER idempotente, não quebra DB existente).
+- `backend/seed.py` — popula ES nos 2 seções + 7 apps; backfill `UPDATE ... WHERE nome_es IS NULL` para linhas antigas (idempotente).
+- `backend/routers/portal.py` — `/api/portal/home` devolve os campos `_es`.
+- `backend/routers/admin.py` — modelos aceitam `nome_es`/`descricao_es`; UI do admin tem campos Nome (PT)/(ES) e Descrição (PT)/(ES).
+
+**Identidade IceStar | SuperFrio — tema claro (substitui a paleta antiga):**
+- `frontend/css/styles.css` — reescrito sob o **Manual de Marca BR v1.0 (Plataforma LATAM)**, tema claro ("Apresentação Clean"): fundos claros predominantes, azuis da marca como acento/estrutura, **amarelo `#FFC400` reservado a CTAs**.
+  - Tipografia: **Montserrat** (era Nunito).
+  - Azuis: institucional `#071A3A`, corporativo `#0A2A5E`, principal `#1E6FD9`, conexão `#3FA9F5`. Fundo `#EEF3FA`. Gradientes oficiais (`--grad-institucional`, `--grad-conexao`).
+  - Motivos aprovados: onda (wave), glow, conexão. Único bloco institucional escuro = painel hero do login (momento de marca).
+- Logos novos em `frontend/img/`: `icestar-superfrio-logo.png` (sidebar/admin), `icestar-superfrio-logo-white.png` (login hero), `favicon.png`. O antigo `superfrio-logo.jpg` segue no repo mas não é mais usado.
+- Skill `superfrio` (identidade visual) é a fonte dos tokens — aplicar ao mexer em qualquer coisa visual.
+
+**Decisão travada:** tema **claro** é o padrão dos apps internos. Fundo azul-escuro como fundo primário foi rejeitado ("feio").
+
+---
+
+## Auditoria de Segurança — CONCLUÍDA (2026-05-29)
+
+Auditoria completa documentada em [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.md). Modelo de ameaça: atacante já dentro da rede interna. **3 críticos + 4 altos + 4 médios resolvidos e validados por smoke test**; 2 baixos deferidos com justificativa.
+
+**Correções que mudaram o código (não esquecer ao retomar):**
+- `backend/limiter.py` — **novo**: instância única do `Limiter` (slowapi). Login limitado a `5/minute` por IP (429 na 6ª).
+- `backend/auth.py` — `JWT_EXP_HOURS` 8→**3h**; em `SUPERFRIO_ENV=prod` o startup **falha** se o secret continuar no default; payload do JWT carrega `tv` (token_version).
+- `backend/database.py` — coluna `token_version` em `usuarios` (ALTER idempotente). Reset de senha incrementa `tv` → invalida todos os tokens em circulação. `UPDATE usuarios SET token_version = token_version + 1` = logout global.
+- `backend/main.py` — **CORS aberto removido** (front e back mesma origem); middleware de **security headers + CSP** (`X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, CSP restritiva).
+- `backend/routers/admin.py` — `_check_url()` rejeita URL fora de `http/https` (400); `PASSWORD_MIN_LEN=8`; `except sqlite3.IntegrityError` específico (era `except Exception`).
+- `frontend/index.html` — `.login-hint` (credenciais seed expostas) **removido**; sandbox do iframe **sem** `allow-same-origin` (apps que dependiam de cookie do portal devem usar `tipo_acesso=url`).
+- Docker: container roda como **uid 1000** (não-root) via `entrypoint.sh` (**novo**) + `gosu`; `requirements.txt` ganhou `slowapi==0.1.9`.
+
+**Deferidos (baixos):** B1 — **HTTPS é BLOQUEANTE para prod** (decisão de deploy, não de código: TLS + proxy + firewall 443/bloqueia 8000). B2 — SQL dinâmico nos PATCH sem vetor real hoje (chaves vêm de modelo Pydantic fechado; documentado).
+
+**Pendência operacional pré-deploy:** trocar senha do `admin`, gerar `SUPERFRIO_JWT_SECRET` (64 hex), `SUPERFRIO_ENV=prod`, HTTPS, firewall, backup do `data/portal.db`.
+
+---
+
+## Documentos de apoio na raiz
+
+- [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
+- [ROADMAP_EVOLUCAO.md](ROADMAP_EVOLUCAO.md) — 5 degraus pós-POC (esforço × valor). Ordem prática: 1 (URLs bonitas/proxy) → 2 (auditoria de cliques) sem depender de TI; 3 (SSO Entra) em paralelo com a Infra; 4 (SQL Server) sob demanda; 5 (HA) só se um app virar crítico.
+- [GUIA_PUBLICACAO_REDE.md](GUIA_PUBLICACAO_REDE.md) — receita de publicação na rede + proxy reverso (Caddy) pronta pra colar.
+- [HUB_VS_PADROES_INDUSTRIA.md](HUB_VS_PADROES_INDUSTRIA.md) — comparativo do Hub frente às práticas de grandes empresas.
+- [README.md](README.md) — stack, modos de rodar, usuários seed, env vars, deploy.
+
+---
+
 ## Fora de escopo (confirmado)
 
-- LDAP/AD real — só o stub fica pronto (`authenticate_user` com branch por `auth_source`)
-- Auditoria de cliques (quem abriu qual app quando) — próxima POC
-- Reset de senha, multi-tenant, dashboard de uso
-- HTTPS no portal — VM interna, HTTP basta pra POC
+- LDAP/AD real — só o stub fica pronto (`authenticate_user` com branch por `auth_source`). **Virou Degrau 3 (SSO Entra) no ROADMAP_EVOLUCAO.md.**
+- Auditoria de cliques (quem abriu qual app quando). **Virou Degrau 2 no ROADMAP — é o próximo lote candidato (alto valor, não depende de TI).**
+- Multi-tenant, dashboard de uso
+- ~~Reset de senha~~ — **na verdade FOI implementado no Lote 3** (`POST /api/admin/usuarios/{id}/password`, com incremento de `token_version`).
+- HTTPS no portal — **reclassificado:** deferido como **BLOQUEANTE para prod** na auditoria (B1). HTTP só serve pra ambiente de teste.
 
 ---
 
@@ -154,26 +226,38 @@ CRUD completo (apps, seções, roles, usuários) via UI. Toggle ativo/inativo, s
 SuperfrioIA/
 ├── backend/
 │   ├── __init__.py
-│   ├── main.py
-│   ├── database.py
-│   ├── auth.py
-│   ├── seed.py
+│   ├── main.py            # FastAPI + security headers/CSP + slowapi handler + mount estáticos
+│   ├── database.py        # schema + ALTER idempotente (token_version, nome_es/descricao_es)
+│   ├── auth.py            # bcrypt/JWT, boundary AD, check de secret em prod, validação tv
+│   ├── seed.py            # seções/apps/roles/usuários + ES (idempotente)
+│   ├── limiter.py         # instância única do Limiter (slowapi) — rate limit do login
 │   └── routers/
 │       ├── __init__.py
-│       ├── auth.py
-│       ├── portal.py
-│       └── admin.py
+│       ├── auth.py        # login (5/min) + me
+│       ├── portal.py      # /home filtrado por permissão, devolve campos _es
+│       └── admin.py       # CRUD + toggle + reset senha + _check_url
 ├── data/                  # gitignored, contém portal.db em runtime
 ├── frontend/
-│   ├── index.html         # login + portal + admin (single page)
-│   ├── css/styles.css
+│   ├── index.html         # login + portal + admin (single page), atributos data-i18n
+│   ├── css/styles.css     # identidade IceStar | SuperFrio (Montserrat, tema claro)
 │   ├── js/
 │   │   ├── app.js         # login, portal, helpers compartilhados (window.SF)
-│   │   └── admin.js       # tela admin (CRUD apps/secoes/roles/usuarios)
-│   └── img/superfrio-logo.jpg
-├── .venv/                 # gitignored
-├── requirements.txt
+│   │   ├── admin.js       # tela admin (CRUD apps/secoes/roles/usuarios)
+│   │   └── i18n.js        # i18n PT/ES (window.SF.i18n), sem dependência
+│   └── img/               # icestar-superfrio-logo.png, *-white.png, favicon.png (+ superfrio-logo.jpg legado)
+├── Dockerfile             # python:3.12-slim, user uid 1000, entrypoint
+├── entrypoint.sh          # chown do volume + gosu app (drop de root)
+├── docker-compose.yml     # porta 8000, volume data, SUPERFRIO_ENV/JWT_SECRET
+├── .dockerignore
+├── run.ps1                # dev local (venv + uvicorn)
+├── build.ps1              # docker compose build/up; flags -NoCache/-Down/-Reset/-Logs
+├── requirements.txt       # inclui slowapi==0.1.9
 ├── .gitignore
+├── README.md
+├── AUDITORIA_SEGURANCA.md
+├── ROADMAP_EVOLUCAO.md
+├── GUIA_PUBLICACAO_REDE.md
+├── HUB_VS_PADROES_INDUSTRIA.md
 └── MEMORY.md              # este arquivo
 ```
 
@@ -215,6 +299,6 @@ Acesso: http://127.0.0.1:8000
 
 Cole o seguinte na primeira mensagem:
 
-> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD) e 4 (Docker + smoke test) estão concluídos. Resta validar o deploy real em VM Windows (firewall, JWT_SECRET de produção, etc). Ative o modo SuperFrio (`/superfrio`) antes.
+> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD), 4 (Docker + smoke test) e 5 (i18n PT/ES + identidade IceStar | SuperFrio) estão concluídos, mais a auditoria de segurança (`AUDITORIA_SEGURANCA.md`). Resta executar o deploy real em VM Windows (HTTPS, JWT_SECRET de produção, firewall) — ou seguir o `ROADMAP_EVOLUCAO.md` (Degrau 2 = auditoria de cliques é o próximo de maior valor). Ative o modo SuperFrio (`/superfrio`) antes.
 
-Stack: FastAPI + SQLite + Tailwind CDN + Docker. Ambiente: Windows + PowerShell.
+Stack: FastAPI + SQLite (WAL) + HTML/CSS/JS vanilla (sem build) + Docker. Ambiente: Windows + PowerShell.
