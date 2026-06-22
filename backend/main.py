@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,6 +32,11 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+# frame-src controla quais origens podem ser embutidas via <iframe> (apps tipo_acesso=iframe).
+# Default seguro: 'self' + qualquer HTTPS. Em produção, restrinja às origens reais dos apps:
+#   SUPERFRIO_FRAME_SRC="https://app1.interno https://app2.interno"
+_FRAME_SRC = os.environ.get("SUPERFRIO_FRAME_SRC", "'self' https:")
+
 _CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -38,7 +44,7 @@ _CSP = (
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
-    "frame-src *; "
+    f"frame-src {_FRAME_SRC}; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
