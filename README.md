@@ -53,6 +53,7 @@ Troque/desative essas senhas pela tela **Administração** assim que entrar em p
 | `SUPERFRIO_DB_PATH` | `data/portal.db` (local) / `/app/data/portal.db` (container) | Caminho do SQLite |
 | `SUPERFRIO_ENV` | `dev` | Em `prod`, o startup falha se o `JWT_SECRET` continuar no default |
 | `SUPERFRIO_FRAME_SRC` | `'self' https:` | Origens permitidas em `<iframe>` (CSP). Restrinja às URLs reais dos apps em produção |
+| `HOST_PORT` | `8000` | Porta publicada na VM (host). Use outra se a 8000 estiver ocupada (ex.: `8001`) |
 
 ## Estrutura
 
@@ -104,7 +105,7 @@ Documentação interativa (Swagger): http://127.0.0.1:8000/docs
 5. Libere a porta 8000 no firewall da VM se outros usuários da rede precisam acessar
 6. Acesse `http://<ip-da-vm>:8000` da rede interna
 
-Para alterar a porta exposta, edite `docker-compose.yml` (a linha `"8000:8000"` — o primeiro número é a porta no host).
+Para mudar a porta no host, defina `HOST_PORT` no `.env` (ex.: `HOST_PORT=8001`) — sem editar arquivos versionados. O default é 8000.
 
 ## Princípios da POC
 

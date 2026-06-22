@@ -4,7 +4,8 @@ services:
     image: superfrio-hub:latest
     container_name: superfrio-hub
     ports:
-      - "8000:8000"
+      # HOST_PORT = porta publicada na VM. Default 8000; defina no .env se estiver ocupada.
+      - "${HOST_PORT:-8000}:8000"
     environment:
       # Em prod, defina SUPERFRIO_JWT_SECRET no .env ou no host antes de subir.
       # Quando SUPERFRIO_ENV=prod, o startup falha se o secret continuar no default.
