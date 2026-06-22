@@ -8,13 +8,14 @@ Princípios:
 - Validações no boundary, erros HTTP claros.
 """
 import sqlite3
+from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.auth import hash_password, require_admin
-from backend.database import get_conn
+from backend.database import db
 
 PASSWORD_MIN_LEN = 8
 
@@ -23,8 +24,15 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ============ Helpers ============
 
-def _now_sql() -> str:
-    return "datetime('now')"
+@contextmanager
+def _unique_or_409(field: str, value: str):
+    """Converte violação de UNIQUE do SQLite em 409 com mensagem clara."""
+    try:
+        yield
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(409, f"{field} '{value}' já existe")
+        raise
 
 
 def _slug_ok(slug: str) -> bool:
@@ -44,6 +52,32 @@ def _row_or_404(conn, table: str, row_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail=f"{table} {row_id} não encontrado")
     return dict(row)
+
+
+def _apply_update(conn, table: str, row_id: int, fields: dict, touch_updated: bool = False) -> None:
+    """UPDATE parcial: só as colunas em `fields`. Se touch_updated, seta atualizado_em=agora."""
+    sets = [f"{k} = ?" for k in fields]
+    if touch_updated:
+        sets.append("atualizado_em = datetime('now')")
+    conn.execute(
+        f"UPDATE {table} SET {', '.join(sets)} WHERE id = ?",
+        (*fields.values(), row_id),
+    )
+
+
+def _ids_por_slug(conn, table: str, slugs: list[str], label: str) -> list[int]:
+    """Resolve uma lista de slugs para ids da `table`; 400 se algum não existir."""
+    if not slugs:
+        return []
+    placeholders = ",".join("?" * len(slugs))
+    rows = conn.execute(
+        f"SELECT id, slug FROM {table} WHERE slug IN ({placeholders})", slugs
+    ).fetchall()
+    encontrados = {r["slug"]: r["id"] for r in rows}
+    faltando = [s for s in slugs if s not in encontrados]
+    if faltando:
+        raise HTTPException(400, f"{label} slug(s) inexistente(s): {', '.join(faltando)}")
+    return [encontrados[s] for s in slugs]
 
 
 # ============ Seções ============
@@ -69,8 +103,7 @@ class SecaoUpdate(BaseModel):
 
 @router.get("/secoes")
 def listar_secoes(_: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         rows = conn.execute(
             """SELECT s.*, COUNT(a.id) AS apps_count
                FROM secoes s
@@ -78,17 +111,14 @@ def listar_secoes(_: dict = Depends(require_admin)):
                GROUP BY s.id
                ORDER BY s.ordem, s.nome"""
         ).fetchall()
-    finally:
-        conn.close()
     return [dict(r) for r in rows]
 
 
 @router.post("/secoes", status_code=201)
 def criar_secao(body: SecaoCreate, _: dict = Depends(require_admin)):
     _ensure_slug(body.slug)
-    conn = get_conn()
-    try:
-        try:
+    with db() as conn:
+        with _unique_or_409("slug", body.slug):
             cur = conn.execute(
                 """INSERT INTO secoes
                    (slug, nome, nome_es, descricao, descricao_es, icone, ordem)
@@ -98,44 +128,28 @@ def criar_secao(body: SecaoCreate, _: dict = Depends(require_admin)):
                     body.descricao, body.descricao_es, body.icone, body.ordem,
                 ),
             )
-        except sqlite3.IntegrityError as e:
-            if "UNIQUE" in str(e):
-                raise HTTPException(409, f"slug '{body.slug}' já existe")
-            raise
-        conn.commit()
         row = conn.execute("SELECT * FROM secoes WHERE id = ?", (cur.lastrowid,)).fetchone()
-    finally:
-        conn.close()
     return dict(row)
 
 
 @router.patch("/secoes/{secao_id}")
 def atualizar_secao(secao_id: int, body: SecaoUpdate, _: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         _row_or_404(conn, "secoes", secao_id)
         fields = body.model_dump(exclude_unset=True)
         if not fields:
             return _row_or_404(conn, "secoes", secao_id)
-        sets = ", ".join(f"{k} = ?" for k in fields)
-        conn.execute(f"UPDATE secoes SET {sets} WHERE id = ?", (*fields.values(), secao_id))
-        conn.commit()
+        _apply_update(conn, "secoes", secao_id, fields)
         return _row_or_404(conn, "secoes", secao_id)
-    finally:
-        conn.close()
 
 
 @router.post("/secoes/{secao_id}/toggle")
 def toggle_secao(secao_id: int, _: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         row = _row_or_404(conn, "secoes", secao_id)
         novo = 0 if row["ativo"] else 1
         conn.execute("UPDATE secoes SET ativo = ? WHERE id = ?", (novo, secao_id))
-        conn.commit()
         return _row_or_404(conn, "secoes", secao_id)
-    finally:
-        conn.close()
 
 
 # ============ Apps ============
@@ -179,82 +193,6 @@ def _check_url(url: Optional[str]) -> None:
         raise HTTPException(400, "url deve começar com http:// ou https://")
 
 
-@router.get("/apps")
-def listar_apps(_: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
-        rows = conn.execute(
-            """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome
-               FROM apps a
-               JOIN secoes s ON s.id = a.secao_id
-               ORDER BY s.ordem, a.ordem, a.nome"""
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
-
-
-@router.post("/apps", status_code=201)
-def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
-    _ensure_slug(body.slug)
-    _check_tipo_acesso(body.tipo_acesso)
-    _check_url(body.url)
-    conn = get_conn()
-    try:
-        _row_or_404(conn, "secoes", body.secao_id)
-        try:
-            cur = conn.execute(
-                """INSERT INTO apps
-                   (slug, nome, nome_es, descricao, descricao_es, icone, secao_id,
-                    url, tipo_acesso, badge, ordem)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    body.slug, body.nome, body.nome_es, body.descricao, body.descricao_es,
-                    body.icone, body.secao_id, body.url, body.tipo_acesso, body.badge,
-                    body.ordem,
-                ),
-            )
-        except sqlite3.IntegrityError as e:
-            if "UNIQUE" in str(e):
-                raise HTTPException(409, f"slug '{body.slug}' já existe")
-            raise
-        conn.commit()
-        row = conn.execute(
-            """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome
-               FROM apps a JOIN secoes s ON s.id = a.secao_id
-               WHERE a.id = ?""",
-            (cur.lastrowid,),
-        ).fetchone()
-    finally:
-        conn.close()
-    return dict(row)
-
-
-@router.patch("/apps/{app_id}")
-def atualizar_app(app_id: int, body: AppUpdate, _: dict = Depends(require_admin)):
-    _check_tipo_acesso(body.tipo_acesso)
-    _check_url(body.url)
-    conn = get_conn()
-    try:
-        _row_or_404(conn, "apps", app_id)
-        if body.secao_id is not None:
-            _row_or_404(conn, "secoes", body.secao_id)
-        fields = body.model_dump(exclude_unset=True)
-        if not fields:
-            return _select_app(conn, app_id)
-        fields["atualizado_em"] = None  # placeholder, sobrescrito no SQL abaixo
-        sets = ", ".join(
-            "atualizado_em = datetime('now')" if k == "atualizado_em" else f"{k} = ?"
-            for k in fields
-        )
-        values = [v for k, v in fields.items() if k != "atualizado_em"]
-        conn.execute(f"UPDATE apps SET {sets} WHERE id = ?", (*values, app_id))
-        conn.commit()
-        return _select_app(conn, app_id)
-    finally:
-        conn.close()
-
-
 def _select_app(conn, app_id: int) -> dict:
     row = conn.execute(
         """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome
@@ -267,20 +205,65 @@ def _select_app(conn, app_id: int) -> dict:
     return dict(row)
 
 
+@router.get("/apps")
+def listar_apps(_: dict = Depends(require_admin)):
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome
+               FROM apps a
+               JOIN secoes s ON s.id = a.secao_id
+               ORDER BY s.ordem, a.ordem, a.nome"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/apps", status_code=201)
+def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
+    _ensure_slug(body.slug)
+    _check_tipo_acesso(body.tipo_acesso)
+    _check_url(body.url)
+    with db() as conn:
+        _row_or_404(conn, "secoes", body.secao_id)
+        with _unique_or_409("slug", body.slug):
+            cur = conn.execute(
+                """INSERT INTO apps
+                   (slug, nome, nome_es, descricao, descricao_es, icone, secao_id,
+                    url, tipo_acesso, badge, ordem)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    body.slug, body.nome, body.nome_es, body.descricao, body.descricao_es,
+                    body.icone, body.secao_id, body.url, body.tipo_acesso, body.badge,
+                    body.ordem,
+                ),
+            )
+        return _select_app(conn, cur.lastrowid)
+
+
+@router.patch("/apps/{app_id}")
+def atualizar_app(app_id: int, body: AppUpdate, _: dict = Depends(require_admin)):
+    _check_tipo_acesso(body.tipo_acesso)
+    _check_url(body.url)
+    with db() as conn:
+        _row_or_404(conn, "apps", app_id)
+        if body.secao_id is not None:
+            _row_or_404(conn, "secoes", body.secao_id)
+        fields = body.model_dump(exclude_unset=True)
+        if not fields:
+            return _select_app(conn, app_id)
+        _apply_update(conn, "apps", app_id, fields, touch_updated=True)
+        return _select_app(conn, app_id)
+
+
 @router.post("/apps/{app_id}/toggle")
 def toggle_app(app_id: int, _: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         row = _row_or_404(conn, "apps", app_id)
         novo = 0 if row["ativo"] else 1
         conn.execute(
             "UPDATE apps SET ativo = ?, atualizado_em = datetime('now') WHERE id = ?",
             (novo, app_id),
         )
-        conn.commit()
         return _select_app(conn, app_id)
-    finally:
-        conn.close()
 
 
 # ============ Roles ============
@@ -296,20 +279,6 @@ class RoleUpdate(BaseModel):
     nome: Optional[str] = None
     descricao: Optional[str] = None
     apps: Optional[list[str]] = None
-
-
-def _apps_ids_por_slug(conn, slugs: list[str]) -> list[int]:
-    if not slugs:
-        return []
-    placeholders = ",".join("?" * len(slugs))
-    rows = conn.execute(
-        f"SELECT id, slug FROM apps WHERE slug IN ({placeholders})", slugs
-    ).fetchall()
-    encontrados = {r["slug"]: r["id"] for r in rows}
-    faltando = [s for s in slugs if s not in encontrados]
-    if faltando:
-        raise HTTPException(400, f"app slug(s) inexistente(s): {', '.join(faltando)}")
-    return [encontrados[s] for s in slugs]
 
 
 def _set_role_apps(conn, role_id: int, app_ids: list[int]) -> None:
@@ -335,8 +304,7 @@ def _select_role(conn, role_id: int) -> dict:
 
 @router.get("/roles")
 def listar_roles(_: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         rows = conn.execute("SELECT * FROM roles ORDER BY nome").fetchall()
         apps_por_role: dict[int, list[str]] = {}
         for ra in conn.execute(
@@ -350,8 +318,6 @@ def listar_roles(_: dict = Depends(require_admin)):
             "SELECT role_id, COUNT(*) AS n FROM usuario_roles GROUP BY role_id"
         ).fetchall():
             users_por_role[ur["role_id"]] = ur["n"]
-    finally:
-        conn.close()
     return [
         {
             **dict(r),
@@ -365,56 +331,39 @@ def listar_roles(_: dict = Depends(require_admin)):
 @router.post("/roles", status_code=201)
 def criar_role(body: RoleCreate, _: dict = Depends(require_admin)):
     _ensure_slug(body.slug)
-    conn = get_conn()
-    try:
-        app_ids = _apps_ids_por_slug(conn, body.apps)
-        try:
+    with db() as conn:
+        app_ids = _ids_por_slug(conn, "apps", body.apps, "app")
+        with _unique_or_409("slug", body.slug):
             cur = conn.execute(
                 "INSERT INTO roles (slug, nome, descricao) VALUES (?, ?, ?)",
                 (body.slug, body.nome, body.descricao),
             )
-        except sqlite3.IntegrityError as e:
-            if "UNIQUE" in str(e):
-                raise HTTPException(409, f"slug '{body.slug}' já existe")
-            raise
         role_id = cur.lastrowid
         _set_role_apps(conn, role_id, app_ids)
-        conn.commit()
         return _select_role(conn, role_id)
-    finally:
-        conn.close()
 
 
 @router.patch("/roles/{role_id}")
 def atualizar_role(role_id: int, body: RoleUpdate, _: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         _row_or_404(conn, "roles", role_id)
         fields = body.model_dump(exclude_unset=True)
         apps = fields.pop("apps", None)
         if fields:
-            sets = ", ".join(f"{k} = ?" for k in fields)
-            conn.execute(f"UPDATE roles SET {sets} WHERE id = ?", (*fields.values(), role_id))
+            _apply_update(conn, "roles", role_id, fields)
         if apps is not None:
-            app_ids = _apps_ids_por_slug(conn, apps)
+            app_ids = _ids_por_slug(conn, "apps", apps, "app")
             _set_role_apps(conn, role_id, app_ids)
-        conn.commit()
         return _select_role(conn, role_id)
-    finally:
-        conn.close()
 
 
 @router.post("/roles/{role_id}/toggle")
 def toggle_role(role_id: int, _: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         row = _row_or_404(conn, "roles", role_id)
         novo = 0 if row["ativo"] else 1
         conn.execute("UPDATE roles SET ativo = ? WHERE id = ?", (novo, role_id))
-        conn.commit()
         return _select_role(conn, role_id)
-    finally:
-        conn.close()
 
 
 # ============ Usuários ============
@@ -437,20 +386,6 @@ class UsuarioUpdate(BaseModel):
 
 class PasswordReset(BaseModel):
     senha: str = Field(min_length=PASSWORD_MIN_LEN)
-
-
-def _roles_ids_por_slug(conn, slugs: list[str]) -> list[int]:
-    if not slugs:
-        return []
-    placeholders = ",".join("?" * len(slugs))
-    rows = conn.execute(
-        f"SELECT id, slug FROM roles WHERE slug IN ({placeholders})", slugs
-    ).fetchall()
-    encontrados = {r["slug"]: r["id"] for r in rows}
-    faltando = [s for s in slugs if s not in encontrados]
-    if faltando:
-        raise HTTPException(400, f"role slug(s) inexistente(s): {', '.join(faltando)}")
-    return [encontrados[s] for s in slugs]
 
 
 def _set_user_roles(conn, user_id: int, role_ids: list[int]) -> None:
@@ -484,8 +419,7 @@ def _select_usuario(conn, user_id: int) -> dict:
 
 @router.get("/usuarios")
 def listar_usuarios(_: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         rows = conn.execute(
             """SELECT id, username, nome, email, auth_source, ativo, is_admin,
                       criado_em, atualizado_em
@@ -498,8 +432,6 @@ def listar_usuarios(_: dict = Depends(require_admin)):
                ORDER BY r.slug"""
         ).fetchall():
             roles_por_user.setdefault(ur["usuario_id"], []).append(ur["slug"])
-    finally:
-        conn.close()
     return [{**dict(r), "roles": roles_por_user.get(r["id"], [])} for r in rows]
 
 
@@ -509,10 +441,9 @@ def criar_usuario(body: UsuarioCreate, _: dict = Depends(require_admin)):
         raise HTTPException(400, "username obrigatório")
     if len(body.senha) < PASSWORD_MIN_LEN:
         raise HTTPException(400, f"senha deve ter ao menos {PASSWORD_MIN_LEN} caracteres")
-    conn = get_conn()
-    try:
-        role_ids = _roles_ids_por_slug(conn, body.roles)
-        try:
+    with db() as conn:
+        role_ids = _ids_por_slug(conn, "roles", body.roles, "role")
+        with _unique_or_409("username", body.username):
             cur = conn.execute(
                 """INSERT INTO usuarios
                    (username, nome, email, password_hash, auth_source, is_admin)
@@ -525,16 +456,9 @@ def criar_usuario(body: UsuarioCreate, _: dict = Depends(require_admin)):
                     1 if body.is_admin else 0,
                 ),
             )
-        except sqlite3.IntegrityError as e:
-            if "UNIQUE" in str(e):
-                raise HTTPException(409, f"username '{body.username}' já existe")
-            raise
         user_id = cur.lastrowid
         _set_user_roles(conn, user_id, role_ids)
-        conn.commit()
         return _select_usuario(conn, user_id)
-    finally:
-        conn.close()
 
 
 @router.patch("/usuarios/{user_id}")
@@ -543,8 +467,7 @@ def atualizar_usuario(
     body: UsuarioUpdate,
     me: dict = Depends(require_admin),
 ):
-    conn = get_conn()
-    try:
+    with db() as conn:
         _row_or_404(conn, "usuarios", user_id)
         fields = body.model_dump(exclude_unset=True)
         roles = fields.pop("roles", None)
@@ -557,49 +480,32 @@ def atualizar_usuario(
             fields["is_admin"] = 1 if fields["is_admin"] else 0
 
         if fields:
-            fields["__updated"] = None  # marker para o SQL
-            sets_parts = []
-            values = []
-            for k in fields:
-                if k == "__updated":
-                    sets_parts.append("atualizado_em = datetime('now')")
-                else:
-                    sets_parts.append(f"{k} = ?")
-                    values.append(fields[k])
-            conn.execute(f"UPDATE usuarios SET {', '.join(sets_parts)} WHERE id = ?", (*values, user_id))
+            _apply_update(conn, "usuarios", user_id, fields, touch_updated=True)
 
         if roles is not None:
-            role_ids = _roles_ids_por_slug(conn, roles)
+            role_ids = _ids_por_slug(conn, "roles", roles, "role")
             _set_user_roles(conn, user_id, role_ids)
 
-        conn.commit()
         return _select_usuario(conn, user_id)
-    finally:
-        conn.close()
 
 
 @router.post("/usuarios/{user_id}/toggle")
 def toggle_usuario(user_id: int, me: dict = Depends(require_admin)):
     if user_id == me["id"]:
         raise HTTPException(400, "Você não pode desativar a própria conta")
-    conn = get_conn()
-    try:
+    with db() as conn:
         row = _row_or_404(conn, "usuarios", user_id)
         novo = 0 if row["ativo"] else 1
         conn.execute(
             "UPDATE usuarios SET ativo = ?, atualizado_em = datetime('now') WHERE id = ?",
             (novo, user_id),
         )
-        conn.commit()
         return _select_usuario(conn, user_id)
-    finally:
-        conn.close()
 
 
 @router.post("/usuarios/{user_id}/password")
 def resetar_senha(user_id: int, body: PasswordReset, _: dict = Depends(require_admin)):
-    conn = get_conn()
-    try:
+    with db() as conn:
         _row_or_404(conn, "usuarios", user_id)
         conn.execute(
             """UPDATE usuarios
@@ -609,7 +515,4 @@ def resetar_senha(user_id: int, body: PasswordReset, _: dict = Depends(require_a
                WHERE id = ?""",
             (hash_password(body.senha), user_id),
         )
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()

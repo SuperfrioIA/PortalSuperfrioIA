@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends
 
 from backend.auth import get_current_user
-from backend.database import get_conn
+from backend.database import db
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
 
 def _apps_permitidos(user: dict) -> list[dict]:
     """Retorna lista de apps que o usuário pode ver, com a seção embutida."""
-    conn = get_conn()
-    try:
+    with db() as conn:
         if user.get("is_admin"):
             rows = conn.execute(
                 """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome,
@@ -34,8 +33,6 @@ def _apps_permitidos(user: dict) -> list[dict]:
                    ORDER BY s.ordem, a.ordem, a.nome""",
                 (user["id"],),
             ).fetchall()
-    finally:
-        conn.close()
     return [dict(r) for r in rows]
 
 

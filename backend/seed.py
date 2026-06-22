@@ -1,5 +1,5 @@
 from backend.auth import hash_password
-from backend.database import get_conn
+from backend.database import db
 
 SECOES = [
     {
@@ -169,8 +169,7 @@ USUARIOS = [
 
 def seed_initial() -> None:
     """Seed idempotente — INSERT OR IGNORE em todas as tabelas."""
-    conn = get_conn()
-    try:
+    with db() as conn:
         for s in SECOES:
             conn.execute(
                 """INSERT OR IGNORE INTO secoes
@@ -260,7 +259,4 @@ def seed_initial() -> None:
                     "INSERT OR IGNORE INTO usuario_roles (usuario_id, role_id) VALUES (?, ?)",
                     (user_id, role_id_map[role_slug]),
                 )
-
-        conn.commit()
-    finally:
-        conn.close()
+        # commit e close ficam a cargo do context manager db()

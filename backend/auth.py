@@ -6,7 +6,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from backend.database import get_conn
+from backend.database import db
 
 _DEFAULT_SECRET = "dev-secret-change-me"
 JWT_SECRET = os.environ.get("SUPERFRIO_JWT_SECRET", _DEFAULT_SECRET)
@@ -62,14 +62,11 @@ def authenticate_user(username: str, password: str) -> dict | None:
     Quando vier integração AD/LDAP, este é o único ponto que muda:
     branch por `auth_source` ou bind LDAP direto antes do fallback local.
     """
-    conn = get_conn()
-    try:
+    with db() as conn:
         row = conn.execute(
             "SELECT * FROM usuarios WHERE username = ? AND ativo = 1",
             (username,),
         ).fetchone()
-    finally:
-        conn.close()
 
     if not row:
         return None
@@ -98,14 +95,11 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     except jwt.PyJWTError:
         raise creds_exc
 
-    conn = get_conn()
-    try:
+    with db() as conn:
         row = conn.execute(
             "SELECT * FROM usuarios WHERE username = ? AND ativo = 1",
             (username,),
         ).fetchone()
-    finally:
-        conn.close()
 
     if not row:
         raise creds_exc

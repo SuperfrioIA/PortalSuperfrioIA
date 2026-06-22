@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("SUPERFRIO_DB_PATH", "data/portal.db"))
@@ -11,6 +12,21 @@ def get_conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+@contextmanager
+def db():
+    """Conexão com commit no fim (em sucesso) e close garantido.
+
+    Em erro, o commit é pulado e o close descarta a transação (rollback),
+    que é exatamente o que os endpoints faziam com o try/finally manual.
+    """
+    conn = get_conn()
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 SCHEMA = [
@@ -93,8 +109,7 @@ def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
 
 
 def init_db() -> None:
-    conn = get_conn()
-    try:
+    with db() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         for stmt in SCHEMA:
             conn.execute(stmt)
@@ -104,6 +119,3 @@ def init_db() -> None:
         _ensure_column(conn, "secoes", "descricao_es", "descricao_es TEXT")
         _ensure_column(conn, "apps", "nome_es", "nome_es TEXT")
         _ensure_column(conn, "apps", "descricao_es", "descricao_es TEXT")
-        conn.commit()
-    finally:
-        conn.close()

@@ -9,6 +9,8 @@
   const iconSvg = SF.iconSvg;
   const t = (k) => SF.i18n.t(k);
 
+  const PASSWORD_MIN_LEN = 8;
+
   const ADM = {
     tab: "apps",
     secoes: [],
@@ -86,25 +88,36 @@
     else if (ADM.tab === "usuarios") renderUsuarios();
   }
 
-  /* ---------- Render: APPS ---------- */
-  function renderApps() {
-    const tbl = document.getElementById("table-apps");
-    if (ADM.apps.length === 0) {
-      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.apps"))}</td></tr></tbody>`;
+  /* ---------- Render genérico de tabela ----------
+     Monta thead + tbody e religa as ações de linha. Cada aba só descreve
+     suas colunas (headers) e como renderiza uma linha (rowHtml). */
+  function renderTable(tbl, { entity, emptyMsg, headers, rows, rowHtml }) {
+    if (rows.length === 0) {
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(emptyMsg)}</td></tr></tbody>`;
       return;
     }
-    let html = `<thead><tr>
-      <th style="width:42px"></th>
-      <th>${escapeHtml(t("admin.col.app"))}</th>
-      <th>${escapeHtml(t("admin.col.secao"))}</th>
-      <th>${escapeHtml(t("admin.col.tipo"))}</th>
-      <th>${escapeHtml(t("admin.col.badge"))}</th>
-      <th>${escapeHtml(t("admin.col.ordem"))}</th>
-      <th>${escapeHtml(t("admin.col.status"))}</th>
-      <th style="width:160px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
-    </tr></thead><tbody>`;
-    ADM.apps.forEach((a) => {
-      html += `<tr>
+    tbl.innerHTML =
+      `<thead><tr>${headers.join("")}</tr></thead>` +
+      `<tbody>${rows.map(rowHtml).join("")}</tbody>`;
+    bindRowActions(tbl, entity);
+  }
+
+  const th = (key) => `<th>${escapeHtml(t(key))}</th>`;
+  const thRight = (key) => `<th style="width:160px;text-align:right">${escapeHtml(t(key))}</th>`;
+
+  /* ---------- Render: APPS ---------- */
+  function renderApps() {
+    renderTable(document.getElementById("table-apps"), {
+      entity: "apps",
+      emptyMsg: t("admin.empty.apps"),
+      rows: ADM.apps,
+      headers: [
+        `<th style="width:42px"></th>`,
+        th("admin.col.app"), th("admin.col.secao"), th("admin.col.tipo"),
+        th("admin.col.badge"), th("admin.col.ordem"), th("admin.col.status"),
+        thRight("admin.col.acoes"),
+      ],
+      rowHtml: (a) => `<tr>
         <td><span class="app-card-icon" style="width:30px;height:30px">${iconSvg(a.icone || "default")}</span></td>
         <td>
           <div class="col-nome">${escapeHtml(a.nome)}</div>
@@ -119,30 +132,21 @@
           <button data-act="edit" data-id="${a.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${a.id}">${escapeHtml(a.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
-      </tr>`;
+      </tr>`,
     });
-    html += `</tbody>`;
-    tbl.innerHTML = html;
-    bindRowActions(tbl, "apps");
   }
 
   /* ---------- Render: SEÇÕES ---------- */
   function renderSecoes() {
-    const tbl = document.getElementById("table-secoes");
-    if (ADM.secoes.length === 0) {
-      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.secoes"))}</td></tr></tbody>`;
-      return;
-    }
-    let html = `<thead><tr>
-      <th>${escapeHtml(t("admin.col.secao"))}</th>
-      <th>${escapeHtml(t("admin.col.icone"))}</th>
-      <th>${escapeHtml(t("admin.col.apps"))}</th>
-      <th>${escapeHtml(t("admin.col.ordem"))}</th>
-      <th>${escapeHtml(t("admin.col.status"))}</th>
-      <th style="width:160px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
-    </tr></thead><tbody>`;
-    ADM.secoes.forEach((s) => {
-      html += `<tr>
+    renderTable(document.getElementById("table-secoes"), {
+      entity: "secoes",
+      emptyMsg: t("admin.empty.secoes"),
+      rows: ADM.secoes,
+      headers: [
+        th("admin.col.secao"), th("admin.col.icone"), th("admin.col.apps"),
+        th("admin.col.ordem"), th("admin.col.status"), thRight("admin.col.acoes"),
+      ],
+      rowHtml: (s) => `<tr>
         <td>
           <div class="col-nome">${escapeHtml(s.nome)}</div>
           <div class="col-slug">${escapeHtml(s.slug)}</div>
@@ -155,30 +159,23 @@
           <button data-act="edit" data-id="${s.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${s.id}">${escapeHtml(s.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
-      </tr>`;
+      </tr>`,
     });
-    html += `</tbody>`;
-    tbl.innerHTML = html;
-    bindRowActions(tbl, "secoes");
   }
 
   /* ---------- Render: ROLES ---------- */
   function renderRoles() {
-    const tbl = document.getElementById("table-roles");
-    if (ADM.roles.length === 0) {
-      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.roles"))}</td></tr></tbody>`;
-      return;
-    }
-    let html = `<thead><tr>
-      <th>${escapeHtml(t("admin.col.role"))}</th>
-      <th>${escapeHtml(t("admin.col.appsLiberados"))}</th>
-      <th>${escapeHtml(t("admin.col.usuarios"))}</th>
-      <th>${escapeHtml(t("admin.col.status"))}</th>
-      <th style="width:160px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
-    </tr></thead><tbody>`;
-    ADM.roles.forEach((r) => {
-      const pills = r.apps.map((a) => `<span class="pill url">${escapeHtml(a)}</span>`).join(" ");
-      html += `<tr>
+    renderTable(document.getElementById("table-roles"), {
+      entity: "roles",
+      emptyMsg: t("admin.empty.roles"),
+      rows: ADM.roles,
+      headers: [
+        th("admin.col.role"), th("admin.col.appsLiberados"), th("admin.col.usuarios"),
+        th("admin.col.status"), thRight("admin.col.acoes"),
+      ],
+      rowHtml: (r) => {
+        const pills = r.apps.map((a) => `<span class="pill url">${escapeHtml(a)}</span>`).join(" ");
+        return `<tr>
         <td>
           <div class="col-nome">${escapeHtml(r.nome)}</div>
           <div class="col-slug">${escapeHtml(r.slug)}</div>
@@ -191,31 +188,25 @@
           <button class="danger" data-act="toggle" data-id="${r.id}">${escapeHtml(r.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`;
+      },
     });
-    html += `</tbody>`;
-    tbl.innerHTML = html;
-    bindRowActions(tbl, "roles");
   }
 
   /* ---------- Render: USUÁRIOS ---------- */
   function renderUsuarios() {
-    const tbl = document.getElementById("table-usuarios");
-    if (ADM.usuarios.length === 0) {
-      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.empty.usuarios"))}</td></tr></tbody>`;
-      return;
-    }
-    let html = `<thead><tr>
-      <th>${escapeHtml(t("admin.col.usuario"))}</th>
-      <th>${escapeHtml(t("admin.col.email"))}</th>
-      <th>${escapeHtml(t("admin.col.roles"))}</th>
-      <th>${escapeHtml(t("admin.col.tipo"))}</th>
-      <th>${escapeHtml(t("admin.col.status"))}</th>
-      <th style="width:220px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>
-    </tr></thead><tbody>`;
-    ADM.usuarios.forEach((u) => {
-      const pills = u.roles.map((s) => `<span class="pill url">${escapeHtml(s)}</span>`).join(" ");
-      const meEu = SF.state.user && SF.state.user.username === u.username;
-      html += `<tr>
+    renderTable(document.getElementById("table-usuarios"), {
+      entity: "usuarios",
+      emptyMsg: t("admin.empty.usuarios"),
+      rows: ADM.usuarios,
+      headers: [
+        th("admin.col.usuario"), th("admin.col.email"), th("admin.col.roles"),
+        th("admin.col.tipo"), th("admin.col.status"),
+        `<th style="width:220px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>`,
+      ],
+      rowHtml: (u) => {
+        const pills = u.roles.map((s) => `<span class="pill url">${escapeHtml(s)}</span>`).join(" ");
+        const meEu = SF.state.user && SF.state.user.username === u.username;
+        return `<tr>
         <td>
           <div class="col-nome">${escapeHtml(u.nome || u.username)}</div>
           <div class="col-slug">${escapeHtml(u.username)}</div>
@@ -230,10 +221,8 @@
           <button class="danger" data-act="toggle" data-id="${u.id}" ${meEu ? `disabled title="${escapeHtml(t("admin.cantDeactivateSelf"))}"` : ""}>${escapeHtml(u.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`;
+      },
     });
-    html += `</tbody>`;
-    tbl.innerHTML = html;
-    bindRowActions(tbl, "usuarios");
   }
 
   /* ---------- Row actions ---------- */
@@ -293,7 +282,7 @@
     document.getElementById("modal-form").innerHTML = `
       <div class="form-field">
         <label>${escapeHtml(t("admin.pwd.newPass"))}</label>
-        <input name="senha" type="password" required minlength="8" autocomplete="new-password">
+        <input name="senha" type="password" required minlength="${PASSWORD_MIN_LEN}" autocomplete="new-password">
         <div class="field-hint">${escapeHtml(t("admin.pwd.hint"))}</div>
       </div>
     `;
@@ -490,7 +479,7 @@
       ${r ? "" : `
       <div class="form-field">
         <label>${escapeHtml(t("admin.f.senhaInicial"))}</label>
-        <input name="senha" type="password" required minlength="8">
+        <input name="senha" type="password" required minlength="${PASSWORD_MIN_LEN}">
         <div class="field-hint">${escapeHtml(t("admin.f.senhaHint"))}</div>
       </div>`}
       <div class="form-field">
@@ -528,7 +517,7 @@
     try {
       if (mode === "password") {
         const senha = form.querySelector("[name='senha']").value;
-        if (!senha || senha.length < 8) throw new Error(t("admin.pwd.tooShort"));
+        if (!senha || senha.length < PASSWORD_MIN_LEN) throw new Error(t("admin.pwd.tooShort"));
         await api("POST", `/api/admin/usuarios/${record.id}/password`, { senha });
       } else {
         const body = collectForm(entity, form, record);
