@@ -5,7 +5,7 @@ Plataforma centralizadora dos apps internos da SuperFrio e Icestar. POC do CSC: 
 ## Stack
 
 - **Backend:** FastAPI + SQLite (single-file, WAL) + bcrypt + JWT
-- **Frontend:** HTML único + JS vanilla + CSS (Nunito via Google Fonts), sem build step
+- **Frontend:** HTML único + JS vanilla + CSS (Montserrat via Google Fonts), sem build step
 - **Deploy:** Docker (Linux container), volume persistente para o `.db`
 
 ## Como rodar
@@ -51,6 +51,8 @@ Troque/desative essas senhas pela tela **Administração** assim que entrar em p
 |---|---|---|
 | `SUPERFRIO_JWT_SECRET` | `dev-secret-change-me` | Segredo HS256 dos tokens. **Trocar em produção.** |
 | `SUPERFRIO_DB_PATH` | `data/portal.db` (local) / `/app/data/portal.db` (container) | Caminho do SQLite |
+| `SUPERFRIO_ENV` | `dev` | Em `prod`, o startup falha se o `JWT_SECRET` continuar no default |
+| `SUPERFRIO_FRAME_SRC` | `'self' https:` | Origens permitidas em `<iframe>` (CSP). Restrinja às URLs reais dos apps em produção |
 
 ## Estrutura
 
@@ -66,11 +68,12 @@ backend/                # FastAPI app
     admin.py            # CRUD apps/seções/roles/usuários (require_admin)
 frontend/               # HTML único + CSS + JS vanilla
   index.html            # login + portal + admin (toggle via classe .hidden)
-  css/styles.css        # paleta SuperFrio (--sf-dark #295494, Nunito)
+  css/styles.css        # identidade IceStar | SuperFrio (Montserrat, tema claro)
   js/
     app.js              # login, portal, helpers (window.SF)
     admin.js            # tela admin (tabs + tabelas + modais)
-  img/superfrio-logo.jpg
+    i18n.js             # i18n PT/ES (window.SF.i18n), sem dependência
+  img/                  # logos IceStar | SuperFrio + favicon
 data/                   # gitignored, contém portal.db em runtime
 Dockerfile              # python:3.12-slim + uvicorn em 0.0.0.0:8000
 docker-compose.yml      # porta 8000 + volume data + env

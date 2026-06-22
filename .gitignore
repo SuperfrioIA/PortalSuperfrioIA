@@ -19,4 +19,11 @@ data/
 .DS_Store
 Thumbs.db
 
-guia_publicacao_rede.md
+# Documentação interna (mantida local, fora do GitHub)
+docs/
+
+# Mapas mentais / vault Obsidian
+obsidian-mapa-projeto/
+
+# Cache de testes
+.pytest_cache/

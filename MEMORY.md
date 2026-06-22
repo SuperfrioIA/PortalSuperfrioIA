@@ -5,7 +5,7 @@ Documento de transferência para retomar este projeto em outro chat.
 > **Estado atual (2026-06-09):** código da POC **completo e blindado**. Lotes 1–4
 > (backend, frontend, admin CRUD, Docker) + Lote 5 (i18n PT/ES + identidade IceStar |
 > SuperFrio tema claro) + **auditoria de segurança** inteira (todos os itens
-> crítico/alto/médio resolvidos — ver [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.md)).
+> crítico/alto/médio resolvidos — ver [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md)).
 > Falta **executar** o deploy real na VM (HTTPS, JWT_SECRET prod, firewall).
 > **Próximo lote decidido (2026-06-09):** migrar SQLite → **Postgres na própria VM** (servidor em
 > container, um database por app, via SQLAlchemy) **antes** do Degrau 2 — ver "Direção do banco" em
@@ -183,7 +183,7 @@ Dois eixos entregues após a POC base: internacionalização e troca completa da
 
 ## Auditoria de Segurança — CONCLUÍDA (2026-05-29)
 
-Auditoria completa documentada em [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.md). Modelo de ameaça: atacante já dentro da rede interna. **3 críticos + 4 altos + 4 médios resolvidos e validados por smoke test**; 2 baixos deferidos com justificativa.
+Auditoria completa documentada em [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md). Modelo de ameaça: atacante já dentro da rede interna. **3 críticos + 4 altos + 4 médios resolvidos e validados por smoke test**; 2 baixos deferidos com justificativa.
 
 **Correções que mudaram o código (não esquecer ao retomar):**
 - `backend/limiter.py` — **novo**: instância única do `Limiter` (slowapi). Login limitado a `5/minute` por IP (429 na 6ª).
@@ -200,12 +200,12 @@ Auditoria completa documentada em [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.m
 
 ---
 
-## Documentos de apoio na raiz
+## Documentos de apoio (em docs/, fora do git)
 
-- [AUDITORIA_SEGURANCA.md](AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
-- [ROADMAP_EVOLUCAO.md](ROADMAP_EVOLUCAO.md) — 5 degraus pós-POC (esforço × valor). Ordem prática: 1 (URLs bonitas/proxy) → 2 (auditoria de cliques) sem depender de TI; 3 (SSO Entra) em paralelo com a Infra; 4 (SQL Server) sob demanda; 5 (HA) só se um app virar crítico.
-- [GUIA_PUBLICACAO_REDE.md](GUIA_PUBLICACAO_REDE.md) — receita de publicação na rede + proxy reverso (Caddy) pronta pra colar.
-- [HUB_VS_PADROES_INDUSTRIA.md](HUB_VS_PADROES_INDUSTRIA.md) — comparativo do Hub frente às práticas de grandes empresas.
+- [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
+- [ROADMAP_EVOLUCAO.md](docs/ROADMAP_EVOLUCAO.md) — 5 degraus pós-POC (esforço × valor). Ordem prática: 1 (URLs bonitas/proxy) → 2 (auditoria de cliques) sem depender de TI; 3 (SSO Entra) em paralelo com a Infra; 4 (SQL Server) sob demanda; 5 (HA) só se um app virar crítico.
+- [GUIA_PUBLICACAO_REDE.md](docs/GUIA_PUBLICACAO_REDE.md) — receita de publicação na rede + proxy reverso (Caddy) pronta pra colar.
+- [HUB_VS_PADROES_INDUSTRIA.md](docs/HUB_VS_PADROES_INDUSTRIA.md) — comparativo do Hub frente às práticas de grandes empresas.
 - [README.md](README.md) — stack, modos de rodar, usuários seed, env vars, deploy.
 
 ---
@@ -253,12 +253,13 @@ SuperfrioIA/
 ├── build.ps1              # docker compose build/up; flags -NoCache/-Down/-Reset/-Logs
 ├── requirements.txt       # inclui slowapi==0.1.9
 ├── .gitignore
-├── README.md
-├── AUDITORIA_SEGURANCA.md
-├── ROADMAP_EVOLUCAO.md
-├── GUIA_PUBLICACAO_REDE.md
-├── HUB_VS_PADROES_INDUSTRIA.md
-└── MEMORY.md              # este arquivo
+├── README.md              # versionado — porta de entrada do repo
+├── MEMORY.md              # este arquivo — versionado (doc autoritativo de retomada)
+└── docs/                  # gitignored — documentação interna (não vai pro GitHub)
+    ├── AUDITORIA_SEGURANCA.md
+    ├── ROADMAP_EVOLUCAO.md
+    ├── GUIA_PUBLICACAO_REDE.md
+    └── HUB_VS_PADROES_INDUSTRIA.md
 ```
 
 ---
