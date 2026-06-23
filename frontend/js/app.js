@@ -87,6 +87,8 @@ window.SF.logout = logout;
 
 /* ---------- Render ---------- */
 function showLogin() {
+  const boot = document.getElementById("boot-hide-login");
+  if (boot) boot.remove();
   document.getElementById("screen-login").classList.remove("hidden");
   document.getElementById("screen-portal").classList.add("hidden");
   document.getElementById("login-error").classList.remove("visible");
