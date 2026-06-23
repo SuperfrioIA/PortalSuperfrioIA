@@ -31,6 +31,14 @@
       opts.body = JSON.stringify(body);
     }
     const res = await fetch(path, opts);
+    if (res.status === 401) {
+      // Sessão expirou enquanto a tela ficou ociosa: volta pro login em vez
+      // de travar com um erro críptico de "credenciais inválidas".
+      if (SF.logout) SF.logout(t("session.expired"));
+      const e = new Error(t("session.expired"));
+      e.sessionExpired = true;
+      throw e;
+    }
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
       try {
@@ -66,6 +74,7 @@
       await loadAll();
       renderActiveTab();
     } catch (e) {
+      if (e.sessionExpired) return;
       alert(t("admin.err.load") + e.message);
     }
   }
@@ -240,6 +249,7 @@
             await loadAll();
             renderActiveTab();
           } catch (e) {
+            if (e.sessionExpired) return;
             alert(t("admin.err.generic") + e.message);
           }
         } else if (act === "passwd") {
@@ -531,6 +541,7 @@
       await loadAll();
       renderActiveTab();
     } catch (e) {
+      if (e.sessionExpired) return;
       errEl.textContent = e.message || t("admin.save.fail");
     } finally {
       saveBtn.disabled = false;

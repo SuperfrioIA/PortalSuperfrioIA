@@ -69,7 +69,7 @@ async function fetchHome() {
   return res.json();
 }
 
-function logout() {
+function logout(reason) {
   state.token = null;
   state.user = null;
   state.secoes = [];
@@ -77,7 +77,13 @@ function logout() {
   state.query = "";
   localStorage.removeItem(TOKEN_KEY);
   showLogin();
+  if (reason) {
+    const err = document.getElementById("login-error");
+    err.textContent = reason;
+    err.classList.add("visible");
+  }
 }
+window.SF.logout = logout;
 
 /* ---------- Render ---------- */
 function showLogin() {
