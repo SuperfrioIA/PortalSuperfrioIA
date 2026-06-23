@@ -356,6 +356,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-back-portal").addEventListener("click", () => {
     document.getElementById("screen-admin").classList.add("hidden");
     document.getElementById("screen-portal").classList.remove("hidden");
+    // Rebusca /api/portal/home pra refletir apps editados/criados no admin
+    // (sem isso o menu mostra o state.secoes velho até dar F5).
+    loadPortal();
   });
 
   /* "Todos os apps" no topo da sidebar */
