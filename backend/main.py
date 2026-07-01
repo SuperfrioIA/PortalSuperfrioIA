@@ -50,14 +50,35 @@ _CSP = (
     "form-action 'self'"
 )
 
+# CSP próprio da apresentação estática em /governanca/ (documento de TI, conteúdo
+# confiável): permite os <script> inline da apresentação + Google Fonts, e deixa ela
+# ser embutida no overlay do portal (frame-ancestors 'self'). NÃO afrouxa o resto do hub.
+_CSP_GOVERNANCA = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'self'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
-    response.headers.setdefault("Content-Security-Policy", _CSP)
+    # A apresentação em /governanca/ tem CSP próprio (script inline) e pode ser embutida
+    # same-origin no overlay do portal; o resto do hub mantém o CSP estrito e X-Frame DENY.
+    if request.url.path.startswith("/governanca"):
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Content-Security-Policy"] = _CSP_GOVERNANCA
+    else:
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Content-Security-Policy", _CSP)
     return response
 
 

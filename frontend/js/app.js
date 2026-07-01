@@ -265,9 +265,12 @@ function findAppBySlug(slug) {
 
 function openApp(app) {
   if (app.tipo_acesso === "iframe") {
+    const iframe = document.getElementById("iframe-content");
+    // App externo: sandbox restrito, SEM allow-same-origin (decisão da auditoria).
+    iframe.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox");
     document.getElementById("iframe-title").textContent = app.nome;
     document.getElementById("iframe-url").textContent = app.url;
-    document.getElementById("iframe-content").src = app.url;
+    iframe.src = app.url;
     document.getElementById("iframe-overlay").classList.add("visible");
   } else {
     window.open(app.url, "_blank", "noopener");
@@ -275,8 +278,22 @@ function openApp(app) {
 }
 
 function closeIframe() {
-  document.getElementById("iframe-overlay").classList.remove("visible");
+  document.getElementById("iframe-overlay").classList.remove("visible", "gov");
   document.getElementById("iframe-content").src = "about:blank";
+}
+
+/* Abre a apresentação "Governance TI" (estática em /governanca/) embutida no portal,
+   em tela cheia. Conteúdo próprio e confiável (same-origin): damos allow-same-origin
+   ao sandbox pra o iframe renderizar IDÊNTICO a abrir a página direto — assim as
+   animações .reveal (IntersectionObserver) e o canvas funcionam. Os apps externos
+   continuam com sandbox restrito (ver openApp). */
+function openGovernanca() {
+  const iframe = document.getElementById("iframe-content");
+  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+  document.getElementById("iframe-title").textContent = t("portal.nav.governanca");
+  document.getElementById("iframe-url").textContent = "";
+  iframe.src = "/governanca/";
+  document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
 }
 
 function escapeHtml(s) {
@@ -361,6 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-open-admin").addEventListener("click", () => {
     if (window.SF && window.SF.openAdmin) window.SF.openAdmin();
   });
+  document.getElementById("btn-open-governanca").addEventListener("click", openGovernanca);
   document.getElementById("btn-back-portal").addEventListener("click", () => {
     document.getElementById("screen-admin").classList.add("hidden");
     document.getElementById("screen-portal").classList.remove("hidden");
@@ -380,6 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* iframe overlay */
   document.getElementById("iframe-close").addEventListener("click", closeIframe);
+  document.getElementById("gov-close").addEventListener("click", closeIframe);
   document.getElementById("iframe-overlay").addEventListener("click", (ev) => {
     if (ev.target.id === "iframe-overlay") closeIframe();
   });
