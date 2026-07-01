@@ -619,6 +619,38 @@ body {
 .iframe-head button:hover { background: var(--err-bg); color: var(--err); border-color: rgba(214, 48, 49, 0.22); }
 .iframe-shell iframe { flex: 1; border: none; width: 100%; background: #fff; }
 
+/* Governance TI: apresentação em tela cheia REAL — sem moldura e sem faixa no topo,
+   pra ela ter 100% da altura. Fechar via × flutuante (ESC também fecha). */
+.iframe-overlay.gov { background: #050F24; }
+.iframe-overlay.gov .iframe-shell { margin: 0; border-radius: 0; box-shadow: none; }
+.iframe-overlay.gov .iframe-head { display: none; }
+
+.gov-close { display: none; }
+.iframe-overlay.gov .gov-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 95;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(5, 15, 36, 0.6);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+.iframe-overlay.gov .gov-close:hover {
+  background: var(--brand-amarelo);
+  color: var(--brand-azul-institucional);
+  border-color: var(--brand-amarelo);
+}
+
 @media (max-width: 880px) {
   .portal { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; flex-direction: row; align-items: center; padding: 12px 16px; flex-wrap: wrap; }
