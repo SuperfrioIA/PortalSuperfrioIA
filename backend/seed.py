@@ -1,7 +1,7 @@
 from sqlalchemy import insert, select, update
 
 from backend.auth import hash_password
-from backend.database import App, Role, Secao, Usuario, db, role_apps, usuario_roles
+from backend.database import App, Role, Secao, Usuario, db, init_db, role_apps, usuario_roles
 
 SECOES = [
     {
@@ -271,3 +271,12 @@ def seed_initial() -> None:
                         )
                     )
         # commit e close ficam a cargo do context manager db()
+
+
+if __name__ == "__main__":
+    # `python -m backend.seed` — usado no deploy pra (re)seedar um banco do zero
+    # (ex.: Postgres novo no Lote 2). init_db é idempotente; roda migrations até
+    # head antes de semear, então funciona mesmo standalone.
+    init_db()
+    seed_initial()
+    print("[seed] concluído.")
