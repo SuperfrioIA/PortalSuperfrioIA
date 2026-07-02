@@ -1,8 +1,8 @@
 """Infra dos testes do Hub SuperFrio.
 
 Banco isolado em arquivo temporário (SQLite real, não mock) — o env precisa
-ser definido ANTES de importar qualquer módulo do backend, pois `database.py`
-lê `SUPERFRIO_DB_PATH` no import.
+ser definido ANTES de importar qualquer módulo do backend, pois
+`core/database.py` lê `SUPERFRIO_DB_PATH` no import.
 """
 import os
 import tempfile
@@ -16,8 +16,8 @@ os.environ.setdefault("SUPERFRIO_ENV", "dev")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from backend.database import init_db  # noqa: E402
-from backend.limiter import limiter  # noqa: E402
+from backend.core.database import init_db  # noqa: E402
+from backend.core.limiter import limiter  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.seed import seed_initial  # noqa: E402
 

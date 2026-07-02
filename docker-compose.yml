@@ -12,6 +12,34 @@ services:
       SUPERFRIO_JWT_SECRET: ${SUPERFRIO_JWT_SECRET:-dev-secret-change-me}
       SUPERFRIO_ENV: ${SUPERFRIO_ENV:-dev}
       SUPERFRIO_DB_PATH: /app/data/portal.db
+      # Banco: sem DATABASE_URL no .env, cai no SQLite do volume ./data (rollback do Lote 2).
+      # Com DATABASE_URL=postgresql+psycopg://... aponta pro Postgres do service `db`.
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/portal.db}
     volumes:
       - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: superfrio-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hub}
+      POSTGRES_DB: ${POSTGRES_DB:-hub}
+      # Default só pra dev. Em prod, defina POSTGRES_PASSWORD forte no .env (fora do git).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hub-dev-pass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Sem `ports:` de propósito — o Postgres só é acessível pela rede interna do compose.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hub} -d ${POSTGRES_DB:-hub}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pgdata:

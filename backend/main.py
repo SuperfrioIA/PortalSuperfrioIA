@@ -8,10 +8,13 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from backend.database import init_db
-from backend.limiter import limiter
-from backend.routers import admin, auth, portal
+from backend.auth.router import router as auth_router
+from backend.core.database import init_db
+from backend.core.limiter import limiter
+from backend.portal.router import router as portal_router
+from backend.portal.router import router_admin as portal_admin_router
 from backend.seed import seed_initial
+from backend.usuarios.router import router_admin as usuarios_admin_router
 
 
 @asynccontextmanager
@@ -82,9 +85,10 @@ async def security_headers(request: Request, call_next) -> Response:
     return response
 
 
-app.include_router(auth.router)
-app.include_router(portal.router)
-app.include_router(admin.router)
+app.include_router(auth_router)
+app.include_router(portal_router)
+app.include_router(portal_admin_router)
+app.include_router(usuarios_admin_router)
 
 
 @app.get("/api/health")

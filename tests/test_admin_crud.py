@@ -6,8 +6,9 @@ criado no fim — assim o seed volta intacto para os outros arquivos de teste.
 Testes de toggle/patch operam SEMPRE em entidades criadas aqui, nunca no seed.
 """
 import pytest
+from sqlalchemy import text
 
-from backend.database import db
+from backend.core.database import db
 
 
 @pytest.fixture(autouse=True)
@@ -15,13 +16,13 @@ def _restore_db():
     """Snapshot dos ids antes; remove os criados depois (FK cascade cuida do resto)."""
     tabelas = ["secoes", "apps", "roles", "usuarios"]
     with db() as conn:
-        antes = {t: {r["id"] for r in conn.execute(f"SELECT id FROM {t}")} for t in tabelas}
+        antes = {t: set(conn.execute(text(f"SELECT id FROM {t}")).scalars()) for t in tabelas}
     yield
     with db() as conn:
         for t in ["usuarios", "roles", "apps", "secoes"]:
-            atuais = {r["id"] for r in conn.execute(f"SELECT id FROM {t}")}
+            atuais = set(conn.execute(text(f"SELECT id FROM {t}")).scalars())
             for novo in atuais - antes[t]:
-                conn.execute(f"DELETE FROM {t} WHERE id = ?", (novo,))
+                conn.execute(text(f"DELETE FROM {t} WHERE id = :id"), {"id": novo})
 
 
 def _id_por_slug(client, headers, recurso, slug):
