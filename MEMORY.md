@@ -11,6 +11,18 @@ Documento de transferência para retomar este projeto em outro chat.
 > container, um database por app, via SQLAlchemy) **antes** do Degrau 2 — ver "Direção do banco" em
 > Decisões travadas. **Bloqueio:** a VM ainda não tem Docker configurado (espera só o *deploy*; o
 > código/migração dá pra fazer e testar local).
+>
+> **Direção de arquitetura (revisada 2026-07-01):** a plataforma será um **Modular Monolith** —
+> **um único projeto, um processo, um banco**, organizado em **módulos** (Core, Auth, Usuários,
+> Dashboard, Contas, FAT, Estoque, Inventário, IA, APIs), cada um dono das próprias telas,
+> services, models, migrations, permissões e testes. Módulos conversam por **chamada de função
+> via service** (nunca SELECT na tabela do outro), não por HTTP. **Um único banco** com separação
+> lógica por **schema** (Postgres) ou prefixo (`tb_financeiro_...` no SQLite). Login/permissões/
+> auditoria centralizados nos módulos `Auth`/`Usuários`. **Não** é monólito bagunçado (Protheus)
+> **nem** microsserviços desde já ("Monolith First" do Fowler) — extrair um módulo pra serviço
+> fica pro futuro, se algum crescer o suficiente. **Substitui** a direção SCS de 2026-06-26.
+> Decisão completa, ressalvas e referências em
+> [ARQUITETURA_PLATAFORMA.md](docs/ARQUITETURA_PLATAFORMA.md).
 
 ---
 
@@ -31,7 +43,19 @@ Não é só um portal — é a vitrine da governança: cadastro de apps, permiss
 - **Cadastro de apps**: seed inicial + CRUD admin pela UI (Lote 3). Demonstra governança ao vivo.
 - **Renomeação de campos do Protheus**: nunca. Etapas internas podem ser renomeadas.
 - **Migrations**: ALTER TABLE no startup, idempotente (`INSERT OR IGNORE` no seed).
-- **Direção do banco (decidido 2026-06-09, ainda NÃO executado):** sair do SQLite e ir pra um **servidor Postgres na PRÓPRIA VM** (container no mesmo `docker-compose`), com **um database por app** (`hub`, `contas`...) — isolamento lógico + backup central num lugar só. **Não depende da TI.** Migração via **SQLAlchemy** (hoje é `sqlite3` na mão, ~47 pontos) pra que trocar depois pro SQL Server corporativo (cenário 3) seja só `connection string`. Esse lote vem **antes** do Degrau 2 (auditoria de cliques nasce já no Postgres). O código/migração dá pra fazer e testar **local** com Docker; só o deploy aguarda a VM.
+- **Direção do banco (decidido 2026-06-09, ainda NÃO executado):** sair do SQLite e ir pra um **servidor Postgres na PRÓPRIA VM** (container no mesmo `docker-compose`), com **um único banco** e separação lógica por **schema** por domínio (`hub`, `financeiro`, `estoque`...) — **revisado 2026-07-01**: era "um database por app", mas com a plataforma virando **Modular Monolith** passou a ser **um banco só**, isolamento por schema (Postgres) ou prefixo de tabela (`tb_financeiro_...` no SQLite). Backup central num lugar só. **Não depende da TI.** Migração via **SQLAlchemy** (hoje é `sqlite3` na mão, ~47 pontos) pra que trocar depois pro SQL Server corporativo (cenário 3) seja só `connection string`. Esse lote vem **antes** do Degrau 2 (auditoria de cliques nasce já no Postgres). O código/migração dá pra fazer e testar **local** com Docker; só o deploy aguarda a VM.
+- **Direção de plataforma (revisada 2026-07-01):** a plataforma é um **Modular Monolith** — um
+  projeto/processo/banco único, dividido em **módulos** com fronteira clara. Módulos compartilham
+  Auth, permissões, auditoria e infra, mas cada um é dono do seu domínio (telas/services/models/
+  migrations/permissões/testes). **Regra de ouro:** um módulo nunca lê a tabela/model de outro
+  direto — só via **service** do módulo dono (`Financeiro → EstoqueService → ProdutoRepository`).
+  A fronteira é lógica (não forçada pelo compilador) → exige disciplina + code review + (futuro)
+  teste de arquitetura. Resolve a troca de dados por **chamada de função**, sem HTTP/token entre
+  serviços. **Substitui** a direção SCS/apps-separados de 2026-06-26 (que fica como degrau seguinte:
+  extrair módulo→serviço se justificar). Apps já existentes (Contas Recorrentes) são **absorvidos
+  como módulo** — tem custo (remover auth próprio, mover tabelas). Login único mira o **Entra** no
+  futuro (Degrau 3), via módulo `Auth`. Detalhes/refs em
+  [ARQUITETURA_PLATAFORMA.md](docs/ARQUITETURA_PLATAFORMA.md).
 
 ---
 
@@ -206,6 +230,8 @@ Auditoria completa documentada em [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURA
 - [ROADMAP_EVOLUCAO.md](docs/ROADMAP_EVOLUCAO.md) — 5 degraus pós-POC (esforço × valor). Ordem prática: 1 (URLs bonitas/proxy) → 2 (auditoria de cliques) sem depender de TI; 3 (SSO Entra) em paralelo com a Infra; 4 (SQL Server) sob demanda; 5 (HA) só se um app virar crítico.
 - [GUIA_PUBLICACAO_REDE.md](docs/GUIA_PUBLICACAO_REDE.md) — receita de publicação na rede + proxy reverso (Caddy) pronta pra colar.
 - [HUB_VS_PADROES_INDUSTRIA.md](docs/HUB_VS_PADROES_INDUSTRIA.md) — comparativo do Hub frente às práticas de grandes empresas.
+- [ARQUITETURA_PLATAFORMA.md](docs/ARQUITETURA_PLATAFORMA.md) — decisão (2026-06-26) de virar plataforma centralizadora: modelo Self-Contained Systems + identidade central, como os sisteminhas compartilham dados, com referências da indústria.
+- [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md) — o *como* da migração pro Modular Monolith, em lotes (1 SQLAlchemy+Alembic → 2 Postgres → 3 modularização → 4 absorver Contas), com playbook de deploy e quando usar Fable × Opus.
 - [README.md](README.md) — stack, modos de rodar, usuários seed, env vars, deploy.
 
 ---
