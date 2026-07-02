@@ -1,5 +1,6 @@
 import jwt
 import pytest
+from sqlalchemy import text
 
 from backend.auth import (
     authenticate_user,
@@ -59,12 +60,12 @@ def test_authenticate_user_inexistente():
 
 def test_authenticate_user_inativo():
     with db() as conn:
-        conn.execute("UPDATE usuarios SET ativo = 0 WHERE username = ?", ("operador.armazem",))
+        conn.execute(text("UPDATE usuarios SET ativo = 0 WHERE username = :u"), {"u": "operador.armazem"})
     try:
         assert authenticate_user("operador.armazem", "armazem123") is None
     finally:
         with db() as conn:
-            conn.execute("UPDATE usuarios SET ativo = 1 WHERE username = ?", ("operador.armazem",))
+            conn.execute(text("UPDATE usuarios SET ativo = 1 WHERE username = :u"), {"u": "operador.armazem"})
 
 
 # ---------- endpoint: login / me ----------
@@ -105,14 +106,14 @@ def test_token_revogado_por_token_version(client, analista_headers):
     assert client.get("/api/auth/me", headers=analista_headers).status_code == 200
     with db() as conn:
         conn.execute(
-            "UPDATE usuarios SET token_version = token_version + 1 WHERE username = ?",
-            ("analista.bo",),
+            text("UPDATE usuarios SET token_version = token_version + 1 WHERE username = :u"),
+            {"u": "analista.bo"},
         )
     try:
         assert client.get("/api/auth/me", headers=analista_headers).status_code == 401
     finally:
         with db() as conn:
             conn.execute(
-                "UPDATE usuarios SET token_version = token_version - 1 WHERE username = ?",
-                ("analista.bo",),
+                text("UPDATE usuarios SET token_version = token_version - 1 WHERE username = :u"),
+                {"u": "analista.bo"},
             )

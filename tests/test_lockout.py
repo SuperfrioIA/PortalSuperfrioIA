@@ -1,11 +1,13 @@
 """Lockout: auto-bloqueio do admin + rate limit de força bruta no login."""
+from sqlalchemy import text
+
 from backend.database import db
 from backend.limiter import limiter
 
 
 def _admin_id() -> int:
     with db() as conn:
-        return conn.execute("SELECT id FROM usuarios WHERE username = 'admin'").fetchone()["id"]
+        return conn.execute(text("SELECT id FROM usuarios WHERE username = 'admin'")).scalar_one()
 
 
 # ---------- auto-lockout do admin ----------

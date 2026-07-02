@@ -1,5 +1,7 @@
+from sqlalchemy import insert, select, update
+
 from backend.auth import hash_password
-from backend.database import db
+from backend.database import App, Role, Secao, Usuario, db, role_apps, usuario_roles
 
 SECOES = [
     {
@@ -168,95 +170,104 @@ USUARIOS = [
 
 
 def seed_initial() -> None:
-    """Seed idempotente — INSERT OR IGNORE em todas as tabelas."""
-    with db() as conn:
+    """Seed idempotente — insere só o que não existe (equivalente ao INSERT OR IGNORE)."""
+    with db() as session:
         for s in SECOES:
-            conn.execute(
-                """INSERT OR IGNORE INTO secoes
-                   (slug, nome, nome_es, descricao, descricao_es, icone, ordem)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    s["slug"], s["nome"], s["nome_es"],
-                    s["descricao"], s["descricao_es"], s["icone"], s["ordem"],
-                ),
-            )
+            existe = session.execute(
+                select(Secao.id).where(Secao.slug == s["slug"])
+            ).scalar_one_or_none()
+            if existe is None:
+                session.execute(
+                    insert(Secao).values(
+                        slug=s["slug"], nome=s["nome"], nome_es=s["nome_es"],
+                        descricao=s["descricao"], descricao_es=s["descricao_es"],
+                        icone=s["icone"], ordem=s["ordem"],
+                    )
+                )
             # Backfill ES em bancos já seedados (não sobrescreve edição do admin)
-            conn.execute(
-                """UPDATE secoes SET nome_es = ?, descricao_es = ?
-                   WHERE slug = ? AND nome_es IS NULL""",
-                (s["nome_es"], s["descricao_es"], s["slug"]),
+            session.execute(
+                update(Secao)
+                .where(Secao.slug == s["slug"], Secao.nome_es.is_(None))
+                .values(nome_es=s["nome_es"], descricao_es=s["descricao_es"])
             )
 
         secao_id = {
-            row["slug"]: row["id"]
-            for row in conn.execute("SELECT id, slug FROM secoes").fetchall()
+            slug: id_ for id_, slug in session.execute(select(Secao.id, Secao.slug))
         }
 
         for a in APPS:
-            conn.execute(
-                """INSERT OR IGNORE INTO apps
-                   (slug, nome, nome_es, descricao, descricao_es, icone, secao_id,
-                    url, tipo_acesso, badge, ordem)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    a["slug"], a["nome"], a["nome_es"], a["descricao"], a["descricao_es"],
-                    a["icone"], secao_id[a["secao"]], a["url"], a["tipo_acesso"],
-                    a["badge"], a["ordem"],
-                ),
-            )
+            existe = session.execute(
+                select(App.id).where(App.slug == a["slug"])
+            ).scalar_one_or_none()
+            if existe is None:
+                session.execute(
+                    insert(App).values(
+                        slug=a["slug"], nome=a["nome"], nome_es=a["nome_es"],
+                        descricao=a["descricao"], descricao_es=a["descricao_es"],
+                        icone=a["icone"], secao_id=secao_id[a["secao"]],
+                        url=a["url"], tipo_acesso=a["tipo_acesso"],
+                        badge=a["badge"], ordem=a["ordem"],
+                    )
+                )
             # Backfill ES em bancos já seedados (não sobrescreve edição do admin)
-            conn.execute(
-                """UPDATE apps SET nome_es = ?, descricao_es = ?
-                   WHERE slug = ? AND nome_es IS NULL""",
-                (a["nome_es"], a["descricao_es"], a["slug"]),
+            session.execute(
+                update(App)
+                .where(App.slug == a["slug"], App.nome_es.is_(None))
+                .values(nome_es=a["nome_es"], descricao_es=a["descricao_es"])
             )
 
         app_id = {
-            row["slug"]: row["id"]
-            for row in conn.execute("SELECT id, slug FROM apps").fetchall()
+            slug: id_ for id_, slug in session.execute(select(App.id, App.slug))
         }
 
         for r in ROLES:
-            conn.execute(
-                """INSERT OR IGNORE INTO roles (slug, nome, descricao)
-                   VALUES (?, ?, ?)""",
-                (r["slug"], r["nome"], r["descricao"]),
-            )
-            role_id = conn.execute(
-                "SELECT id FROM roles WHERE slug = ?", (r["slug"],)
-            ).fetchone()["id"]
+            role_id = session.execute(
+                select(Role.id).where(Role.slug == r["slug"])
+            ).scalar_one_or_none()
+            if role_id is None:
+                role_id = session.execute(
+                    insert(Role).values(slug=r["slug"], nome=r["nome"], descricao=r["descricao"])
+                ).inserted_primary_key[0]
             for app_slug in r["apps"]:
-                conn.execute(
-                    "INSERT OR IGNORE INTO role_apps (role_id, app_id) VALUES (?, ?)",
-                    (role_id, app_id[app_slug]),
-                )
+                vinculo = session.execute(
+                    select(role_apps.c.role_id).where(
+                        role_apps.c.role_id == role_id,
+                        role_apps.c.app_id == app_id[app_slug],
+                    )
+                ).fetchone()
+                if vinculo is None:
+                    session.execute(
+                        insert(role_apps).values(role_id=role_id, app_id=app_id[app_slug])
+                    )
 
         role_id_map = {
-            row["slug"]: row["id"]
-            for row in conn.execute("SELECT id, slug FROM roles").fetchall()
+            slug: id_ for id_, slug in session.execute(select(Role.id, Role.slug))
         }
 
         for u in USUARIOS:
-            existing = conn.execute(
-                "SELECT id FROM usuarios WHERE username = ?", (u["username"],)
-            ).fetchone()
-            if existing:
-                user_id = existing["id"]
-            else:
-                cursor = conn.execute(
-                    """INSERT INTO usuarios
-                       (username, nome, email, password_hash, auth_source, is_admin)
-                       VALUES (?, ?, ?, ?, 'local', ?)""",
-                    (
-                        u["username"], u["nome"], u["email"],
-                        hash_password(u["senha"]), u["is_admin"],
-                    ),
-                )
-                user_id = cursor.lastrowid
+            user_id = session.execute(
+                select(Usuario.id).where(Usuario.username == u["username"])
+            ).scalar_one_or_none()
+            if user_id is None:
+                user_id = session.execute(
+                    insert(Usuario).values(
+                        username=u["username"], nome=u["nome"], email=u["email"],
+                        password_hash=hash_password(u["senha"]),
+                        auth_source="local", is_admin=u["is_admin"],
+                    )
+                ).inserted_primary_key[0]
 
             for role_slug in u["roles"]:
-                conn.execute(
-                    "INSERT OR IGNORE INTO usuario_roles (usuario_id, role_id) VALUES (?, ?)",
-                    (user_id, role_id_map[role_slug]),
-                )
+                vinculo = session.execute(
+                    select(usuario_roles.c.usuario_id).where(
+                        usuario_roles.c.usuario_id == user_id,
+                        usuario_roles.c.role_id == role_id_map[role_slug],
+                    )
+                ).fetchone()
+                if vinculo is None:
+                    session.execute(
+                        insert(usuario_roles).values(
+                            usuario_id=user_id, role_id=role_id_map[role_slug]
+                        )
+                    )
         # commit e close ficam a cargo do context manager db()

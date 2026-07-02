@@ -1,38 +1,45 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 
 from backend.auth import get_current_user
-from backend.database import db
+from backend.database import App, Secao, db, role_apps, usuario_roles
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
 
 def _apps_permitidos(user: dict) -> list[dict]:
     """Retorna lista de apps que o usuário pode ver, com a seção embutida."""
-    with db() as conn:
+    cols = (
+        *App.__table__.c,
+        Secao.slug.label("secao_slug"),
+        Secao.nome.label("secao_nome"),
+        Secao.nome_es.label("secao_nome_es"),
+        Secao.icone.label("secao_icone"),
+        Secao.ordem.label("secao_ordem"),
+    )
+    with db() as session:
         if user.get("is_admin"):
-            rows = conn.execute(
-                """SELECT a.*, s.slug AS secao_slug, s.nome AS secao_nome,
-                          s.nome_es AS secao_nome_es,
-                          s.icone AS secao_icone, s.ordem AS secao_ordem
-                   FROM apps a
-                   JOIN secoes s ON s.id = a.secao_id
-                   WHERE a.ativo = 1 AND s.ativo = 1
-                   ORDER BY s.ordem, a.ordem, a.nome"""
-            ).fetchall()
+            stmt = (
+                select(*cols)
+                .join_from(App, Secao, Secao.id == App.secao_id)
+                .where(App.ativo == 1, Secao.ativo == 1)
+                .order_by(Secao.ordem, App.ordem, App.nome)
+            )
         else:
-            rows = conn.execute(
-                """SELECT DISTINCT a.*, s.slug AS secao_slug, s.nome AS secao_nome,
-                                   s.nome_es AS secao_nome_es,
-                                   s.icone AS secao_icone, s.ordem AS secao_ordem
-                   FROM apps a
-                   JOIN secoes s ON s.id = a.secao_id
-                   JOIN role_apps ra ON ra.app_id = a.id
-                   JOIN usuario_roles ur ON ur.role_id = ra.role_id
-                   WHERE ur.usuario_id = ?
-                     AND a.ativo = 1 AND s.ativo = 1
-                   ORDER BY s.ordem, a.ordem, a.nome""",
-                (user["id"],),
-            ).fetchall()
+            stmt = (
+                select(*cols)
+                .distinct()
+                .join_from(App, Secao, Secao.id == App.secao_id)
+                .join(role_apps, role_apps.c.app_id == App.id)
+                .join(usuario_roles, usuario_roles.c.role_id == role_apps.c.role_id)
+                .where(
+                    usuario_roles.c.usuario_id == user["id"],
+                    App.ativo == 1,
+                    Secao.ativo == 1,
+                )
+                .order_by(Secao.ordem, App.ordem, App.nome)
+            )
+        rows = session.execute(stmt).mappings().fetchall()
     return [dict(r) for r in rows]
 
 

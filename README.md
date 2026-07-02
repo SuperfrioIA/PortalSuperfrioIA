@@ -4,7 +4,7 @@ Plataforma centralizadora dos apps internos da SuperFrio e Icestar. POC do CSC: 
 
 ## Stack
 
-- **Backend:** FastAPI + SQLite (single-file, WAL) + bcrypt + JWT
+- **Backend:** FastAPI + SQLAlchemy + SQLite (single-file, WAL) + bcrypt + JWT; migrations com Alembic
 - **Frontend:** HTML único + JS vanilla + CSS (Montserrat via Google Fonts), sem build step
 - **Deploy:** Docker (Linux container), volume persistente para o `.db`
 
@@ -51,6 +51,7 @@ Troque/desative essas senhas pela tela **Administração** assim que entrar em p
 |---|---|---|
 | `SUPERFRIO_JWT_SECRET` | `dev-secret-change-me` | Segredo HS256 dos tokens. **Trocar em produção.** |
 | `SUPERFRIO_DB_PATH` | `data/portal.db` (local) / `/app/data/portal.db` (container) | Caminho do SQLite |
+| `DATABASE_URL` | `sqlite:///<SUPERFRIO_DB_PATH>` | Connection string SQLAlchemy. Definir só quando sair do SQLite (ex.: Postgres no Lote 2) |
 | `SUPERFRIO_ENV` | `dev` | Em `prod`, o startup falha se o `JWT_SECRET` continuar no default |
 | `SUPERFRIO_FRAME_SRC` | `'self' https:` | Origens permitidas em `<iframe>` (CSP). Restrinja às URLs reais dos apps em produção |
 | `HOST_PORT` | `8000` | Porta publicada na VM (host). Use outra se a 8000 estiver ocupada (ex.: `8001`) |
@@ -60,9 +61,10 @@ Troque/desative essas senhas pela tela **Administração** assim que entrar em p
 ```
 backend/                # FastAPI app
   main.py               # entrypoint, lifespan (init_db + seed), monta StaticFiles
-  database.py           # schema SQL, get_conn (WAL)
+  database.py           # engine/Session SQLAlchemy, models ORM, init_db (alembic upgrade head)
   auth.py               # bcrypt + JWT, authenticate_user (boundary AD)
   seed.py               # seed idempotente (2 seções, 7 apps, 3 roles, 3 usuários)
+  migrations/           # Alembic (env.py + versions/) — fonte da verdade do schema
   routers/
     auth.py             # /api/auth/login, /api/auth/me
     portal.py           # /api/portal/home (filtrado por permissão)
@@ -76,6 +78,7 @@ frontend/               # HTML único + CSS + JS vanilla
     i18n.js             # i18n PT/ES (window.SF.i18n), sem dependência
   img/                  # logos IceStar | SuperFrio + favicon
 data/                   # gitignored, contém portal.db em runtime
+alembic.ini             # config do Alembic pra uso via CLI (runtime não depende dele)
 Dockerfile              # python:3.12-slim + uvicorn em 0.0.0.0:8000
 docker-compose.yml      # porta 8000 + volume data + env
 run.ps1                 # dev local
@@ -113,4 +116,5 @@ Para mudar a porta no host, defina `HOST_PORT` no `.env` (ex.: `HOST_PORT=8001`)
 - **Slug é stable** — nunca editado depois de criado, mantém rastreabilidade
 - **Trace Protheus sagrado** — campos do ERP nunca são renomeados (não aplicável a esta POC, mas é regra da casa)
 - **Idempotência** — seed e init_db podem rodar 2x sem corromper estado
+- **Schema versionado** — migrations Alembic aplicadas no startup; banco pré-Alembic é carimbado (stamp) automaticamente, sem migração manual
 - **HTML único + JS vanilla** — sem build step, fácil de manter pelo time CSC

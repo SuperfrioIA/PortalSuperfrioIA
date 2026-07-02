@@ -7,10 +7,13 @@ Documento de transferência para retomar este projeto em outro chat.
 > SuperFrio tema claro) + **auditoria de segurança** inteira (todos os itens
 > crítico/alto/médio resolvidos — ver [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md)).
 > Falta **executar** o deploy real na VM (HTTPS, JWT_SECRET prod, firewall).
-> **Próximo lote decidido (2026-06-09):** migrar SQLite → **Postgres na própria VM** (servidor em
-> container, um database por app, via SQLAlchemy) **antes** do Degrau 2 — ver "Direção do banco" em
-> Decisões travadas. **Bloqueio:** a VM ainda não tem Docker configurado (espera só o *deploy*; o
-> código/migração dá pra fazer e testar local).
+>
+> **Migração da plataforma (2026-07-02): Lote 1 CONCLUÍDO** — acesso a dados 100% SQLAlchemy +
+> migrations Alembic, ainda em SQLite (comportamento idêntico; suíte de 56 testes + smoke em
+> uvicorn real verdes; banco legado recebe stamp automático no boot). Branch
+> `feat/migracao-lote1-sqlalchemy`. **Próximo: Lote 2 (Postgres na VM)** — com o Lote 1 pronto,
+> é quase só connection string. Ver [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md)
+> e a seção "Migração Plataforma — Lote 1" abaixo.
 >
 > **Direção de arquitetura (revisada 2026-07-01):** a plataforma será um **Modular Monolith** —
 > **um único projeto, um processo, um banco**, organizado em **módulos** (Core, Auth, Usuários,
@@ -42,7 +45,7 @@ Não é só um portal — é a vitrine da governança: cadastro de apps, permiss
 - **Linkagem dos apps**: campo `tipo_acesso` no cadastro (`url` ou `iframe`). Default `url`. Maria decide por app no Lote 3.
 - **Cadastro de apps**: seed inicial + CRUD admin pela UI (Lote 3). Demonstra governança ao vivo.
 - **Renomeação de campos do Protheus**: nunca. Etapas internas podem ser renomeadas.
-- **Migrations**: ALTER TABLE no startup, idempotente (`INSERT OR IGNORE` no seed).
+- **Migrations**: Alembic (`backend/migrations/`), aplicadas no startup (`alembic upgrade head` programático no `init_db`; banco pré-Alembic recebe `stamp` da baseline). Seed idempotente insere só o que falta. *(Substituiu o ALTER TABLE na mão + `INSERT OR IGNORE` no Lote 1 da migração, 2026-07-02.)*
 - **Direção do banco (decidido 2026-06-09, ainda NÃO executado):** sair do SQLite e ir pra um **servidor Postgres na PRÓPRIA VM** (container no mesmo `docker-compose`), com **um único banco** e separação lógica por **schema** por domínio (`hub`, `financeiro`, `estoque`...) — **revisado 2026-07-01**: era "um database por app", mas com a plataforma virando **Modular Monolith** passou a ser **um banco só**, isolamento por schema (Postgres) ou prefixo de tabela (`tb_financeiro_...` no SQLite). Backup central num lugar só. **Não depende da TI.** Migração via **SQLAlchemy** (hoje é `sqlite3` na mão, ~47 pontos) pra que trocar depois pro SQL Server corporativo (cenário 3) seja só `connection string`. Esse lote vem **antes** do Degrau 2 (auditoria de cliques nasce já no Postgres). O código/migração dá pra fazer e testar **local** com Docker; só o deploy aguarda a VM.
 - **Direção de plataforma (revisada 2026-07-01):** a plataforma é um **Modular Monolith** — um
   projeto/processo/banco único, dividido em **módulos** com fronteira clara. Módulos compartilham
@@ -224,6 +227,43 @@ Auditoria completa documentada em [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURA
 
 ---
 
+## Migração Plataforma — Lote 1 CONCLUÍDO (2026-07-02): SQLAlchemy + Alembic
+
+Primeiro lote do [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md): os ~74 pontos
+de `sqlite3` na mão viraram SQLAlchemy, e o schema passou a ser versionado por Alembic. **O banco
+continua SQLite** — trocar de banco (Lote 2) é só a `DATABASE_URL`. Comportamento externo idêntico
+(mesmos endpoints, mesmas respostas, mesmos erros).
+
+**O que mudou:**
+- `backend/database.py` — engine + `SessionLocal` + models ORM das 6 tabelas (`Usuario`, `Secao`,
+  `App`, `Role` + Tables `role_apps`/`usuario_roles`). `db()` agora rende uma Session (commit no
+  sucesso, rollback em erro — mesma semântica de antes). `DATABASE_URL` (env) com default
+  `sqlite:///<SUPERFRIO_DB_PATH>`. `ativo`/`is_admin` seguem **Integer 0/1** (respostas JSON
+  idênticas). `init_db()` = `alembic upgrade head` programático; **banco legado (sem
+  `alembic_version`) recebe `stamp` da baseline `0001`** — deploy em prod não precisa de comando
+  manual. `_now()` gera timestamp UTC no formato do `datetime('now')` (portável pro Postgres).
+- `backend/migrations/` — env.py (URL: attributes → ini → DATABASE_URL; `render_as_batch` p/
+  SQLite) + baseline `0001_schema_inicial.py` (schema completo, equivalente ao init_db antigo).
+  `alembic.ini` na raiz só pra CLI (`alembic revision --autogenerate` etc.); runtime não lê ele.
+- `backend/auth.py`, `seed.py`, `routers/portal.py`, `routers/admin.py` — queries reescritas em
+  SQLAlchemy (expression language + mappings). Seed trocou `INSERT OR IGNORE` (dialeto SQLite)
+  por check-then-insert portável. `_unique_or_409` captura `sqlalchemy.exc.IntegrityError`
+  (mensagens SQLite **e** Postgres).
+- Testes — mesma cobertura/semântica, SQL cru dos fixtures via `text()`. `test_infra.py` trocou
+  os testes de `_ensure_column` (aposentado) por: init_db idempotente + schema completo, e
+  **banco legado recebe stamp sem perder dados** (cenário do cutover em prod).
+- `requirements.txt` — `+ sqlalchemy==2.0.51`, `+ alembic==1.18.5`. `Dockerfile` — `COPY alembic.ini`.
+
+**Validado:** suíte pytest (56 testes) verde; smoke com uvicorn real em banco **novo** (health,
+login admin/operador, home filtrada, CRUD, 409, reset de senha invalidando token) e em banco
+**legado pré-Alembic** (stamp `0001`, seed completa o que falta, usuário legado preserva login).
+Build Docker não foi validado local (sem Docker nesta máquina) — validar na VM.
+
+**Deploy (playbook do plano):** `git pull` + `docker compose up -d --build`. Nada manual de
+migration — o startup carimba/aplica sozinho. Rollback = voltar o commit e rebuild (schema não mudou).
+
+---
+
 ## Documentos de apoio (em docs/, fora do git)
 
 - [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
@@ -253,10 +293,11 @@ SuperfrioIA/
 ├── backend/
 │   ├── __init__.py
 │   ├── main.py            # FastAPI + security headers/CSP + slowapi handler + mount estáticos
-│   ├── database.py        # schema + ALTER idempotente (token_version, nome_es/descricao_es)
+│   ├── database.py        # engine/Session SQLAlchemy + models ORM + init_db (alembic upgrade)
 │   ├── auth.py            # bcrypt/JWT, boundary AD, check de secret em prod, validação tv
 │   ├── seed.py            # seções/apps/roles/usuários + ES (idempotente)
 │   ├── limiter.py         # instância única do Limiter (slowapi) — rate limit do login
+│   ├── migrations/        # Alembic: env.py + versions/0001_schema_inicial.py (fonte da verdade)
 │   └── routers/
 │       ├── __init__.py
 │       ├── auth.py        # login (5/min) + me
@@ -271,6 +312,7 @@ SuperfrioIA/
 │   │   ├── admin.js       # tela admin (CRUD apps/secoes/roles/usuarios)
 │   │   └── i18n.js        # i18n PT/ES (window.SF.i18n), sem dependência
 │   └── img/               # icestar-superfrio-logo.png, *-white.png, favicon.png (+ superfrio-logo.jpg legado)
+├── alembic.ini            # config Alembic pra CLI (runtime não depende dele)
 ├── Dockerfile             # python:3.12-slim, user uid 1000, entrypoint
 ├── entrypoint.sh          # chown do volume + gosu app (drop de root)
 ├── docker-compose.yml     # porta 8000, volume data, SUPERFRIO_ENV/JWT_SECRET
@@ -326,6 +368,6 @@ Acesso: http://127.0.0.1:8000
 
 Cole o seguinte na primeira mensagem:
 
-> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD), 4 (Docker + smoke test) e 5 (i18n PT/ES + identidade IceStar | SuperFrio) estão concluídos, mais a auditoria de segurança (`AUDITORIA_SEGURANCA.md`). Resta executar o deploy real em VM Windows (HTTPS, JWT_SECRET de produção, firewall) — ou seguir o `ROADMAP_EVOLUCAO.md` (Degrau 2 = auditoria de cliques é o próximo de maior valor). Ative o modo SuperFrio (`/superfrio`) antes.
+> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD), 4 (Docker + smoke test) e 5 (i18n PT/ES + identidade IceStar | SuperFrio) estão concluídos, mais a auditoria de segurança (`AUDITORIA_SEGURANCA.md`). Da migração pra Modular Monolith (`docs/PLANO_MIGRACAO_PLATAFORMA.md`), o Lote 1 (SQLAlchemy + Alembic, ainda SQLite) está concluído — o próximo é o Lote 2 (Postgres na VM). Ative o modo SuperFrio (`/superfrio`) antes.
 
 Stack: FastAPI + SQLite (WAL) + HTML/CSS/JS vanilla (sem build) + Docker. Ambiente: Windows + PowerShell.
