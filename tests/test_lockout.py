@@ -1,8 +1,8 @@
 """Lockout: auto-bloqueio do admin + rate limit de força bruta no login."""
 from sqlalchemy import text
 
-from backend.database import db
-from backend.limiter import limiter
+from backend.core.database import db
+from backend.core.limiter import limiter
 
 
 def _admin_id() -> int:

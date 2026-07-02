@@ -2,14 +2,14 @@ import jwt
 import pytest
 from sqlalchemy import text
 
-from backend.auth import (
+from backend.auth.service import (
     authenticate_user,
     create_access_token,
     decode_token,
     hash_password,
     verify_password,
 )
-from backend.database import db
+from backend.core.database import db
 
 
 # ---------- unidade: hashing ----------

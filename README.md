@@ -59,16 +59,26 @@ Troque/desative essas senhas pela tela **Administração** assim que entrar em p
 ## Estrutura
 
 ```
-backend/                # FastAPI app
-  main.py               # entrypoint, lifespan (init_db + seed), monta StaticFiles
-  database.py           # engine/Session SQLAlchemy, models ORM, init_db (alembic upgrade head)
-  auth.py               # bcrypt + JWT, authenticate_user (boundary AD)
-  seed.py               # seed idempotente (2 seções, 7 apps, 3 roles, 3 usuários)
-  migrations/           # Alembic (env.py + versions/) — fonte da verdade do schema
-  routers/
-    auth.py             # /api/auth/login, /api/auth/me
-    portal.py           # /api/portal/home (filtrado por permissão)
-    admin.py            # CRUD apps/seções/roles/usuários (require_admin)
+backend/                # FastAPI app — Modular Monolith (um app, um processo, um banco)
+  main.py               # entrypoint, lifespan (init_db + seed), monta routers + estáticos
+  seed.py               # orquestra o seed dos módulos (python -m backend.seed)
+  core/                 # infra compartilhada (sem regra de negócio)
+    database.py         # engine/Session SQLAlchemy, Base, init_db (alembic upgrade head)
+    http.py             # helpers HTTP genéricos (404 por id, 409 de UNIQUE, slug, PATCH parcial)
+    limiter.py          # rate limit do login (slowapi)
+    migrations/         # Alembic (env.py + versions/) — fonte da verdade do schema
+  auth/                 # senhas/JWT + boundary de autenticação (futuro SSO Entra)
+    service.py          # bcrypt, JWT, authenticate_user
+    dependencies.py     # get_current_user, require_admin (usados por todos os routers)
+    router.py           # /api/auth/login, /api/auth/me
+  usuarios/             # contas, roles e vínculos de permissão
+    models.py           # Usuario, Role, usuario_roles, role_apps
+    service.py          # por_username, app_ids_permitidos (interface p/ outros módulos)
+    router.py           # /api/admin/roles*, /api/admin/usuarios*
+  portal/               # catálogo de seções/apps + home
+    models.py           # Secao, App
+    service.py          # apps_ativos_com_secao, app_ids_por_slug (interface p/ outros módulos)
+    router.py           # /api/portal/home, /api/admin/secoes*, /api/admin/apps*
 frontend/               # HTML único + CSS + JS vanilla
   index.html            # login + portal + admin (toggle via classe .hidden)
   css/styles.css        # identidade IceStar | SuperFrio (Montserrat, tema claro)
@@ -117,4 +127,5 @@ Para mudar a porta no host, defina `HOST_PORT` no `.env` (ex.: `HOST_PORT=8001`)
 - **Trace Protheus sagrado** — campos do ERP nunca são renomeados (não aplicável a esta POC, mas é regra da casa)
 - **Idempotência** — seed e init_db podem rodar 2x sem corromper estado
 - **Schema versionado** — migrations Alembic aplicadas no startup; banco pré-Alembic é carimbado (stamp) automaticamente, sem migração manual
+- **Modular Monolith** — módulos (`core`/`auth`/`usuarios`/`portal`) com fronteira lógica: um módulo nunca lê a tabela de outro, só chama o `service.py` do dono. Módulo novo nasce como pacote próprio e registra os models no `env.py` das migrations
 - **HTML único + JS vanilla** — sem build step, fácil de manter pelo time CSC

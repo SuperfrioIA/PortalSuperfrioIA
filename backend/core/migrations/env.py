@@ -1,13 +1,16 @@
-"""Ambiente Alembic do Hub.
+"""Ambiente Alembic da plataforma.
 
 A URL vem, nesta ordem: attributes (init_db em runtime) → alembic.ini →
-backend.database.DATABASE_URL (uso via CLI sem nada configurado). O metadata
-dos models é o alvo do autogenerate.
+backend.core.database.DATABASE_URL (uso via CLI sem nada configurado).
+O metadata agrega os models de TODOS os módulos — importe aqui o models.py
+de cada módulo novo, senão o autogenerate não enxerga as tabelas dele.
 """
 from alembic import context
 from sqlalchemy import create_engine
 
-from backend.database import DATABASE_URL, Base
+from backend.core.database import DATABASE_URL, Base
+import backend.portal.models  # noqa: F401 — registra Secao/App no metadata
+import backend.usuarios.models  # noqa: F401 — registra Usuario/Role/vinculos
 
 config = context.config
 target_metadata = Base.metadata

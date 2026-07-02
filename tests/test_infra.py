@@ -13,7 +13,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-from backend.database import BASELINE_REVISION, db, engine, init_db
+from backend.core.database import BASELINE_REVISION, db, engine, init_db
 from backend.seed import seed_initial
 
 

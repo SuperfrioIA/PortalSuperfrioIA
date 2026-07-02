@@ -8,12 +8,16 @@ Documento de transferência para retomar este projeto em outro chat.
 > crítico/alto/médio resolvidos — ver [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md)).
 > Falta **executar** o deploy real na VM (HTTPS, JWT_SECRET prod, firewall).
 >
-> **Migração da plataforma (2026-07-02): Lote 1 CONCLUÍDO** — acesso a dados 100% SQLAlchemy +
-> migrations Alembic, ainda em SQLite (comportamento idêntico; suíte de 56 testes + smoke em
-> uvicorn real verdes; banco legado recebe stamp automático no boot). Branch
-> `feat/migracao-lote1-sqlalchemy`. **Próximo: Lote 2 (Postgres na VM)** — com o Lote 1 pronto,
-> é quase só connection string. Ver [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md)
-> e a seção "Migração Plataforma — Lote 1" abaixo.
+> **Migração da plataforma (2026-07-02): Lotes 1, 2 e 3 CONCLUÍDOS.**
+> Lote 1 = SQLAlchemy + Alembic (branch `feat/migracao-lote1-sqlalchemy`); Lote 2 = Postgres no
+> compose (feito em outro chat, commitado na mesma branch); Lote 3 = modularização
+> core/auth/usuarios/portal (branch `feat/migracao-lote3-modularizacao`). Suíte de 56 testes +
+> smoke em uvicorn real (banco novo e legado) verdes em todos.
+> **Lote 4 (absorver Contas Recorrentes) foi CANCELADO em 2026-07-02 por decisão da Maria — o
+> Contas fica como app separado.** A migração encerra no Lote 3; próximos candidatos: deploy dos
+> lotes na VM e a auditoria de cliques (Degrau 2, trilha paralela do plano).
+> Ver [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md) e as seções "Migração
+> Plataforma" abaixo.
 >
 > **Direção de arquitetura (revisada 2026-07-01):** a plataforma será um **Modular Monolith** —
 > **um único projeto, um processo, um banco**, organizado em **módulos** (Core, Auth, Usuários,
@@ -264,6 +268,54 @@ migration — o startup carimba/aplica sozinho. Rollback = voltar o commit e reb
 
 ---
 
+## Migração Plataforma — Lote 2 CONCLUÍDO (2026-07-02): Postgres no compose
+
+Feito em outro chat; commitado aqui (`164a88b`). Service `db` (postgres:16-alpine) no
+`docker-compose.yml`, **sem porta publicada** (só rede interna do compose), healthcheck +
+`depends_on: service_healthy`. `DATABASE_URL` com **fallback pro SQLite** do volume `./data` —
+rollback = comentar a linha no `.env`. Seed standalone (`python -m backend.seed`) pro banco novo.
+`+psycopg[binary]==3.2.13`; `.env.example` documenta as variáveis. Código de acesso a dados não
+mudou (graças ao Lote 1). **Deploy na VM ainda pendente** (subir compose com `.env` de prod).
+
+---
+
+## Migração Plataforma — Lote 3 CONCLUÍDO (2026-07-02): Modularização
+
+O backend virou **Modular Monolith de verdade**: pacotes `core/`, `auth/`, `usuarios/` e
+`portal/`, cada um dono dos próprios models/service/router/seed. **Zero mudança de comportamento**
+(mesmos endpoints/respostas/erros — suíte e smoke idênticos aos dos lotes anteriores).
+
+**Estrutura e donos:**
+- `core/` — infra sem domínio: `database.py` (engine/Session/Base/init_db), `http.py` (helpers
+  genéricos: `row_or_404`, `unique_or_409`, `ensure_slug`, `apply_update`, `ids_por_slug_or_400`
+  — recebem o model do chamador), `limiter.py`, `migrations/` (chain Alembic única e central).
+- `auth/` — sem tabela própria: `service.py` (bcrypt/JWT/`authenticate_user`),
+  `dependencies.py` (`get_current_user`/`require_admin`), `router.py` (login/me). Consulta
+  usuário via `usuarios.service`.
+- `usuarios/` — dono de `usuarios`, `roles`, `usuario_roles`, `role_apps` (o grant role→app é do
+  domínio de permissões). `service.py`: `por_username`, `app_ids_permitidos`.
+- `portal/` — dono de `secoes` e `apps`. `service.py`: `apps_ativos_com_secao`,
+  `app_ids_por_slug`, `slugs_por_app_ids`.
+
+**Regra de ouro aplicada** (documentada em `backend/__init__.py`): módulo nunca lê tabela de
+outro — a home do portal pede os app_ids permitidos ao `usuarios.service`; roles resolvem slugs
+de apps via `portal.service`. Routers orquestram services de vários módulos. A fronteira é
+lógica — cobrar em code review.
+
+**Decisões práticas do lote:**
+- Migrations **continuam centrais** em `core/migrations` (chain única) em vez de por módulo —
+  simplicidade > pureza; módulo novo só importa seu `models.py` no `env.py`.
+- URLs dos endpoints **não mudaram** (`/api/admin/...` continua valendo pro frontend inteiro).
+- Seed: `backend/seed.py` virou orquestrador (portal → usuarios, mesma transação);
+  `python -m backend.seed` do Lote 2 continua funcionando.
+- Frontend intocado.
+
+**Módulo novo (ex.: auditoria de cliques, IA, inventário):** criar pacote com
+`models.py`/`service.py`/`router.py`, importar models no `env.py` das migrations, incluir router
+no `main.py`, migration Alembic pro schema. Nasce dentro da plataforma — custo de integração zero.
+
+---
+
 ## Documentos de apoio (em docs/, fora do git)
 
 - [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
@@ -278,6 +330,7 @@ migration — o startup carimba/aplica sozinho. Rollback = voltar o commit e reb
 
 ## Fora de escopo (confirmado)
 
+- **Absorver o Contas Recorrentes como módulo (era o Lote 4 do plano de migração) — CANCELADO em 2026-07-02 por decisão da Maria.** O Contas segue como app separado, com banco e auth próprios. Se a decisão mudar, o plano do lote está no PLANO_MIGRACAO_PLATAFORMA.md (e o contas.db foi declarado re-seedável, o que simplificaria).
 - LDAP/AD real — só o stub fica pronto (`authenticate_user` com branch por `auth_source`). **Virou Degrau 3 (SSO Entra) no ROADMAP_EVOLUCAO.md.**
 - Auditoria de cliques (quem abriu qual app quando). **Virou Degrau 2 no ROADMAP — é o próximo lote candidato (alto valor, não depende de TI).**
 - Multi-tenant, dashboard de uso
@@ -290,19 +343,14 @@ migration — o startup carimba/aplica sozinho. Rollback = voltar o commit e reb
 
 ```
 SuperfrioIA/
-├── backend/
-│   ├── __init__.py
-│   ├── main.py            # FastAPI + security headers/CSP + slowapi handler + mount estáticos
-│   ├── database.py        # engine/Session SQLAlchemy + models ORM + init_db (alembic upgrade)
-│   ├── auth.py            # bcrypt/JWT, boundary AD, check de secret em prod, validação tv
-│   ├── seed.py            # seções/apps/roles/usuários + ES (idempotente)
-│   ├── limiter.py         # instância única do Limiter (slowapi) — rate limit do login
-│   ├── migrations/        # Alembic: env.py + versions/0001_schema_inicial.py (fonte da verdade)
-│   └── routers/
-│       ├── __init__.py
-│       ├── auth.py        # login (5/min) + me
-│       ├── portal.py      # /home filtrado por permissão, devolve campos _es
-│       └── admin.py       # CRUD + toggle + reset senha + _check_url
+├── backend/               # Modular Monolith — regra de ouro em backend/__init__.py
+│   ├── __init__.py        # docstring com o mapa dos módulos + regra de ouro
+│   ├── main.py            # FastAPI + security headers/CSP + monta routers dos módulos
+│   ├── seed.py            # orquestrador do seed (portal → usuarios); python -m backend.seed
+│   ├── core/              # infra: database.py, http.py, limiter.py, migrations/ (Alembic)
+│   ├── auth/              # service.py (bcrypt/JWT/boundary AD), dependencies.py, router.py
+│   ├── usuarios/          # models (Usuario/Role/vínculos), service, seed, router (/api/admin)
+│   └── portal/            # models (Secao/App), service, seed, router (/api/portal + /api/admin)
 ├── data/                  # gitignored, contém portal.db em runtime
 ├── frontend/
 │   ├── index.html         # login + portal + admin (single page), atributos data-i18n
@@ -368,6 +416,6 @@ Acesso: http://127.0.0.1:8000
 
 Cole o seguinte na primeira mensagem:
 
-> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD), 4 (Docker + smoke test) e 5 (i18n PT/ES + identidade IceStar | SuperFrio) estão concluídos, mais a auditoria de segurança (`AUDITORIA_SEGURANCA.md`). Da migração pra Modular Monolith (`docs/PLANO_MIGRACAO_PLATAFORMA.md`), o Lote 1 (SQLAlchemy + Alembic, ainda SQLite) está concluído — o próximo é o Lote 2 (Postgres na VM). Ative o modo SuperFrio (`/superfrio`) antes.
+> Estou retomando a POC do **Hub SuperFrio & Icestar** (plataforma centralizadora de apps internos da SuperFrio e Icestar). Leia o `MEMORY.md` no diretório raiz pra entender o contexto. Lotes 1 (backend + auth), 2 (frontend), 3 (admin CRUD), 4 (Docker + smoke test) e 5 (i18n PT/ES + identidade IceStar | SuperFrio) estão concluídos, mais a auditoria de segurança (`AUDITORIA_SEGURANCA.md`). Da migração pra Modular Monolith (`docs/PLANO_MIGRACAO_PLATAFORMA.md`), os Lotes 1 (SQLAlchemy + Alembic), 2 (Postgres no compose) e 3 (modularização core/auth/usuarios/portal) estão concluídos; o Lote 4 (absorver Contas Recorrentes) foi cancelado. Falta o deploy dos lotes na VM. Ative o modo SuperFrio (`/superfrio`) antes.
 
 Stack: FastAPI + SQLite (WAL) + HTML/CSS/JS vanilla (sem build) + Docker. Ambiente: Windows + PowerShell.

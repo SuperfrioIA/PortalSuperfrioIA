@@ -8,7 +8,7 @@ Testes de toggle/patch operam SEMPRE em entidades criadas aqui, nunca no seed.
 import pytest
 from sqlalchemy import text
 
-from backend.database import db
+from backend.core.database import db
 
 
 @pytest.fixture(autouse=True)

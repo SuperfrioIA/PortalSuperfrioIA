@@ -3,11 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
 
-from backend.database import Usuario, db
+from backend.core.database import db
+from backend.usuarios import service as usuarios_service
 
 _DEFAULT_SECRET = "dev-secret-change-me"
 JWT_SECRET = os.environ.get("SUPERFRIO_JWT_SECRET", _DEFAULT_SECRET)
@@ -26,8 +24,6 @@ if JWT_SECRET == _DEFAULT_SECRET:
         "OK para dev; em produção defina SUPERFRIO_ENV=prod para forçar.",
         file=sys.stderr,
     )
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def hash_password(plain: str) -> str:
@@ -59,58 +55,20 @@ def decode_token(token: str) -> dict:
 
 def authenticate_user(username: str, password: str) -> dict | None:
     """
-    Boundary de autenticação. Hoje valida contra SQLite local.
+    Boundary de autenticação. Hoje valida senha local (via módulo Usuários).
     Quando vier integração AD/LDAP, este é o único ponto que muda:
     branch por `auth_source` ou bind LDAP direto antes do fallback local.
     """
     with db() as session:
-        row = session.execute(
-            select(Usuario.__table__).where(Usuario.username == username, Usuario.ativo == 1)
-        ).mappings().fetchone()
+        user = usuarios_service.por_username(session, username)
 
-    if not row:
+    if not user:
         return None
 
-    if row["auth_source"] == "local":
-        if not row["password_hash"] or not verify_password(password, row["password_hash"]):
+    if user["auth_source"] == "local":
+        if not user["password_hash"] or not verify_password(password, user["password_hash"]):
             return None
-        return dict(row)
+        return user
 
     # auth_source == 'ad' → placeholder, ainda não implementado
     return None
-
-
-def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    creds_exc = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Credenciais inválidas",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = decode_token(token)
-        username = payload.get("sub")
-        tv_token = payload.get("tv")
-        if not username or tv_token is None:
-            raise creds_exc
-    except jwt.PyJWTError:
-        raise creds_exc
-
-    with db() as session:
-        row = session.execute(
-            select(Usuario.__table__).where(Usuario.username == username, Usuario.ativo == 1)
-        ).mappings().fetchone()
-
-    if not row:
-        raise creds_exc
-    if row["token_version"] != tv_token:
-        raise creds_exc
-    return dict(row)
-
-
-def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    if not user.get("is_admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso restrito a administradores",
-        )
-    return user
