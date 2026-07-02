@@ -324,6 +324,7 @@ no `main.py`, migration Alembic pro schema. Nasce dentro da plataforma — custo
 - [HUB_VS_PADROES_INDUSTRIA.md](docs/HUB_VS_PADROES_INDUSTRIA.md) — comparativo do Hub frente às práticas de grandes empresas.
 - [ARQUITETURA_PLATAFORMA.md](docs/ARQUITETURA_PLATAFORMA.md) — decisão (2026-06-26) de virar plataforma centralizadora: modelo Self-Contained Systems + identidade central, como os sisteminhas compartilham dados, com referências da indústria.
 - [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md) — o *como* da migração pro Modular Monolith, em lotes (1 SQLAlchemy+Alembic → 2 Postgres → 3 modularização → 4 absorver Contas), com playbook de deploy e quando usar Fable × Opus.
+- [APOSTILA_ARQUITETURA.html](docs/APOSTILA_ARQUITETURA.html) — apostila de estudo da Maria (2026-07-02): arquitetura pós-Lotes 1–3 explicada do zero, APIs, critérios plataforma × base própria, GitHub/CI/CODEOWNERS, método de trabalho, glossário e trilha de estudo. Versão mapa mental em `docs/obsidian/Arquitetura Plataforma/` (+ zip).
 - [README.md](README.md) — stack, modos de rodar, usuários seed, env vars, deploy.
 
 ---
