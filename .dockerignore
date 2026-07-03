@@ -22,5 +22,6 @@ data/
 
 MEMORY.md
 *.md
+!CHANGELOG.md
 run.ps1
 build.ps1
