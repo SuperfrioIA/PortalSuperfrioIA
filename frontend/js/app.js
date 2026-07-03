@@ -309,6 +309,158 @@ function escapeHtml(s) {
 window.SF.escapeHtml = escapeHtml;
 window.SF.iconSvg = iconSvg;
 
+/* ---------- Changelog ---------- */
+function _clFormatDate(iso) {
+  const meses = ["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+  const [, m, d] = iso.split("-").map(Number);
+  return d + " " + meses[m - 1];
+}
+
+async function openChangelog() {
+  document.getElementById("screen-portal").classList.add("hidden");
+  document.getElementById("screen-changelog").classList.remove("hidden");
+  await renderChangelog();
+}
+
+function closeChangelog() {
+  document.getElementById("screen-changelog").classList.add("hidden");
+  document.getElementById("screen-portal").classList.remove("hidden");
+}
+
+async function renderChangelog() {
+  const eventsEl = document.getElementById("cl-events");
+  eventsEl.innerHTML = '<div class="changelog-axis-line" id="cl-axis-line"></div><div class="loading" style="align-self:center;margin:80px auto"><div class="spinner"></div></div>';
+
+  try {
+    const res = await fetch(`${API}/api/changelog`);
+    if (!res.ok) throw new Error();
+    const items = await res.json();
+
+    eventsEl.innerHTML = '<div class="changelog-axis-line" id="cl-axis-line"></div>';
+
+    if (!items.length) {
+      eventsEl.innerHTML += `<div class="empty-state" style="align-self:center;margin:auto"><p>${escapeHtml(t("changelog.empty"))}</p></div>`;
+      return;
+    }
+
+    items.forEach((item, i) => {
+      const el = document.createElement("div");
+      el.className = `cl-event type-${escapeHtml(item.type)}`;
+      el.style.setProperty("--i", i);
+      el.dataset.type = item.type;
+      const tag = item.type === "feature" ? t("changelog.tag.feature") : t("changelog.tag.fix");
+      const date = _clFormatDate(item.date);
+      const descHtml = item.desc ? `<p class="cl-card-desc">${escapeHtml(item.desc)}</p>` : "";
+      const cardInner = `
+        <span class="cl-card-tag">${escapeHtml(tag)}</span>
+        <p class="cl-card-title">${escapeHtml(item.title)}</p>
+        ${descHtml}`;
+      el.innerHTML = `
+        <div class="cl-top-slot"><div class="cl-card" tabindex="0">${cardInner}</div></div>
+        <div class="cl-conn cl-conn-top"></div>
+        <div class="cl-axis-node"><span class="cl-dot"></span><span class="cl-date-badge">${escapeHtml(date)}</span></div>
+        <div class="cl-conn cl-conn-bottom"></div>
+        <div class="cl-bottom-slot"><div class="cl-card" tabindex="0">${cardInner}</div></div>`;
+      eventsEl.appendChild(el);
+    });
+
+    // marcador hoje
+    const todayEl = document.createElement("div");
+    todayEl.className = "cl-today-marker";
+    todayEl.innerHTML = `<div></div><div class="cl-conn"></div>
+      <div class="cl-today-node"><span class="cl-today-dot"></span><span class="cl-today-label">${escapeHtml(t("changelog.today"))}</span></div>
+      <div class="cl-conn"></div><div></div>`;
+    eventsEl.appendChild(todayEl);
+
+    // contadores nos chips
+    const counts = { feature: 0, fix: 0 };
+    items.forEach((it) => { if (counts[it.type] !== undefined) counts[it.type]++; });
+    document.getElementById("cl-count-all").textContent = items.length;
+    document.getElementById("cl-count-feature").textContent = counts.feature;
+    document.getElementById("cl-count-fix").textContent = counts.fix;
+
+    // reset filtro ativo
+    document.querySelectorAll(".changelog-chip").forEach((c) => c.classList.remove("active"));
+    const activeChip = document.querySelector(".changelog-chip[data-filter='all']");
+    if (activeChip) activeChip.classList.add("active");
+
+    // animar eixo
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const ax = document.getElementById("cl-axis-line");
+      if (ax) ax.classList.add("grown");
+    }));
+
+  } catch (_e) {
+    eventsEl.innerHTML = `<div class="empty-state" style="align-self:center;margin:auto"><p>${escapeHtml(t("changelog.err"))}</p></div>`;
+  }
+}
+
+/* ---------- Sistemas ---------- */
+async function openSistemas() {
+  document.getElementById("screen-portal").classList.add("hidden");
+  document.getElementById("screen-sistemas").classList.remove("hidden");
+  await renderSistemas();
+}
+
+function closeSistemas() {
+  document.getElementById("screen-sistemas").classList.add("hidden");
+  document.getElementById("screen-portal").classList.remove("hidden");
+}
+
+async function renderSistemas() {
+  const eventsEl = document.getElementById("si-events");
+  eventsEl.innerHTML = '<div class="sistemas-axis-line" id="si-axis-line"></div><div class="loading" style="align-self:center;margin:80px auto"><div class="spinner"></div></div>';
+
+  try {
+    const res = await fetch(`${API}/api/portal/sistemas`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) throw new Error();
+    const items = await res.json();
+
+    eventsEl.innerHTML = '<div class="sistemas-axis-line" id="si-axis-line"></div>';
+
+    if (!items.length) {
+      eventsEl.innerHTML += '<div class="empty-state" style="align-self:center;margin:auto"><p>Nenhum sistema cadastrado.</p></div>';
+      return;
+    }
+
+    items.forEach((item, i) => {
+      const el = document.createElement("div");
+      // Armazém fica acima do eixo, backoffice abaixo; outras seções alternam por índice.
+      const pos = item.secao_slug === "armazem" ? "type-feature"
+                : item.secao_slug === "backoffice" ? "type-fix"
+                : i % 2 === 0 ? "type-feature" : "type-fix";
+      el.className = `cl-event ${pos}`;
+      el.style.setProperty("--i", i);
+      const date = _clFormatDate((item.criado_em || "").slice(0, 10));
+      const descHtml = item.descricao ? `<p class="cl-card-desc">${escapeHtml(item.descricao)}</p>` : "";
+      const badgeHtml = item.badge
+        ? ` <span class="cl-card-badge-pill">${escapeHtml(item.badge)}</span>`
+        : "";
+      const cardInner = `
+        <span class="cl-card-tag">${escapeHtml(item.secao)}</span>${badgeHtml}
+        <p class="cl-card-title">${escapeHtml(item.nome)}</p>
+        ${descHtml}`;
+      el.innerHTML = `
+        <div class="cl-top-slot"><div class="cl-card" tabindex="0">${cardInner}</div></div>
+        <div class="cl-conn cl-conn-top"></div>
+        <div class="cl-axis-node"><span class="cl-dot"></span><span class="cl-date-badge">${escapeHtml(date)}</span></div>
+        <div class="cl-conn cl-conn-bottom"></div>
+        <div class="cl-bottom-slot"><div class="cl-card" tabindex="0">${cardInner}</div></div>`;
+      eventsEl.appendChild(el);
+    });
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const ax = document.getElementById("si-axis-line");
+      if (ax) ax.classList.add("grown");
+    }));
+  } catch (_e) {
+    eventsEl.innerHTML = '<div class="empty-state" style="align-self:center;margin:auto"><p>Erro ao carregar sistemas.</p></div>';
+  }
+}
+
 /* ---------- Bootstrap ---------- */
 async function loadPortal() {
   try {
@@ -372,6 +524,12 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSidebar();
     renderActiveSecao();
     renderContent();
+    if (!document.getElementById("screen-changelog").classList.contains("hidden")) {
+      renderChangelog();
+    }
+    if (!document.getElementById("screen-sistemas").classList.contains("hidden")) {
+      renderSistemas();
+    }
   });
 
   /* Abrir/voltar admin (handlers vivem em admin.js) */
@@ -379,6 +537,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.SF && window.SF.openAdmin) window.SF.openAdmin();
   });
   document.getElementById("btn-open-governanca").addEventListener("click", openGovernanca);
+  document.getElementById("btn-open-changelog").addEventListener("click", openChangelog);
+  document.getElementById("btn-back-from-changelog").addEventListener("click", closeChangelog);
+  document.getElementById("btn-open-sistemas").addEventListener("click", openSistemas);
+  document.getElementById("btn-back-from-sistemas").addEventListener("click", closeSistemas);
   document.getElementById("btn-back-portal").addEventListener("click", () => {
     document.getElementById("screen-admin").classList.add("hidden");
     document.getElementById("screen-portal").classList.remove("hidden");

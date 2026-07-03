@@ -1,4 +1,5 @@
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -94,6 +95,50 @@ app.include_router(usuarios_admin_router)
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+_VERSION_RE = re.compile(r"^## \[(.+?)\]\s*[—–\-]+\s*(.+)$", re.MULTILINE)
+_SECTION_RE = re.compile(r"^### (.+)$", re.MULTILINE)
+_ITEM_RE = re.compile(r"^- (.+)$", re.MULTILINE)
+_SECTION_TYPE: dict[str, str] = {
+    "Adicionado": "feature",
+    "Corrigido": "fix",
+    "Segurança": "fix",
+    "Alterado": "feature",
+}
+
+
+@app.get("/api/changelog")
+def get_changelog():
+    changelog_path = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
+    if not changelog_path.exists():
+        return []
+    content = changelog_path.read_text(encoding="utf-8")
+    events: list[dict] = []
+    ver_matches = list(_VERSION_RE.finditer(content))
+    for i, vm in enumerate(ver_matches):
+        date_str = vm.group(2).strip()
+        start = vm.end()
+        end = ver_matches[i + 1].start() if i + 1 < len(ver_matches) else len(content)
+        block = content[start:end]
+        sec_matches = list(_SECTION_RE.finditer(block))
+        for j, sm in enumerate(sec_matches):
+            event_type = _SECTION_TYPE.get(sm.group(1), "feature")
+            sec_start = sm.end()
+            sec_end = sec_matches[j + 1].start() if j + 1 < len(sec_matches) else len(block)
+            for m in _ITEM_RE.finditer(block[sec_start:sec_end]):
+                text = m.group(1)
+                if " — " in text:
+                    title, desc = text.split(" — ", 1)
+                else:
+                    title, desc = text, ""
+                events.append({
+                    "date": date_str,
+                    "type": event_type,
+                    "title": title.strip(),
+                    "desc": desc.strip(),
+                })
+    return events
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"

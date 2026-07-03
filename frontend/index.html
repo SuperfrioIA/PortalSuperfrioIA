@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20260701gov5">
-<script src="js/boot.js?v=20260701gov5"></script>
+<link rel="stylesheet" href="css/styles.css?v=20260702cl1">
+<script src="js/boot.js?v=20260702cl1"></script>
 </head>
 <body>
 
@@ -72,6 +72,16 @@
       <span data-i18n="portal.nav.governanca">Governance TI</span>
     </button>
 
+    <button class="sidebar-link" id="btn-open-changelog">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      <span data-i18n="portal.nav.changelog">Novidades</span>
+    </button>
+
+    <button class="sidebar-link" id="btn-open-sistemas">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+      <span>Sistemas</span>
+    </button>
+
     <div class="sidebar-section-label" data-i18n="portal.sections.label">Seções</div>
     <div id="sidebar-secoes"></div>
 
@@ -112,6 +122,81 @@
     <div id="content">
       <div class="loading"><div class="spinner"></div></div>
     </div>
+  </main>
+</div>
+
+<!-- ============ CHANGELOG ============ -->
+<div id="screen-changelog" class="changelog-screen hidden">
+  <header class="changelog-hero">
+    <div class="changelog-hero-top">
+      <button class="back-link cl-back" id="btn-back-from-changelog">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        <span data-i18n="changelog.back">Voltar ao hub</span>
+      </button>
+      <img class="changelog-logo" src="img/icestar-superfrio-logo-white.png" alt="IceStar | SuperFrio">
+    </div>
+    <div class="changelog-hero-inner">
+      <div class="changelog-hero-text">
+        <p class="changelog-eyebrow" data-i18n="changelog.eyebrow">Portal SuperFrio &amp; Icestar</p>
+        <h1 data-i18n="changelog.title">Novidades</h1>
+        <p class="changelog-subtitle-p" data-i18n="changelog.subtitle">Melhorias e correções do Portal SuperFrio &amp; Icestar.</p>
+      </div>
+      <div class="changelog-chips">
+        <button class="changelog-chip active" data-filter="all">
+          <span class="changelog-chip-dot"></span>
+          <span data-i18n="changelog.filter.all">Tudo</span>
+          <span class="changelog-chip-count" id="cl-count-all">0</span>
+        </button>
+        <button class="changelog-chip changelog-chip--feature" data-filter="feature">
+          <span class="changelog-chip-dot"></span>
+          <span data-i18n="changelog.filter.feature">Melhorias</span>
+          <span class="changelog-chip-count" id="cl-count-feature">0</span>
+        </button>
+        <button class="changelog-chip changelog-chip--fix" data-filter="fix">
+          <span class="changelog-chip-dot"></span>
+          <span data-i18n="changelog.filter.fix">Correções</span>
+          <span class="changelog-chip-count" id="cl-count-fix">0</span>
+        </button>
+      </div>
+    </div>
+    <svg class="changelog-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path fill="#EEF3FA" d="M0,24L80,20C160,16,320,8,480,10.7C640,13,800,27,960,29.3C1120,32,1280,21,1360,16L1440,11L1440,40L0,40Z"/></svg>
+  </header>
+  <main class="changelog-timeline-wrap">
+    <div class="changelog-scroll" id="cl-scroll">
+      <div class="changelog-events" id="cl-events">
+        <div class="changelog-axis-line" id="cl-axis-line"></div>
+      </div>
+    </div>
+    <p class="changelog-hint" data-i18n="changelog.hint">↔ arraste para ver a linha do tempo inteira · acima = melhorias, abaixo = correções</p>
+  </main>
+</div>
+
+<!-- ============ SISTEMAS ============ -->
+<div id="screen-sistemas" class="sistemas-screen hidden">
+  <header class="sistemas-hero">
+    <div class="sistemas-hero-top">
+      <button class="back-link si-back" id="btn-back-from-sistemas">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        <span>Voltar ao hub</span>
+      </button>
+      <img class="sistemas-logo" src="img/icestar-superfrio-logo-white.png" alt="IceStar | SuperFrio">
+    </div>
+    <div class="sistemas-hero-inner">
+      <div class="sistemas-hero-text">
+        <p class="sistemas-eyebrow">Portal SuperFrio &amp; Icestar</p>
+        <h1>Sistemas</h1>
+        <p class="sistemas-subtitle-p">Apps e ferramentas disponíveis na plataforma — o que chegou e quando.</p>
+      </div>
+    </div>
+    <svg class="sistemas-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path fill="#EEF3FA" d="M0,24L80,20C160,16,320,8,480,10.7C640,13,800,27,960,29.3C1120,32,1280,21,1360,16L1440,11L1440,40L0,40Z"/></svg>
+  </header>
+  <main class="sistemas-timeline-wrap">
+    <div class="sistemas-scroll" id="si-scroll">
+      <div class="sistemas-events" id="si-events">
+        <div class="sistemas-axis-line" id="si-axis-line"></div>
+      </div>
+    </div>
+    <p class="sistemas-hint">↔ arraste para ver a linha do tempo inteira · acima = Armazém, abaixo = Backoffice</p>
   </main>
 </div>
 
@@ -206,8 +291,8 @@
   </div>
 </div>
 
-<script src="js/i18n.js?v=20260701gov5"></script>
-<script src="js/app.js?v=20260701gov5"></script>
-<script src="js/admin.js?v=20260701gov5"></script>
+<script src="js/i18n.js?v=20260702cl1"></script>
+<script src="js/app.js?v=20260702cl1"></script>
+<script src="js/admin.js?v=20260702cl1"></script>
 </body>
 </html>

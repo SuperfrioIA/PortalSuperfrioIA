@@ -22,6 +22,9 @@ Thumbs.db
 # Documentação interna (mantida local, fora do GitHub)
 docs/
 
+# Base de conhecimento consolidada (mantida local, fora do GitHub)
+knowledge-base/
+
 # Mapas mentais / vault Obsidian
 obsidian-mapa-projeto/
 

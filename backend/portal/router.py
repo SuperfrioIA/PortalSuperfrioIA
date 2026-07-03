@@ -22,6 +22,35 @@ router = APIRouter(prefix="/api/portal", tags=["portal"])
 router_admin = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
+# ============ Sistemas (timeline de apps adicionados ao portal) ============
+
+@router.get("/sistemas")
+def sistemas(user: dict = Depends(get_current_user)):
+    """Lista de apps ativos ordenada por data de criação — base da timeline pública."""
+    with db() as session:
+        if user.get("is_admin"):
+            apps = service.apps_ativos_com_secao(session)
+        else:
+            permitidos = usuarios_service.app_ids_permitidos(session, user["id"])
+            apps = service.apps_ativos_com_secao(session, app_ids=permitidos)
+    return sorted(
+        [
+            {
+                "slug": a["slug"],
+                "nome": a["nome"],
+                "descricao": a["descricao"],
+                "icone": a["icone"],
+                "secao": a["secao_nome"],
+                "secao_slug": a["secao_slug"],
+                "badge": a["badge"],
+                "criado_em": a["criado_em"],
+            }
+            for a in apps
+        ],
+        key=lambda x: x["criado_em"] or "",
+    )
+
+
 # ============ Home ============
 
 @router.get("/home")
