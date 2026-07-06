@@ -1,0 +1,12 @@
+# Regra de ouro: toda mudança precisa de revisão de Code Owner antes de ir para main.
+# Ver CONTRIBUTING.md para o fluxo completo de branch/PR.
+* @mewsdev
+
+# Pontos de integração e infraestrutura compartilhada — atenção redobrada aqui,
+# porque afetam todos os módulos/apps da plataforma.
+/backend/core/ @mewsdev
+/backend/auth/ @mewsdev
+/backend/main.py @mewsdev
+/.github/ @mewsdev
+/Dockerfile @mewsdev
+/docker-compose.yml @mewsdev

@@ -2,6 +2,10 @@
 
 Plataforma centralizadora dos apps internos da SuperFrio e Icestar. POC do CSC: vitrine de governança (cadastro de apps, permissionamento, deploy reprodutível).
 
+## Vai adicionar um app novo?
+
+Leia o [CONTRIBUTING.md](CONTRIBUTING.md) antes de começar — ele cobre os 3 caminhos possíveis (HTML estático embutido, módulo dentro do monólito, app separado só linkado), o checklist de segurança e o fluxo de branch/PR.
+
 ## Stack
 
 - **Backend:** FastAPI + SQLAlchemy + SQLite (single-file, WAL) + bcrypt + JWT; migrations com Alembic
