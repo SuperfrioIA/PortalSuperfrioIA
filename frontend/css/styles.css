@@ -771,7 +771,7 @@ body {
 .changelog-scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 8px 4px 24px;
+  padding: 24px 4px 32px;
   scrollbar-width: thin;
   scrollbar-color: var(--brand-cinza-claro) transparent;
 }
@@ -811,7 +811,7 @@ body {
   flex: 0 0 auto;
   width: 200px;
   display: grid;
-  grid-template-rows: 90px 20px 22px 20px 90px;
+  grid-template-rows: minmax(90px, auto) 20px 22px 20px minmax(90px, auto);
   opacity: 0;
   transform: translateY(8px);
   animation: clRiseIn .45s ease-out forwards;
@@ -878,7 +878,7 @@ body {
 .cl-today-marker {
   flex: 0 0 auto; width: 72px;
   display: grid;
-  grid-template-rows: 90px 20px 22px 20px 90px;
+  grid-template-rows: minmax(90px, auto) 20px 22px 20px minmax(90px, auto);
 }
 .cl-today-node { grid-row: 3/4; display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .cl-today-dot {
@@ -967,7 +967,7 @@ body {
 .sistemas-scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 8px 4px 24px;
+  padding: 24px 4px 32px;
   scrollbar-width: thin;
   scrollbar-color: var(--brand-cinza-claro) transparent;
 }
