@@ -343,6 +343,14 @@ async function renderChangelog() {
       return;
     }
 
+    // marcador hoje (a API retorna do mais recente pro mais antigo, entao "hoje" fica antes do primeiro item)
+    const todayEl = document.createElement("div");
+    todayEl.className = "cl-today-marker";
+    todayEl.innerHTML = `<div></div><div class="cl-conn"></div>
+      <div class="cl-today-node"><span class="cl-today-dot"></span><span class="cl-today-label">${escapeHtml(t("changelog.today"))}</span></div>
+      <div class="cl-conn"></div><div></div>`;
+    eventsEl.appendChild(todayEl);
+
     items.forEach((item, i) => {
       const el = document.createElement("div");
       el.className = `cl-event type-${escapeHtml(item.type)}`;
@@ -363,14 +371,6 @@ async function renderChangelog() {
         <div class="cl-bottom-slot"><div class="cl-card" tabindex="0">${cardInner}</div></div>`;
       eventsEl.appendChild(el);
     });
-
-    // marcador hoje
-    const todayEl = document.createElement("div");
-    todayEl.className = "cl-today-marker";
-    todayEl.innerHTML = `<div></div><div class="cl-conn"></div>
-      <div class="cl-today-node"><span class="cl-today-dot"></span><span class="cl-today-label">${escapeHtml(t("changelog.today"))}</span></div>
-      <div class="cl-conn"></div><div></div>`;
-    eventsEl.appendChild(todayEl);
 
     // contadores nos chips
     const counts = { feature: 0, fix: 0 };
