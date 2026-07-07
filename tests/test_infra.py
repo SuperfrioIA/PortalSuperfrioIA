@@ -167,3 +167,17 @@ def test_csp_restritiva(client):
     assert "frame-ancestors 'none'" in csp
     assert "base-uri 'self'" in csp
     assert "form-action 'self'" in csp
+
+
+def test_raiz_nao_pode_ser_embutida(client):
+    r = client.get("/")
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+
+
+def test_estatico_embutido_permite_self(client):
+    r = client.get("/css/styles.css")
+    assert r.headers["X-Frame-Options"] == "SAMEORIGIN"
+    csp = r.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'self'" in csp
+    assert "script-src 'self'" in csp  # não afrouxa unsafe-inline, só frame-ancestors
