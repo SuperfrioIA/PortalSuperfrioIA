@@ -49,6 +49,10 @@ _CSP = (
     "img-src 'self' data:; "
     "connect-src 'self'; "
     f"frame-src {_FRAME_SRC}; "
+    # Sem worker-src explícito, o navegador cai no fallback de script-src, que NÃO
+    # inclui blob: implicitamente. Apps que montam Worker via Blob (ex.: PDF.js no
+    # mapa-estatistico) precisam do esquema declarado aqui (2026-07-07).
+    "worker-src 'self' blob:; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
@@ -64,6 +68,7 @@ _CSP_GOVERNANCA = (
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
+    "worker-src 'self' blob:; "
     "frame-ancestors 'self'; "
     "base-uri 'self'; "
     "form-action 'self'"
