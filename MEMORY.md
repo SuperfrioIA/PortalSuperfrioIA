@@ -321,6 +321,9 @@ no `main.py`, migration Alembic pro schema. Nasce dentro da plataforma — custo
 - [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
 - [ROADMAP_EVOLUCAO.md](docs/ROADMAP_EVOLUCAO.md) — 5 degraus pós-POC (esforço × valor). Ordem prática: 1 (URLs bonitas/proxy) → 2 (auditoria de cliques) sem depender de TI; 3 (SSO Entra) em paralelo com a Infra; 4 (SQL Server) sob demanda; 5 (HA) só se um app virar crítico.
 - [GUIA_PUBLICACAO_REDE.md](docs/GUIA_PUBLICACAO_REDE.md) — receita de publicação na rede + proxy reverso (Caddy) pronta pra colar.
+- [GUIA_NOVO_USUARIO_VM.md](docs/GUIA_NOVO_USUARIO_VM.md) — runbook pra dar acesso de git/deploy na VM a uma pessoa nova (chave SSH, grupos `docker`/`devs`, deploy key do repo, `core.sharedRepository`). Escrito depois do onboarding real do Gabriel (2026-07-07).
+- [GUIA_SEGURANCA_APPS_EMBUTIDOS.md](docs/GUIA_SEGURANCA_APPS_EMBUTIDOS.md) — guia de estudo: CSP (todas as diretivas explicadas), sandbox de iframe, o trade-off do `allow-same-origin`, tabela de headers por rota pós 2026-07-07.
+- [TROUBLESHOOTING_APPS_IFRAME.md](docs/TROUBLESHOOTING_APPS_IFRAME.md) — os 4 problemas reais resolvidos na integração do app Mapa de Estoque (URL relativa, frame-ancestors, sandbox origem opaca, worker-src blob), com sintoma/causa/fix/PR de cada um.
 - [HUB_VS_PADROES_INDUSTRIA.md](docs/HUB_VS_PADROES_INDUSTRIA.md) — comparativo do Hub frente às práticas de grandes empresas.
 - [ARQUITETURA_PLATAFORMA.md](docs/ARQUITETURA_PLATAFORMA.md) — decisão (2026-06-26) de virar plataforma centralizadora: modelo Self-Contained Systems + identidade central, como os sisteminhas compartilham dados, com referências da indústria.
 - [PLANO_MIGRACAO_PLATAFORMA.md](docs/PLANO_MIGRACAO_PLATAFORMA.md) — o *como* da migração pro Modular Monolith, em lotes (1 SQLAlchemy+Alembic → 2 Postgres → 3 modularização → 4 absorver Contas), com playbook de deploy e quando usar Fable × Opus.
