@@ -266,8 +266,14 @@ function findAppBySlug(slug) {
 function openApp(app) {
   if (app.tipo_acesso === "iframe") {
     const iframe = document.getElementById("iframe-content");
-    // App externo: sandbox restrito, SEM allow-same-origin (decisão da auditoria).
-    iframe.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox");
+    // Sandbox COM allow-same-origin (decisão 2026-07-07, reverte o item A1 da
+    // auditoria de segurança — ver docs/AUDITORIA_SEGURANCA.md). Motivo: apps que
+    // montam Worker via Blob (ex.: PDF.js) falham com origem opaca dentro do
+    // sandbox restrito. Trade-off aceito conscientemente: qualquer app iframe
+    // passa a conseguir ler localStorage/token do portal. Caminho alternativo mais
+    // seguro (não aplicado ainda) documentado na auditoria, pra reverter se algum
+    // app apresentar risco real.
+    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox");
     document.getElementById("iframe-title").textContent = app.nome;
     document.getElementById("iframe-url").textContent = app.url;
     iframe.src = app.url;
@@ -283,10 +289,8 @@ function closeIframe() {
 }
 
 /* Abre a apresentação "Governance TI" (estática em /governanca/) embutida no portal,
-   em tela cheia. Conteúdo próprio e confiável (same-origin): damos allow-same-origin
-   ao sandbox pra o iframe renderizar IDÊNTICO a abrir a página direto — assim as
-   animações .reveal (IntersectionObserver) e o canvas funcionam. Os apps externos
-   continuam com sandbox restrito (ver openApp). */
+   em tela cheia. Conteúdo próprio e confiável (same-origin): sandbox igual ao de
+   openApp desde 2026-07-07 (ambos com allow-same-origin agora — ver comentário lá). */
 function openGovernanca() {
   const iframe = document.getElementById("iframe-content");
   iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
