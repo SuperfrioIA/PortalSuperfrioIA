@@ -69,20 +69,35 @@ _CSP_GOVERNANCA = (
     "form-action 'self'"
 )
 
+# CSP dos apps estáticos embutidos via iframe (Receita 1 do CONTRIBUTING.md — ex.:
+# frontend/mapa-estatistico/). Só troca frame-ancestors pra 'self': a própria origem
+# pode embutir esse app dentro do portal. Não libera terceiros nem afrouxa script-src
+# (inline continua bloqueado — quem tiver <script> inline extrai pra .js externo).
+_CSP_EMBED = _CSP.replace("frame-ancestors 'none'", "frame-ancestors 'self'")
+
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "same-origin")
+    path = request.url.path
     # A apresentação em /governanca/ tem CSP próprio (script inline) e pode ser embutida
-    # same-origin no overlay do portal; o resto do hub mantém o CSP estrito e X-Frame DENY.
-    if request.url.path.startswith("/governanca"):
+    # same-origin no overlay do portal.
+    if path.startswith("/governanca"):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Content-Security-Policy"] = _CSP_GOVERNANCA
-    else:
+    # A shell do portal (login/portal/admin) e a API nunca podem ser embutidas em
+    # iframe — é onde um clickjacking teria efeito real (login, ações de admin).
+    elif path in ("/", "/index.html") or path.startswith("/api"):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Content-Security-Policy", _CSP)
+    # Demais estáticos: apps embutidos via iframe (Receita 1). frame-ancestors 'self'
+    # não libera terceiros, só deixa o próprio portal embutir seu próprio conteúdo —
+    # sem isso, todo app novo travaria com "frame-ancestors 'none'" ao ser aberto.
+    else:
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Content-Security-Policy"] = _CSP_EMBED
     return response
 
 
