@@ -62,11 +62,16 @@ dentro de um iframe no próprio portal.
    necessidade real (ela amplia a superfície de ataque).
 3. Cadastre o app na tela **Administração** do portal (ou no seed, se for parte do setup
    inicial): `url = "/<nome-do-app>/"`, `tipo de acesso = iframe`.
-4. Abra o app pelo portal e confira se ele funciona. Atenção: o iframe roda em modo
-   restrito (`sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"`,
-   **sem** `allow-same-origin`) — se o app depender de ler cookie/localStorage do domínio do
-   portal, ele não vai funcionar assim por design de segurança. Se isso acontecer, o app
-   provavelmente deveria ser a Receita 2, não a 1.
+4. Abra o app pelo portal e confira se ele funciona. **Atenção (atualizado em 2026-07-07):**
+   o sandbox do iframe hoje é `sandbox="allow-scripts allow-same-origin allow-forms allow-popups
+   allow-popups-to-escape-sandbox"` — **com** `allow-same-origin`. Isso reverteu uma decisão
+   anterior da auditoria de segurança (item A1 em `docs/AUDITORIA_SEGURANCA.md`) porque apps que
+   montam um Worker via Blob (ex.: PDF.js) falham com origem opaca dentro do sandbox restrito.
+   Na prática, isso significa que **qualquer app embutido via iframe hoje consegue ler
+   localStorage/token do portal** — trade-off aceito conscientemente, não trate como bug. Se um
+   app novo te preocupar especificamente por esse motivo, chame a Maria antes de cadastrá-lo
+   como iframe; a alternativa mais segura (carregar o worker por arquivo real em vez de Blob,
+   sem precisar de `allow-same-origin`) está documentada na auditoria, mas não foi aplicada.
 
 ---
 
