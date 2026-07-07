@@ -122,6 +122,17 @@ def test_criar_app_url_invalida(client, admin_headers):
     assert r.status_code == 400
 
 
+def test_criar_app_url_relativa_ok(client, admin_headers):
+    sid = _id_por_slug(client, admin_headers, "secoes", "armazem")
+    r = client.post(
+        "/api/admin/apps",
+        json=_payload_app("app-html-embutido", sid, url="/mapa-estatistico/", tipo_acesso="iframe"),
+        headers=admin_headers,
+    )
+    assert r.status_code == 201
+    assert r.json()["url"] == "/mapa-estatistico/"
+
+
 def test_criar_app_tipo_invalido(client, admin_headers):
     sid = _id_por_slug(client, admin_headers, "secoes", "armazem")
     r = client.post(

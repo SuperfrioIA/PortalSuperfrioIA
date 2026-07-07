@@ -202,8 +202,10 @@ def _check_tipo_acesso(tipo: Optional[str]) -> None:
 def _check_url(url: Optional[str]) -> None:
     if url is None:
         return
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(400, "url deve começar com http:// ou https://")
+    if not url.startswith(("http://", "https://", "/")):
+        raise HTTPException(
+            400, "url deve começar com http://, https:// ou / (caminho relativo do próprio portal)"
+        )
 
 
 _APP_COM_SECAO = (
