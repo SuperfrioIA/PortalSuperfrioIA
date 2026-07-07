@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] — 2026-07-07
+### Adicionado
+- Timeline de changelog e sistemas no portal — nova tela "Novidades" com o histórico de mudanças em linha do tempo
+- Guia de contribuição e CODEOWNERS documentados no repositório
+### Corrigido
+- Changelog não aparecia na tela Novidades em produção — CHANGELOG.md agora incluído na imagem Docker
+- Espaçamento entre os cards da timeline de novidades
+- Clipping das bordas nas timelines de changelog e sistemas
+
 ## [0.3.0] — 2026-07-02
 ### Adicionado
 - Modularização em Modular Monolith — módulos portal, auth e usuarios independentes (Lote 3)
