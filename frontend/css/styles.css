@@ -688,7 +688,7 @@ body {
   justify-content: space-between;
   margin-bottom: 20px;
 }
-.changelog-logo { height: 26px; width: auto; }
+.changelog-logo { height: 36px; width: auto; }
 
 /* Back-link dentro do hero (fundo escuro) */
 .cl-back { color: rgba(255,255,255,.82) !important; }
@@ -918,7 +918,7 @@ body {
   justify-content: space-between;
   margin-bottom: 20px;
 }
-.sistemas-logo { height: 26px; width: auto; }
+.sistemas-logo { height: 36px; width: auto; }
 .si-back { color: rgba(255,255,255,.82) !important; }
 .si-back:hover { background: rgba(255,255,255,.10) !important; color: #fff !important; }
 .si-back svg { stroke: rgba(255,255,255,.82); }
