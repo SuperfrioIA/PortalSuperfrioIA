@@ -6,23 +6,39 @@ processadas num arquivo compartilhado — sem banco, sem ORM, sem migration —
 em vez de cada upload ficar preso ao localStorage de quem processou.
 
 Leitura é pública (mesmo nível de acesso que os arquivos estáticos do app,
-que já são abertos sem login). Escrita exige estar logado no portal.
+que já são abertos sem login). Escrita exige a role `processos-abertos-editor`
+(ou ser admin) — ver o app na home é uma permissão, atualizar os dados é outra.
 """
 import json
 import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from backend.auth.dependencies import get_current_user
-from backend.core.database import DB_PATH
+from backend.core.database import DB_PATH, db
+from backend.usuarios import service as usuarios_service
 
 router = APIRouter(prefix="/api/processos-abertos", tags=["processos-abertos"])
 
 _DATA_PATH: Path = DB_PATH.parent / "processos_abertos_extra.json"
 _lock = threading.Lock()
+
+ROLE_EDITOR = "processos-abertos-editor"
+
+
+def require_editor(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("is_admin"):
+        return user
+    with db() as session:
+        if not usuarios_service.tem_role(session, user["id"], ROLE_EDITOR):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requer a role '{ROLE_EDITOR}' (ou ser admin) pra atualizar Processos Abertos",
+            )
+    return user
 
 
 class Semana(BaseModel):
@@ -58,7 +74,7 @@ def listar_historico() -> list[dict]:
 
 
 @router.post("/historico")
-def salvar_semana(semana: Semana, _: dict = Depends(get_current_user)) -> list[dict]:
+def salvar_semana(semana: Semana, _: dict = Depends(require_editor)) -> list[dict]:
     """Upsert por `date`: mesma semana reprocessada substitui a anterior."""
     with _lock:
         semanas = _ler()

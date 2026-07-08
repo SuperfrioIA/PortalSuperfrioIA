@@ -26,6 +26,35 @@ def test_post_sem_login_401(client):
     assert r.status_code == 401
 
 
+def test_post_logado_sem_role_editor_403(client, operador_headers):
+    r = client.post(
+        "/api/processos-abertos/historico", json=_semana(date="15/01/2026"), headers=operador_headers
+    )
+    assert r.status_code == 403
+
+
+def test_post_com_role_editor_200(client, admin_headers, operador_headers):
+    client.post(
+        "/api/admin/roles",
+        json={"slug": "processos-abertos-editor", "nome": "Processos Abertos - Editor"},
+        headers=admin_headers,
+    )
+    usuarios = client.get("/api/admin/usuarios", headers=admin_headers).json()
+    operador_id = next(u["id"] for u in usuarios if u["username"] == "operador.armazem")
+    r = client.patch(
+        f"/api/admin/usuarios/{operador_id}",
+        json={"roles": ["armazem-full", "processos-abertos-editor"]},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+
+    r2 = client.post(
+        "/api/processos-abertos/historico", json=_semana(date="16/01/2026"), headers=operador_headers
+    )
+    assert r2.status_code == 200, r2.text
+    assert any(s["date"] == "16/01/2026" for s in r2.json())
+
+
 def test_post_autenticado_persiste_e_aparece_no_get(client, admin_headers):
     r = client.post(
         "/api/processos-abertos/historico", json=_semana(date="05/01/2026"), headers=admin_headers

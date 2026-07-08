@@ -59,6 +59,7 @@ async function processFiles(){
     status.textContent='Salvando...';
     const token=localStorage.getItem('sf_portal_token')||'';
     const res=await fetch('/api/processos-abertos/historico',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(entry)});
+    if(res.status===403){status.textContent='Você não tem permissão para atualizar este dashboard.';return;}
     if(!res.ok)throw new Error('status '+res.status);
     extraHistory=await res.json();
     status.textContent='✓ Adicionado — '+refStr; document.getElementById('uploadPanel').style.display='none'; document.getElementById('btnToggleUpload').innerHTML='<i class="ti ti-upload" aria-hidden="true"></i>Atualizar dados'; renderAll();
