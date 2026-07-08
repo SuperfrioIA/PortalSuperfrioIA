@@ -1,6 +1,6 @@
 # HANDOFF — Analisador de Mapa Estatísticos (NF × WMS) — SuperFrio/IceStar
 
-**Status:** Confirmado funcionando pelo usuário após modularização (teste real no navegador com upload de PDF/XLSX). Integrado ao Hub SuperFrio & Icestar em 2026-07-07 como app da seção **QHSE**, `tipo_acesso = iframe`. ✅
+**Status:** Confirmado funcionando pelo usuário após modularização (teste real no navegador com upload de PDF/XLSX). Integrado ao Hub SuperFrio & Icestar em 2026-07-07 como app da seção **QHSE**, `tipo_acesso = iframe`. Atualizado para **v2.0** em 2026-07-08 (validação de peso por soma dos itens). ✅
 
 ---
 
@@ -83,6 +83,17 @@ Na Etapa 3 (divergências), o detalhe por nota mostrava "PESO LÍQ. ESPERADO (KG
 2. **Código/descrição do primeiro item de cada nota contaminados com sobras do cabeçalho da tabela** (ex.: código aparecendo como "ICMS" ou "IPI", descrição prefixada com "VALOR IPI AL.ICMS AL.IPI PESO..."). Causa: o grupo de captura do código aceitava qualquer sequência de letras maiúsculas, inclusive rótulos de coluna. Corrigido exigindo que o código contenha ao menos um dígito (lookahead `(?=[A-Z0-9.\-\/]*\d)`), já que códigos reais são sempre do tipo "00-105.292".
 
 Validado simulando linhas reais do DANFE (não foi possível reprocessar um PDF real ponta a ponta na sessão) — código, descrição e peso em KG saem corretos. Usuário confirmou "deu certo" após reimportar.
+
+### 2026-07-08 — v2.0: validação do peso do cabeçalho pela soma dos itens
+
+Mesclada a partir do `analise_mapa_estatistico_v2_0.html` editado fora do Hub (pasta QSSA), re-extraído em `index.html` + `app.js` (vendors conferidos por hash — idênticos). Mudanças:
+
+1. **Validação cruzada do peso líquido (PDF e XML):** quando todos os itens têm peso, a soma da coluna PESO é conferida contra o peso líquido do cabeçalho. Se a soma bate com algum peso impresso na nota, ela é a fonte de verdade silenciosa (corrige o layout Fricasa, onde a heurística de proximidade de rótulo pegava o peso BRUTO); se não corresponde a nenhum valor impresso, marca `pesoWarn` e avisa na lista de importação.
+2. **Busca do peso do cabeçalho restrita à região antes da tabela de itens** (`findTableHeaderY`, por posição Y da linha "CÓD/DESCRIÇÃO/NCM") — em nota de item único, o filtro anterior por valor descartava o próprio peso líquido correto.
+3. **`fmt3`** — pesos sempre exibidos com 3 casas decimais.
+4. Visual/texto: rodapé "v2.0", botão "Continuar para importação" movido para cima do card de conferência, textos da nota informativa e cabeçalhos da tabela de resultado ajustados, `.pdflist .vals` com quebra de linha.
+
+Validado no navegador via servidor estático local após a re-extração: libs carregam, worker inicializa, wizard renderiza sem erro de console.
 
 ### 2026-07-07 — Migração para o Hub SuperFrio & Icestar
 

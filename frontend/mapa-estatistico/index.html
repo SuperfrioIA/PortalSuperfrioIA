@@ -87,7 +87,7 @@
   .pdflist .it{display:flex;align-items:center;gap:9px;font-size:12px;padding:6px 0;border-top:1px solid var(--border);min-width:0}
   .pdflist .ic{font-weight:700;flex:0 0 auto} .pdflist .ic.ok{color:var(--brand-azul-principal)} .pdflist .ic.warn{color:#C98A00} .pdflist .ic.busy{color:var(--muted)}
   .pdflist .fn{color:var(--ink-soft);flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pdflist .vals{color:var(--ink);font-weight:700;flex:0 0 auto;white-space:nowrap}
+  .pdflist .vals{color:var(--ink);font-weight:700;flex:1 1 160px;min-width:120px;white-space:normal;text-align:right}
   .pdflist::-webkit-scrollbar{width:8px}
   .pdflist::-webkit-scrollbar-thumb{background:var(--brand-cinza-claro);border-radius:8px}
   .pdflist::-webkit-scrollbar-track{background:transparent}
@@ -118,7 +118,7 @@
   details.bulk textarea{width:100%;margin-top:10px;background:#fff;border:1px solid var(--brand-cinza-claro);color:var(--ink);font-family:var(--font-primary);font-size:13px;padding:11px;border-radius:var(--radius-sm);min-height:80px;outline:none}
   details.bulk textarea:focus{border-color:var(--brand-azul-principal)} details.bulk .hint{font-size:11px;color:var(--muted);margin-top:8px}
 
-  .nav-row{display:flex;justify-content:space-between;gap:12px;margin-top:22px;flex-wrap:wrap}
+  .nav-row{display:flex;justify-content:space-between;gap:12px;margin:22px 0;flex-wrap:wrap}
   .btn{background:var(--brand-amarelo);color:var(--brand-azul-institucional);border:none;padding:12px 22px;border-radius:var(--radius-sm);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font-primary);box-shadow:var(--shadow-sm)}
   .btn:hover{background:var(--brand-amarelo-suave)} .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
   .btn.sec{background:#E8F1FC;color:var(--brand-azul-principal);box-shadow:none} .btn.sec:hover{background:#DCEBFB}
@@ -229,7 +229,7 @@
       <div class="step" id="st3"><span class="dot">3</span> Resultado</div>
     </nav>
     <div class="side-foot">
-      <span class="plat">Dev. GEE · Qualidade · v1.0</span>
+      <span class="plat">Dev. GEE · Qualidade · v2.0</span>
     </div>
   </aside>
 
@@ -244,7 +244,7 @@
 
       <div class="card">
         <div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5"/><path d="M12 5v12"/></svg></div><div><h2>Origem dos dados</h2><div class="title2">Importar notas (PDF ou XML)</div></div></div>
-        <div class="note"><span class="i">i</span><div>Importe os <b>PDFs de DANFE</b> ou os <b>XMLs da NF-e</b>. A ferramenta extrai automaticamente o <b>número da NF-e</b>, o <b>peso líquido</b> e a <b>descrição do produto</b> (do campo <b>&lt;xProd&gt;</b> quando enviado o XML), preenchendo a tabela para conferência e comparação com o relatório do WMS. Todo o processamento é realizado <b>localmente no navegador</b>, sem envio ou armazenamento dos arquivos em servidores externos.</div></div>
+        <div class="note"><span class="i">i</span><div>Importe os <b>NF-e</b>, <b>DANFEs (PDF)</b> ou <b>XMLs</b>. A ferramenta extrai automaticamente o <b>número da NF-e</b>, o <b>peso líquido</b> e a <b>descrição do produto</b>, preenchendo a tabela para conferência com o relatório.</div></div>
         <label class="drop" id="pdfDrop">
           <svg class="dropico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5"/><path d="M12 5v12"/></svg>
           <span class="big" id="pdfTitle">Arraste os PDFs ou XMLs aqui ou clique para selecionar</span>
@@ -253,6 +253,8 @@
         </label>
         <div class="pdflist" id="pdfList"></div>
       </div>
+
+      <div class="nav-row"><span></span><button class="btn" id="toStep2" disabled>Continuar para importação →</button></div>
 
       <div class="card">
         <div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3"/><path d="m9 14 2 2 4-4"/></svg></div><div><h2>Conferência</h2><div class="title2">Notas a conferir</div></div></div>
@@ -272,8 +274,6 @@
           <p class="hint">Aceita "025027;27000", "025027,27000" ou colado de uma planilha (tab).</p>
         </details>
       </div>
-
-      <div class="nav-row"><span></span><button class="btn" id="toStep2" disabled>Continuar para importação →</button></div>
     </section>
 
     <!-- SCREEN 2 -->
@@ -322,7 +322,7 @@
       </div>
       <div class="filterbar" id="filterInfo"></div>
       <table class="res">
-        <thead><tr><th id="thToggleAll" role="button" tabindex="0" aria-pressed="false" title="Abrir/recolher todos os detalhes"><span class="caret">▸</span> NF</th><th class="n">Esperado</th><th class="n">Recebido</th><th class="n">Diferença</th><th>Status</th></tr></thead>
+        <thead><tr><th id="thToggleAll" role="button" tabindex="0" aria-pressed="false" title="Abrir/recolher todos os detalhes"><span class="caret">▸</span> NF (PDF)/XML</th><th class="n">Esperado (PDF)</th><th class="n">Recebido (XLSX)</th><th class="n">Diferença</th><th>Status</th></tr></thead>
         <tbody id="resBody"></tbody>
       </table>
       <div class="extra" id="extra"></div>

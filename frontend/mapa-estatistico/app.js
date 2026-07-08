@@ -6,6 +6,8 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
   const norm=s=>{ if(s==null) return ""; return String(s).split("-")[0].replace(/\D/g,"").replace(/^0+/,""); };
   const sa=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
   const fmt=n=>Number(n).toLocaleString("pt-BR",{minimumFractionDigits:0,maximumFractionDigits:3});
+  // sempre com 3 casas — mesma precisão do peso líquido extraído do XML/PDF (ex.: "4.400,000", não "4.400")
+  const fmt3=n=>Number(n).toLocaleString("pt-BR",{minimumFractionDigits:3,maximumFractionDigits:3});
   const brNum=s=>parseFloat(String(s).replace(/\./g,"").replace(",","."));
   const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   function parsePeso(v){
@@ -135,11 +137,12 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
             itm.querySelector(".vals").textContent="NF "+disp+" · já importada — ignorada";
           }else{
             const pesoStr=data.liq!=null?String(data.liq):"";
-            state.notes.push({id:++state._id,nf:disp,peso:pesoStr,origin:tipo+": "+f.name,flag:data.liq==null,nfFlag:!!data.nfWarn,sif:data.sif||"",itens:data.itens||[],nfOriginal:disp,pesoOriginal:pesoStr});
-            const okAll=data.liq!=null && !data.nfWarn;
+            state.notes.push({id:++state._id,nf:disp,peso:pesoStr,origin:tipo+": "+f.name,flag:data.liq==null||!!data.pesoWarn,nfFlag:!!data.nfWarn,sif:data.sif||"",itens:data.itens||[],nfOriginal:disp,pesoOriginal:pesoStr});
+            const okAll=data.liq!=null && !data.nfWarn && !data.pesoWarn;
             itm.querySelector(".ic").className="ic "+(okAll?"ok":"warn");
             itm.querySelector(".ic").textContent=okAll?"✓":"⚠";
             const obs=[]; if(data.nfWarn) obs.push("revisar NF"); if(data.liq==null) obs.push("revisar peso");
+            if(data.pesoWarn) obs.push("peso do cabeçalho não batia com a soma dos itens — usado o valor somado");
             itm.querySelector(".vals").textContent="NF "+disp+(data.liq!=null?(" · "+fmt(data.liq)+" kg"):"")+(obs.length?" · "+obs.join(", "):"");
           }
         }else{
@@ -180,8 +183,15 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
       const unid=g("uCom")||""; const qtd=g("qCom")?parseFloat(g("qCom")):null;
       itens.push({codigo:g("cProd"), desc:g("xProd")||"", unid, qtd, peso:/^KG/i.test(unid)?qtd:null});
     }
-    if(liq==null){ const s=itens.reduce((a,it)=>a+(it.peso||0),0); if(s>0) liq=s; }
-    return {nf,liq,bru,nfWarn:false,sif:extractSif(text),itens};
+    // Mesma validação do PDF: quando todos os itens têm peso (uCom="KG"), a soma tem que bater
+    // com <pesoL>. Se não bater (ou <pesoL> não vier), a soma dos itens é quem manda.
+    let pesoWarn=false;
+    if(itens.length && itens.every(it=>it.peso!=null)){
+      const soma=Math.round(itens.reduce((a,it)=>a+it.peso,0)*1000)/1000; // evita ruído de ponto flutuante
+      if(liq==null){ liq=soma; }
+      else if(Math.abs(soma-liq)>0.5){ pesoWarn=true; liq=soma; }
+    }
+    return {nf,liq,bru,nfWarn:false,pesoWarn,sif:extractSif(text),itens};
   }
 
   async function extractPdf(file){
@@ -212,6 +222,19 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     return m?m[1].replace(/[.\s]+$/,"").trim():"";
   }
 
+  // Acha o Y (geometria PDF) da linha de cabeçalho "CÓD/DESCRIÇÃO/NCM" da tabela de itens —
+  // usado para excluir os tokens da tabela de produtos ao procurar o peso do CABEÇALHO da nota.
+  function findTableHeaderY(items){
+    if(!items||!items.length) return null;
+    const TOLY=3;
+    const toks=items.map(it=>({x:it.x,y:it.y,s:(it.s||"").trim()})).filter(it=>it.s!=="");
+    toks.sort((a,b)=>(b.y-a.y)||(a.x-b.x));
+    const lines=[]; let cur=null;
+    toks.forEach(it=>{ if(!cur||Math.abs(it.y-cur.y)>TOLY){cur={y:it.y,parts:[]};lines.push(cur);} cur.parts.push(it); });
+    lines.forEach(l=>{ l.text=l.parts.map(p=>p.s).filter(Boolean).join(" ").replace(/\s+/g," ").trim(); });
+    const hl=lines.find(l=>{ const t=l.text.toUpperCase(); return /C[ÓO]D/.test(t)&&/DESCRI[ÇC][ÃA]O/.test(t)&&/NCM/.test(t); });
+    return hl?hl.y:null;
+  }
   function parseDanfe(full,items){
     // ---- Número da NF: chave de acesso da NF-e (autoritativa) + Nº impresso como apoio ----
     // Coleta candidatos a chave de 44 dígitos (contíguos e formatados 4-4-4...)
@@ -241,26 +264,54 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
       nf=nfPrinted; nfWarn=true;                   // sem chave válida → usa o Nº impresso e marca p/ revisão
     }
 
+    const itens=parseItens(full,items);
+    // Restringe a busca do peso do CABEÇALHO à região ANTES da tabela de itens (por posição, não
+    // por valor). Numa nota de item único o peso do item é IGUAL ao peso líquido do cabeçalho —
+    // filtrar "valores iguais ao peso de algum item" (abordagem anterior) removia o próprio peso
+    // líquido correto nesse caso, sobrando só o peso bruto como único candidato. Usando a posição
+    // (tudo que vem depois do cabeçalho "CÓD/DESCRIÇÃO/NCM" da tabela é ignorado) evita isso.
+    const tableY=findTableHeaderY(items);
+    const headerIdx=full.search(/dados do produto/i);
+    const headerText=headerIdx>=0?full.slice(0,headerIdx):full;
+    const headerItems=tableY!=null?items.filter(it=>it.y>=tableY-1):items;
     // pesos: números com exatamente 3 casas decimais (padrão dos campos de peso da DANFE)
     const re=/\d{1,3}(?:\.\d{3})*,\d{3}(?!\d)/g;
-    const found=(full.match(re)||[]).map(brNum).filter(v=>!isNaN(v));
+    const found=(headerText.match(re)||[]).map(brNum).filter(v=>!isNaN(v));
     let liq=null,bru=null;
     if(found.length===1){ liq=found[0]; }
     else if(found.length>=2){
       // tenta achar pelo rótulo "LÍQUIDO"
-      const lab=items.find(it=>/l[ií]quido/i.test(it.s));
+      const lab=headerItems.find(it=>/l[ií]quido/i.test(it.s));
       if(lab){
         let best=null,bd=1e9;
-        items.forEach(it=>{ if(!re.test(it.s)){re.lastIndex=0;return;} re.lastIndex=0;
+        headerItems.forEach(it=>{ if(!re.test(it.s)){re.lastIndex=0;return;} re.lastIndex=0;
+          const val=brNum(it.s.match(re)[0]);
           const dy=lab.y-it.y, dx=Math.abs(it.x-lab.x);
-          if(dy>=-2){ const d=dy+dx*0.15; if(d<bd){bd=d;best=brNum(it.s.match(re)[0]);re.lastIndex=0;} }
+          if(dy>=-2){ const d=dy+dx*0.15; if(d<bd){bd=d;best=val;} }
         });
         if(best!=null && !isNaN(best)) liq=best;
       }
       if(liq==null){ liq=Math.min(...found); } // fallback: líquido é o menor dos pesos
       bru=Math.max(...found);
     }
-    return {nf,liq,bru,nfWarn,sif:extractSif(full),itens:parseItens(full,items)};
+    // Validação: confere a soma dos pesos dos itens contra o peso líquido do cabeçalho.
+    // A soma vem direto da coluna PESO de cada produto, então é mais confiável que a heurística
+    // de proximidade de rótulo quando todos os itens têm peso. Se a soma bate com ALGUM peso
+    // impresso na nota (= ela É o PESO LÍQUIDO oficial), quem errou foi a heurística de rótulo
+    // (ex.: layout Fricasa, onde o valor do BRUTO cai mais perto do rótulo "PESO LIQUIDO" do que
+    // o próprio valor do líquido) — usa o valor impresso SEM avisar. Só avisa quando a soma não
+    // corresponde a nenhum peso impresso.
+    let pesoWarn=false;
+    if(itens && itens.length && itens.every(it=>it.peso!=null)){
+      const soma=Math.round(itens.reduce((s,it)=>s+it.peso,0)*1000)/1000; // evita ruído de ponto flutuante
+      if(liq==null){ liq=soma; }
+      else if(Math.abs(soma-liq)>0.5){
+        const impresso=found.find(v=>Math.abs(v-soma)<=0.5);
+        if(impresso!=null){ liq=impresso; }   // soma confere com o líquido impresso → sem aviso
+        else { pesoWarn=true; liq=soma; }
+      }
+    }
+    return {nf,liq,bru,nfWarn,pesoWarn,sif:extractSif(full),itens};
   }
   // Extrai itens da tabela "DADOS DO PRODUTO/SERVIÇOS".
   // Principal: reconstrói as LINHAS pela geometria (agrupa por Y, ordena por X), porque vários
@@ -270,7 +321,10 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
   // COD  DESC  NCM(8)  CST(2-3)  CFOP(4)  UNID  QTD
   // O código exige >=1 dígito (lookahead) para não casar com sobras do cabeçalho ("ICMS","IPI","AL.")
   // que às vezes ficam grudadas na mesma linha do primeiro item, confundindo código/descrição.
-  const RX_ITEM=/((?=[A-Z0-9.\-\/]*\d)[A-Z0-9][A-Z0-9.\-\/]{1,19})\s+([A-Za-zÀ-ÿ][\s\S]{1,80}?)\s+(\d{4}\.?\d{2}\.?\d{2})\s+\d{2,3}\s+(\d{4})\s+([A-Z]{1,4})\s+(\d[\d.]*,\d+)/;
+  // CST/CFOP e UNID/QTDE podem vir separados por espaço OU grudados com "/" (ex.: DANFE BRF/Sadia:
+  // "050/5905", "CX/1.980"), e a QTDE nesse layout é inteira (sem vírgula decimal) — daí o [\s\/]+
+  // como separador e a parte decimal da QTDE ser opcional.
+  const RX_ITEM=/((?=[A-Z0-9.\-\/]*\d)[A-Z0-9][A-Z0-9.\-\/]{1,19})\s+([A-Za-zÀ-ÿ][\s\S]{1,80}?)\s+(\d{4}\.?\d{2}\.?\d{2})\s+\d{2,3}[\s\/]+(\d{4})\s+([A-Z]{1,4})[\s\/]+(\d[\d.]*(?:,\d+)?)/;
   const RX_END=/^-{5,}|informa[cç][oõ]es\s+complementares|c[aá]lculo do issqn|dados adicionais|reservado ao fisco/i;
   // A coluna PESO fica no fim da linha do DANFE, depois de VL.UNIT/VALOR TOTAL/B.ICMS/...,
   // e é o único valor da linha com 3 casas decimais (os demais valores monetários usam 2).
@@ -454,7 +508,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     $("sNotas").textContent=state.results.length;
     $("sExcel").textContent=(state.notasExcel==null)?"—":state.notasExcel;
     $("sOk").textContent=nOk; $("sWarn").textContent=nWarn;
-    const sd=$("sDiff"); sd.textContent=(totDiff>0?"+":totDiff<0?"−":"")+fmt(Math.abs(totDiff));
+    const sd=$("sDiff"); sd.textContent=(totDiff>0?"+":totDiff<0?"−":"")+fmt3(Math.abs(totDiff));
     sd.parentElement.className="stat "+(Math.abs(totDiff)<=tol+1e-9?"ok":"warn"); renderResults();
   }
   function passaFiltro(r){ return state.filter==="all" || (state.filter==="ok"&&r.ok) || (state.filter==="warn"&&!r.ok); }
@@ -465,7 +519,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
       const cls=r.diff>1e-9?"pos":r.diff<-1e-9?"neg":"zero"; const sign=r.diff>1e-9?"+":r.diff<-1e-9?"−":"";
       const status=r.none?'<span class="pill none">Sem recebimento</span>':r.ok?'<span class="pill ok">Confere</span>':'<span class="pill warn">Divergência</span>';
       const tr=document.createElement("tr"); tr.className="note"; tr.dataset.i=i;
-      tr.innerHTML=`<td><span class="caret">▸</span> ${esc(r.nf)}</td><td class="n">${fmt(r.esperado)}</td><td class="n">${fmt(r.recebido)}</td><td class="n diff ${cls}">${sign}${fmt(Math.abs(r.diff))}</td><td>${status}</td>`;
+      tr.innerHTML=`<td><span class="caret">▸</span> ${esc(r.nf)}</td><td class="n">${fmt3(r.esperado)}</td><td class="n">${fmt3(r.recebido)}</td><td class="n diff ${cls}">${sign}${fmt3(Math.abs(r.diff))}</td><td>${status}</td>`;
       tr.addEventListener("click",()=>toggleDetail(tr,i)); tb.appendChild(tr);
     });
     if(shown===0 && state.results.length){
@@ -514,12 +568,12 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     let h="<table><thead><tr><th>Item</th><th>Descrição</th><th class=\"n\">Peso líq. esperado (kg)</th><th>SIF</th></tr></thead><tbody>";
     if(itens){
       itens.forEach((it,idx)=>{
-        const pesoTxt=(it.peso!=null)?fmt(it.peso):(fmt(it.qtd)+" "+(it.unid||""));
+        const pesoTxt=(it.peso!=null)?fmt3(it.peso):(fmt(it.qtd)+" "+(it.unid||""));
         h+=`<tr><td class="dt">${esc(it.codigo)||("#"+(idx+1))}</td><td class="dt">${esc(it.desc)||"—"}</td><td class="dt n">${pesoTxt}</td><td class="dt">${sif||"—"}</td></tr>`;
       });
-      h+=`<tr class="dtot"><td class="dt"></td><td class="dt">Total esperado</td><td class="dt n">${fmt(r.esperado)}</td><td class="dt"></td></tr>`;
+      h+=`<tr class="dtot"><td class="dt"></td><td class="dt">Total esperado</td><td class="dt n">${fmt3(r.esperado)}</td><td class="dt"></td></tr>`;
     }else{
-      h+=`<tr><td class="dt">—</td><td class="dt">Itens do produto não capturados do PDF (nota manual ou layout não reconhecido)</td><td class="dt n">${fmt(r.esperado)}</td><td class="dt">${sif||"—"}</td></tr>`;
+      h+=`<tr><td class="dt">—</td><td class="dt">Itens do produto não capturados do PDF (nota manual ou layout não reconhecido)</td><td class="dt n">${fmt3(r.esperado)}</td><td class="dt">${sif||"—"}</td></tr>`;
     }
     return h+"</tbody></table>";
   }
