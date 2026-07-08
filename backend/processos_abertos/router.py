@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from backend.auth.dependencies import get_current_user
+from backend.auth.dependencies import get_current_user, get_current_user_optional
 from backend.core.database import DB_PATH, db
 from backend.usuarios import service as usuarios_service
 
@@ -29,15 +29,19 @@ _lock = threading.Lock()
 ROLE_EDITOR = "processos-abertos-editor"
 
 
-def require_editor(user: dict = Depends(get_current_user)) -> dict:
+def _pode_editar(user: dict) -> bool:
     if user.get("is_admin"):
-        return user
+        return True
     with db() as session:
-        if not usuarios_service.tem_role(session, user["id"], ROLE_EDITOR):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Requer a role '{ROLE_EDITOR}' (ou ser admin) pra atualizar Processos Abertos",
-            )
+        return usuarios_service.tem_role(session, user["id"], ROLE_EDITOR)
+
+
+def require_editor(user: dict = Depends(get_current_user)) -> dict:
+    if not _pode_editar(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Requer a role '{ROLE_EDITOR}' (ou ser admin) pra atualizar Processos Abertos",
+        )
     return user
 
 
@@ -71,6 +75,13 @@ def _escrever(semanas: list[dict]) -> None:
 @router.get("/historico")
 def listar_historico() -> list[dict]:
     return _ler()
+
+
+@router.get("/pode-editar")
+def pode_editar(user: dict | None = Depends(get_current_user_optional)) -> dict:
+    """Pra o frontend decidir se mostra o botão 'Atualizar dados' — nunca falha
+    com 401/403, quem não está logado ou não tem a role só recebe False."""
+    return {"pode_editar": bool(user) and _pode_editar(user)}
 
 
 @router.post("/historico")

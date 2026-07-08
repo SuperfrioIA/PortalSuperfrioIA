@@ -14,6 +14,17 @@ async function fetchExtraHistory(){
     return [];
   }
 }
+async function fetchPodeEditar(){
+  try{
+    const token=localStorage.getItem('sf_portal_token')||'';
+    const res=await fetch('/api/processos-abertos/pode-editar',{headers:{'Authorization':'Bearer '+token}});
+    if(!res.ok)throw new Error('status '+res.status);
+    return (await res.json()).pode_editar===true;
+  }catch(e){
+    console.error('Falha ao checar permissao de edicao',e);
+    return false;
+  }
+}
 let slinWB=null,jdaWB=null;
 let trendChart=null,pctChart=null,tiposChart=null,barChart=null,unitChart=null;
 let tiposFilter='all',unitMetric='total';
@@ -99,7 +110,9 @@ function toggleUpload() {
 }
 
 (async function init(){
-  extraHistory=await fetchExtraHistory();
+  const [historico,podeEditar]=await Promise.all([fetchExtraHistory(),fetchPodeEditar()]);
+  extraHistory=historico;
+  if(!podeEditar)document.getElementById('btnToggleUpload').style.display='none';
   renderAll();
 })();
 

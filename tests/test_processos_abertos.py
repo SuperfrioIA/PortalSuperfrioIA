@@ -54,6 +54,26 @@ def test_post_com_role_editor_200(client, admin_headers, operador_headers):
     assert r2.status_code == 200, r2.text
     assert any(s["date"] == "16/01/2026" for s in r2.json())
 
+    assert client.get("/api/processos-abertos/pode-editar", headers=operador_headers).json() == {
+        "pode_editar": True
+    }
+
+
+def test_pode_editar_anonimo_false(client):
+    r = client.get("/api/processos-abertos/pode-editar")
+    assert r.status_code == 200
+    assert r.json() == {"pode_editar": False}
+
+
+def test_pode_editar_admin_true(client, admin_headers):
+    r = client.get("/api/processos-abertos/pode-editar", headers=admin_headers)
+    assert r.json() == {"pode_editar": True}
+
+
+def test_pode_editar_logado_sem_role_false(client, analista_headers):
+    r = client.get("/api/processos-abertos/pode-editar", headers=analista_headers)
+    assert r.json() == {"pode_editar": False}
+
 
 def test_post_autenticado_persiste_e_aparece_no_get(client, admin_headers):
     r = client.post(
