@@ -177,8 +177,10 @@ function renderDiagnostico(weeks) {
     const prevPct = prevV?.total ? prevV.d5p / prevV.total * 100 : null;
     const delta = prevPct !== null ? pct - prevPct : null;
     const avg = avgAgingUnit(v);
-    // Zone based on aging: <=1.5d = linha, 1.5-5d = atencao, >5d = critico
-    const zone = avg > 5 ? 'critico' : avg > 1.5 ? 'atencao' : 'linha';
+    // Zone based on aging, mesmos limites (2 e 5.5) das faixas sombreadas do
+    // gráfico de bolhas — precisa bater com xBound1/xBound2 lá embaixo, senão
+    // a bolha some numa faixa e o resumo conta ela em outra.
+    const zone = avg > 5.5 ? 'critico' : avg > 2 ? 'atencao' : 'linha';
     // d5p delta
     const prevD5p = prevV?.d5p ?? null;
     const d5pDelta = prevD5p !== null ? v.d5p - prevD5p : null;
@@ -202,17 +204,17 @@ function renderDiagnostico(weeks) {
   const maxTotal = Math.max(...units.map(u => u.total), 1);
 
   // X = weighted aging position: 1D→x=1, 2-5D→x=3.5, >5D→x=7
-  // Zone: dominant bucket determines color
+  // Zone/cor vem de u.zone (calculado acima a partir dessa mesma posição)
   // R: sqrt scale proportional to total processes
   const labeledDatasets = units.filter(u => u.total > 0).map(u => {
     const v = curr.resumo[u.u] || u;
     const d25 = (v.d2||0)+(v.d3||0)+(v.d4||0)+(v.d5||0);
-    const d1  = v.d1||0, d5p = v.d5p||0, tot = v.total||1;
-    const wx  = (d1*1 + d25*3.5 + d5p*7) / tot;
-    // Zone by dominant bucket
-    const zone = d5p >= d1 && d5p >= d25 ? 'critico'
-               : d25 >= d1 ? 'atencao'
-               : 'linha';
+    const d1  = v.d1||0, d5p = v.d5p||0;
+    // Reusa a mesma zona/posição já calculada pra essa unidade lá em cima —
+    // antes a cor vinha do bucket com mais processos em número absoluto, que
+    // podia discordar de onde a bolha cai no eixo X (média ponderada por
+    // aging). Isso fazia bolha verde cair dentro da faixa laranja.
+    const { zone, avg: wx } = u;
     // R: sqrt scale — 0..48 range
     const r = Math.max(7, Math.round(Math.sqrt(v.total / maxTotal) * 46) + 7);
     const color = zoneColor[zone];
@@ -327,7 +329,11 @@ function renderDiagnostico(weeks) {
         chart.data.datasets.forEach(ds => {
           if (!ds.data[0]) return;
           const pt=ds.data[0];
-          const px=x.getPixelForValue(pt.x), py=y.getPixelForValue(pt.y), r=pt.r||10;
+          const px=x.getPixelForValue(pt.x), r=pt.r||10;
+          // Nunca deixa o rótulo da bolha subir em cima da linha do rótulo da
+          // faixa (desenhada em beforeDraw, em top+18) — bolhas com total
+          // próximo do máximo do eixo log ficam bem perto do topo.
+          const py=Math.max(y.getPixelForValue(pt.y), chartArea.top+26);
           const label=ds.label||'';
           const short=label.length>16?label.substring(0,15)+'…':label;
           const tw=ctx.measureText(short).width;
