@@ -3,7 +3,17 @@ const HISTORY_DATA=[{"date":"04/05/2026","total":42752,"d5p":39242,"d1":1458,"d2
 const EX_SLIN=['RMSPII','RMRJ','MAQ','RPII'];
 const UNIT_ALIASES={'RIO DE JANEIRO':'RMRJ','RMSPII - BARUERI':'RMSPII','SF RPII - RIBEIRAO':'RPII','MAIRINQUE':'MAQ'};
 function canonicalUnit(u) { return UNIT_ALIASES[u] || u; }
-let extraHistory=(()=>{try{return JSON.parse(localStorage.getItem('slin_extra_sf')||'[]');}catch(e){return [];}})();
+let extraHistory=[];
+async function fetchExtraHistory(){
+  try{
+    const res=await fetch('/api/processos-abertos/historico');
+    if(!res.ok)throw new Error('status '+res.status);
+    return await res.json();
+  }catch(e){
+    console.error('Falha ao carregar historico compartilhado',e);
+    return [];
+  }
+}
 let slinWB=null,jdaWB=null;
 let trendChart=null,pctChart=null,tiposChart=null,barChart=null,unitChart=null;
 let tiposFilter='all',unitMetric='total';
@@ -26,7 +36,7 @@ function checkReady(){document.getElementById('btnProcess').disabled=!(slinWB&&j
 function parseDate(s){if(!s)return null;const m=String(s).match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);if(m)return new Date(+m[3]<100?2000+ +m[3]:+m[3],+m[2]-1,+m[1]);const d=new Date(s);return isNaN(d)?null:d;}
 function fmtDate(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
 function toN(v){return +(v||0);}
-function processFiles(){
+async function processFiles(){
   const status=document.getElementById('processStatus');status.textContent='Processando...';
   try{
     const df2all=XLSX.utils.sheet_to_json(slinWB.Sheets[slinWB.SheetNames[1]],{raw:false});
@@ -46,10 +56,13 @@ function processFiles(){
     if(df4s.length>0){if(!tipos['06 - LPN Armazém'])tipos['06 - LPN Armazém']={total:0,d1:0,d2:0,d3:0,d4:0,d5:0,d5p:0};tipos['06 - LPN Armazém'].total+=df4s.length;tipos['06 - LPN Armazém'].d5p+=df4s.length;df4s.forEach(row=>{const u=canonicalUnit(row['nome_und']);if(!resumo[u])resumo[u]={total:0,d1:0,d2:0,d3:0,d4:0,d5:0,d5p:0};resumo[u].total++;resumo[u].d5p++;});}
     const gtotal=Object.values(resumo).reduce((s,v)=>s+v.total,0),gd5p=Object.values(resumo).reduce((s,v)=>s+v.d5p,0),gd1=Object.values(resumo).reduce((s,v)=>s+v.d1,0),gd25=Object.values(resumo).reduce((s,v)=>s+v.d2+v.d3+v.d4+v.d5,0);
     const entry={date:refStr,total:gtotal,d5p:gd5p,d1:gd1,d25:gd25,pct:+(gd5p/gtotal*100).toFixed(1),units:Object.keys(resumo).length,resumo,tipos};
-    const idx=extraHistory.findIndex(h=>h.date===refStr);if(idx>=0)extraHistory[idx]=entry;else extraHistory.push(entry);
-    try{localStorage.setItem('slin_extra_sf',JSON.stringify(extraHistory));}catch(e){}
+    status.textContent='Salvando...';
+    const token=localStorage.getItem('sf_portal_token')||'';
+    const res=await fetch('/api/processos-abertos/historico',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(entry)});
+    if(!res.ok)throw new Error('status '+res.status);
+    extraHistory=await res.json();
     status.textContent='✓ Adicionado — '+refStr; document.getElementById('uploadPanel').style.display='none'; document.getElementById('btnToggleUpload').innerHTML='<i class="ti ti-upload" aria-hidden="true"></i>Atualizar dados'; renderAll();
-  }catch(err){status.textContent='Erro ao processar.';console.error(err);}
+  }catch(err){status.textContent='Erro ao processar ou salvar.';console.error(err);}
 }
 function renderAll(){weeksCache=allHistory();if(!weeksCache.length)return;const curr=weeksCache[weeksCache.length-1],prev=weeksCache.length>1?weeksCache[weeksCache.length-2]:null;document.getElementById('datePill').textContent=curr.date; const hb=document.getElementById('heroBadge'); if(hb) hb.textContent=curr.date;document.getElementById('kpiWeekLabel').textContent=curr.date;renderKPIs(curr,prev);renderTrendChart(weeksCache);renderPctChart(weeksCache);renderTiposChart(weeksCache);renderBarChart(curr);renderHistorico(weeksCache);renderWeekSelector(weeksCache);renderWeekDetail(curr.date);buildUnitGrid(weeksCache);selectTopUnits(5);}
 function renderKPIs(curr,prev){function delta(cur,pre,pct=false){if(pre==null)return'';const d=cur-pre,sign=d>0?'+':'';const cls=d>0?'delta-up':d<0?'delta-down':'delta-flat';const arrow=d>0?'▲':d<0?'▼':'—';const val=pct?sign+Math.abs(d).toFixed(1)+'pp':sign+Math.abs(d).toLocaleString('pt-BR');return'<span class="'+cls+'">'+arrow+' '+val+' vs ant.</span>';}document.getElementById('kpiTotal').textContent=fmt(curr.total);document.getElementById('kpi5d').textContent=fmt(curr.d5p);document.getElementById('kpiPct').textContent=pctFmt(curr.pct);document.getElementById('kpiD1').textContent=fmt(curr.d1);document.getElementById('kpiUnits').textContent=curr.units||(curr.resumo?Object.keys(curr.resumo).length:'—');if(prev){document.getElementById('kpiTotalD').innerHTML=delta(curr.total,prev.total);document.getElementById('kpi5dD').innerHTML=delta(curr.d5p,prev.d5p);document.getElementById('kpiPctD').innerHTML=delta(curr.pct,prev.pct,true);document.getElementById('kpiD1D').innerHTML=delta(curr.d1,prev.d1);}}
@@ -84,7 +97,10 @@ function toggleUpload() {
     : '<i class="ti ti-upload" aria-hidden="true"></i>Atualizar dados';
 }
 
-renderAll();
+(async function init(){
+  extraHistory=await fetchExtraHistory();
+  renderAll();
+})();
 
 // ── wiring de eventos (sem handler inline — bloqueado pelo CSP script-src 'self' do portal) ──
 document.getElementById('navDash').addEventListener('click', () => switchView('dashboard'));

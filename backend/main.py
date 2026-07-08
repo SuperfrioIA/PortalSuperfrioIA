@@ -14,6 +14,7 @@ from backend.core.database import init_db
 from backend.core.limiter import limiter
 from backend.portal.router import router as portal_router
 from backend.portal.router import router_admin as portal_admin_router
+from backend.processos_abertos.router import router as processos_abertos_router
 from backend.seed import seed_initial
 from backend.usuarios.router import router_admin as usuarios_admin_router
 
@@ -110,6 +111,7 @@ app.include_router(auth_router)
 app.include_router(portal_router)
 app.include_router(portal_admin_router)
 app.include_router(usuarios_admin_router)
+app.include_router(processos_abertos_router)
 
 
 @app.get("/api/health")
