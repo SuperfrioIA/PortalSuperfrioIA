@@ -1,0 +1,27 @@
+/* Subconjunto local do @tabler/icons-webfont 3.19.0 — só os 22 ícones usados
+   neste dashboard (evita puxar a fonte completa via CDN, bloqueada pelo CSP
+   script-src/style-src 'self'). Fonte original: MIT License, tabler.io/icons */
+@font-face{font-family:"tabler-icons";font-style:normal;font-weight:400;src:url("fonts/tabler-icons.woff2") format("woff2")}
+.ti{font-family:"tabler-icons" !important;speak:none;font-style:normal;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.ti-alert-circle:before{content:"\ea05"}
+.ti-alert-triangle:before{content:"\ea06"}
+.ti-building:before{content:"\ea4f"}
+.ti-calendar:before{content:"\ea53"}
+.ti-calendar-week:before{content:"\fd30"}
+.ti-chart-bar:before{content:"\ea59"}
+.ti-chart-bubble:before{content:"\ec75"}
+.ti-chart-line:before{content:"\ea5c"}
+.ti-file-spreadsheet:before{content:"\f03e"}
+.ti-history:before{content:"\ebea"}
+.ti-info-circle:before{content:"\eac5"}
+.ti-layout-dashboard:before{content:"\f02c"}
+.ti-list-check:before{content:"\eb6a"}
+.ti-list-details:before{content:"\ef40"}
+.ti-percentage:before{content:"\ecf4"}
+.ti-refresh:before{content:"\eb13"}
+.ti-stack:before{content:"\eb2d"}
+.ti-stethoscope:before{content:"\edbe"}
+.ti-target:before{content:"\eb35"}
+.ti-trending-up:before{content:"\eb43"}
+.ti-upload:before{content:"\eb47"}
+.ti-x:before{content:"\eb55"}
