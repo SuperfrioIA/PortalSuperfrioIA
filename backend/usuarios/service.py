@@ -5,7 +5,7 @@ ver. Todas as funções recebem a Session do chamador (mesma transação).
 """
 from sqlalchemy import select
 
-from backend.usuarios.models import Usuario, role_apps, usuario_roles
+from backend.usuarios.models import Role, Usuario, role_apps, usuario_roles
 
 
 def por_username(session, username: str, apenas_ativos: bool = True) -> dict | None:
@@ -16,6 +16,20 @@ def por_username(session, username: str, apenas_ativos: bool = True) -> dict | N
         stmt = stmt.where(Usuario.ativo == 1)
     row = session.execute(stmt).mappings().fetchone()
     return dict(row) if row else None
+
+
+def tem_role(session, usuario_id: int, role_slug: str) -> bool:
+    """Usuário tem, via qualquer atribuição, a role ativa com esse slug?"""
+    row = session.execute(
+        select(usuario_roles.c.usuario_id)
+        .join_from(usuario_roles, Role, Role.id == usuario_roles.c.role_id)
+        .where(
+            usuario_roles.c.usuario_id == usuario_id,
+            Role.slug == role_slug,
+            Role.ativo == 1,
+        )
+    ).first()
+    return row is not None
 
 
 def app_ids_permitidos(session, usuario_id: int) -> list[int]:

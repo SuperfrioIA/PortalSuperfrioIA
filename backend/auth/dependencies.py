@@ -8,6 +8,7 @@ from backend.core.database import db
 from backend.usuarios import service as usuarios_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
@@ -33,6 +34,18 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     if user["token_version"] != tv_token:
         raise creds_exc
     return user
+
+
+def get_current_user_optional(token: str | None = Depends(oauth2_scheme_optional)) -> dict | None:
+    """Como get_current_user, mas devolve None em vez de 401/403 — pra endpoints
+    que precisam saber quem é o visitante sem exigir login (ex.: decidir se
+    mostra um botão que só quem tem permissão pode usar)."""
+    if not token:
+        return None
+    try:
+        return get_current_user(token)
+    except HTTPException:
+        return None
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
