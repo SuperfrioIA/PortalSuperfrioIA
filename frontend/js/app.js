@@ -300,6 +300,17 @@ function openGovernanca() {
   document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
 }
 
+/* Abre o "Mapa IA" (estático em /mapa-ia/) embutido no portal, em tela cheia.
+   Mesmo padrão do openGovernanca — conteúdo próprio e confiável (same-origin). */
+function openMapaIa() {
+  const iframe = document.getElementById("iframe-content");
+  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+  document.getElementById("iframe-title").textContent = "Mapa IA";
+  document.getElementById("iframe-url").textContent = "";
+  iframe.src = "/mapa-ia/";
+  document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
+}
+
 function escapeHtml(s) {
   if (s == null) return "";
   return String(s)
@@ -541,6 +552,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.SF && window.SF.openAdmin) window.SF.openAdmin();
   });
   document.getElementById("btn-open-governanca").addEventListener("click", openGovernanca);
+  document.getElementById("btn-open-mapa-ia").addEventListener("click", openMapaIa);
   document.getElementById("btn-open-changelog").addEventListener("click", openChangelog);
   document.getElementById("btn-back-from-changelog").addEventListener("click", closeChangelog);
   document.getElementById("btn-open-sistemas").addEventListener("click", openSistemas);
