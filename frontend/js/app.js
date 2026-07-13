@@ -577,8 +577,17 @@ document.addEventListener("DOMContentLoaded", () => {
   /* iframe overlay */
   document.getElementById("iframe-close").addEventListener("click", closeIframe);
   document.getElementById("gov-close").addEventListener("click", closeIframe);
-  document.getElementById("iframe-overlay").addEventListener("click", (ev) => {
-    if (ev.target.id === "iframe-overlay") closeIframe();
+  // Só fecha se o clique começou e terminou no próprio fundo do overlay.
+  // Evita fechar o app aberto ao arrastar o mouse pra fora sem querer (ex.:
+  // selecionar texto e soltar o botão fora da área do iframe).
+  const iframeOverlay = document.getElementById("iframe-overlay");
+  let iframeMouseDownTarget = null;
+  iframeOverlay.addEventListener("mousedown", (ev) => {
+    iframeMouseDownTarget = ev.target;
+  });
+  iframeOverlay.addEventListener("click", (ev) => {
+    if (ev.target === iframeOverlay && iframeMouseDownTarget === iframeOverlay) closeIframe();
+    iframeMouseDownTarget = null;
   });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && document.getElementById("iframe-overlay").classList.contains("visible")) {
