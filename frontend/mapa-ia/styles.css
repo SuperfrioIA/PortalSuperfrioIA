@@ -63,7 +63,7 @@ html, body {
   gap: 14px;
   margin-bottom: 22px;
 }
-.brandLogo { height: 34px; width: auto; display: block; }
+.brandLogo { height: 44px; width: auto; display: block; }
 .brandRule {
   flex: 1;
   height: 2px;
