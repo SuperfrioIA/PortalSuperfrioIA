@@ -20,6 +20,10 @@
     editing: null,   // {entity, record} ou null
   };
 
+  // Vira true quando o usuário digita algo no formulário do modal. Usado para
+  // pedir confirmação antes de descartar (ESC ou clique no fundo do overlay).
+  let modalDirty = false;
+
   /* ---------- HTTP helper ---------- */
   async function api(method, path, body) {
     const opts = {
@@ -277,6 +281,7 @@
     document.getElementById("modal-title").textContent = titles[entity];
     document.getElementById("modal-form").innerHTML = buildForm(entity, record);
     document.getElementById("modal-error").textContent = "";
+    modalDirty = false;
     document.getElementById("modal-overlay").classList.add("visible");
     setTimeout(() => {
       const first = document.querySelector("#modal-form input,#modal-form select,#modal-form textarea");
@@ -297,12 +302,22 @@
       </div>
     `;
     document.getElementById("modal-error").textContent = "";
+    modalDirty = false;
     document.getElementById("modal-overlay").classList.add("visible");
   }
 
   function closeModal() {
     document.getElementById("modal-overlay").classList.remove("visible");
     ADM.editing = null;
+    modalDirty = false;
+  }
+
+  // Fechamento "leve" (ESC / clique no fundo): se o formulário já foi mexido,
+  // pede confirmação para não perder o preenchimento sem querer. X e Cancelar
+  // são gestos explícitos e continuam fechando direto (chamam closeModal).
+  function requestClose() {
+    if (modalDirty && !confirm(t("confirm.discard"))) return;
+    closeModal();
   }
 
   /* ---------- Form builders ---------- */
@@ -608,9 +623,27 @@
 
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-cancel").addEventListener("click", closeModal);
-    document.getElementById("modal-overlay").addEventListener("click", (ev) => {
-      if (ev.target.id === "modal-overlay") closeModal();
+
+    // Clique no fundo só fecha se o clique COMEÇOU e TERMINOU no próprio fundo.
+    // Sem isso, selecionar texto dentro de um campo e soltar o mouse fora do
+    // modal disparava um "click" no overlay (ancestral comum) e fechava sem querer.
+    const modalOverlay = document.getElementById("modal-overlay");
+    let modalMouseDownTarget = null;
+    modalOverlay.addEventListener("mousedown", (ev) => {
+      modalMouseDownTarget = ev.target;
     });
+    modalOverlay.addEventListener("click", (ev) => {
+      if (ev.target === modalOverlay && modalMouseDownTarget === modalOverlay) requestClose();
+      modalMouseDownTarget = null;
+    });
+
+    // Qualquer digitação/alteração no formulário marca o modal como "sujo".
+    // O listener fica no container (#modal-form), que persiste mesmo quando o
+    // innerHTML é reconstruído a cada openModal — input events fazem bubbling.
+    document.getElementById("modal-form").addEventListener("input", () => {
+      modalDirty = true;
+    });
+
     document.getElementById("modal-save").addEventListener("click", submitModal);
     document.getElementById("modal-form").addEventListener("submit", (ev) => {
       ev.preventDefault();
@@ -618,7 +651,7 @@
     });
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && document.getElementById("modal-overlay").classList.contains("visible")) {
-        closeModal();
+        requestClose();
       }
     });
 
