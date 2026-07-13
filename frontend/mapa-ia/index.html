@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ecossistema de IA — SuperFrio</title>
+  <link rel="icon" href="logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="section" aria-labelledby="mapa-titulo">
+    <header class="header">
+      <div class="brandBar">
+        <img class="brandLogo" src="logo.png" alt="IceStar | SuperFrio">
+        <hr class="brandRule" aria-hidden="true">
+      </div>
+      <span class="eyebrow">Ecossistema de IA · SuperFrio</span>
+      <h1 id="mapa-titulo">Como funciona a <span class="accent">IA</span> na SuperFrio</h1>
+      <p class="intro">
+        Pessoas de negócio constroem com IA, a triagem classifica cada caso e a TI
+        publica com governança. Passe o mouse ou toque em um nó para ver como tudo se conecta.
+      </p>
+
+      <div class="legend" aria-hidden="true">
+        <span class="legendItem"><span class="legendDot core"></span>Núcleo</span>
+        <span class="legendItem"><span class="legendDot pessoa"></span>Pessoas</span>
+        <span class="legendItem"><span class="legendDot motor"></span>Motor IA</span>
+        <span class="legendItem"><span class="legendDot triagem"></span>Triagem</span>
+        <span class="legendItem"><span class="legendDot entrega"></span>Entrega &amp; publicação</span>
+        <span class="legendItem"><span class="legendDot planejado"></span>Planejado</span>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="graphCard">
+        <svg id="graph" class="svg" viewBox="0 0 1000 620" role="group"
+             aria-label="Mapa interativo do ecossistema de IA. Use Tab para navegar entre os nós e Enter para ver os detalhes.">
+          <g id="edges"></g>
+          <g id="nodes"></g>
+        </svg>
+      </div>
+
+      <aside class="panel" id="panel" aria-live="polite">
+        <span class="tag" id="panelTag"></span>
+        <h2 class="panelTitle" id="panelTitle"></h2>
+        <p class="panelText" id="panelText"></p>
+        <div class="connections" id="panelConns" hidden>
+          <span class="connLabel">Conecta-se a</span>
+          <div class="chips" id="panelChips"></div>
+        </div>
+        <p class="hint">Dica: arraste os nós (com o mouse) para reorganizar o mapa.</p>
+      </aside>
+    </div>
+  </main>
+
+  <script src="graph-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
