@@ -1,0 +1,321 @@
+/* Mapa do Ecossistema de IA — SuperFrio
+ * Tema CLARO (paleta oficial IceStar | SuperFrio, Manual de Marca v1.0).
+ * Fonte: Montserrat (única fonte da marca), carregada via Google Fonts no HTML. */
+
+:root {
+  /* Paleta oficial (brand-tokens) */
+  --brand-azul-institucional: #071A3A;
+  --brand-azul-corporativo:   #0A2A5E;
+  --brand-azul-principal:     #1E6FD9;
+  --brand-azul-conexao:       #3FA9F5;
+  --brand-amarelo:            #FFC400;
+  --brand-amarelo-suave:      #FFD84D;
+  --brand-branco:             #FFFFFF;
+  --brand-cinza-claro:        #C7D2E3;
+  --brand-azul-escuro:        #050F24;
+
+  /* Derivados para o tema claro */
+  --card:      #FFFFFF;
+  --card-2:    #F0F4FA;
+  --card-3:    #F7F9FC;
+  --texto:     #071A3A;
+  --muted:     #5A6B85;
+  --line:      rgba(30, 111, 217, 0.16);
+  --line-strong: rgba(30, 111, 217, 0.30);
+
+  --grad-conexao: linear-gradient(135deg, #1E6FD9 0%, #3FA9F5 100%);
+  --shadow-sm: 0 2px 8px rgba(7, 26, 58, 0.10);
+  --shadow-md: 0 10px 34px rgba(7, 26, 58, 0.10);
+
+  --font-primary: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-fast: 220ms;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.10), transparent 42%),
+    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.08), transparent 45%),
+    #FBFCFE;
+  color: var(--texto);
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.section {
+  padding: 40px 0 64px;
+  width: min(1180px, calc(100% - 40px));
+  margin-inline: auto;
+}
+
+/* ---------- Cabeçalho ---------- */
+.header { margin-bottom: 26px; }
+
+.brandBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.brandLogo { height: 34px; width: auto; display: block; }
+.brandRule {
+  flex: 1;
+  height: 2px;
+  border: 0;
+  background: linear-gradient(90deg, var(--brand-cinza-claro), transparent);
+}
+
+.eyebrow {
+  display: inline-block;
+  color: var(--brand-azul-principal);
+  background: rgba(30, 111, 217, 0.08);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 7px 13px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.header h1 {
+  font-size: clamp(1.7rem, 3.8vw, 2.7rem);
+  color: var(--brand-azul-institucional);
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  margin: 14px 0 10px;
+  max-width: 22ch;
+  font-weight: 700;
+}
+.header h1 .accent {
+  box-shadow: inset 0 -0.32em 0 var(--brand-amarelo-suave);
+}
+.header .intro {
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---------- Legenda ---------- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 20px;
+}
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(7, 26, 58, 0.18);
+  flex: none;
+}
+.legendDot.core      { background: var(--brand-azul-escuro); }
+.legendDot.pessoa    { background: var(--brand-azul-corporativo); }
+.legendDot.motor     { background: var(--brand-amarelo); }
+.legendDot.triagem   { background: var(--brand-azul-conexao); }
+.legendDot.entrega   { background: var(--brand-azul-principal); }
+.legendDot.planejado { background: var(--card-2); border: 1.5px dashed var(--brand-azul-conexao); }
+
+/* ---------- Layout grafo + painel ---------- */
+.wrap {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 22px;
+  align-items: start;   /* painel e grafo não forçam a altura um do outro (evita o grafo "pular") */
+}
+
+.graphCard {
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  background:
+    radial-gradient(circle at 22% 16%, rgba(63, 169, 245, 0.12), transparent 46%),
+    radial-gradient(circle at 84% 86%, rgba(30, 111, 217, 0.08), transparent 46%),
+    var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y; /* no toque, rola a página; arrastar nó é só mouse */
+}
+
+/* ---------- Arestas ---------- */
+.edge {
+  stroke: var(--brand-azul-principal);
+  stroke-opacity: 0.16;
+  stroke-width: 1;
+  stroke-linecap: round;
+  transition: stroke-opacity 300ms var(--ease-soft), stroke-width 300ms var(--ease-soft),
+    stroke 300ms var(--ease-soft);
+}
+.edgeLit {
+  stroke: var(--brand-azul-conexao);
+  stroke-opacity: 0.9;
+  stroke-width: 1.6;
+}
+.edgeDim { stroke-opacity: 0.05; }
+
+/* ---------- Nós ---------- */
+.node { cursor: grab; outline: none; }
+.node:active { cursor: grabbing; }
+.hit { fill: transparent; }
+.halo { fill: var(--card); opacity: 0.92; }
+.dot {
+  stroke: rgba(7, 26, 58, 0.22);
+  stroke-width: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--dur-fast) var(--ease-soft), stroke-width var(--dur-fast) var(--ease-soft);
+}
+
+.typeCore      .dot { fill: var(--brand-azul-escuro); }
+.typePessoa    .dot { fill: var(--brand-azul-corporativo); }
+.typeMotor     .dot { fill: var(--brand-amarelo); stroke: rgba(7, 26, 58, 0.4); }
+.typeTriagem   .dot { fill: var(--brand-azul-conexao); }
+.typeEntrega   .dot { fill: var(--brand-azul-principal); }
+.typePlanejado .dot {
+  fill: var(--card-2);
+  stroke: var(--brand-azul-conexao);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 2.4;
+}
+
+.node.isActive .dot { transform: scale(1.3); stroke: var(--brand-azul-institucional); stroke-width: 2; }
+.node.isSelected .dot { stroke: var(--brand-azul-institucional); stroke-width: 2.4; }
+.node.isDim { opacity: 0.24; }
+.node:focus-visible .dot { stroke: var(--brand-azul-institucional); stroke-width: 3; }
+.node, .label { transition: opacity var(--dur-fast) var(--ease-soft); }
+
+/* ---------- Rótulos ---------- */
+.label {
+  fill: var(--texto);
+  font-family: var(--font-primary);
+  font-weight: 600;
+  text-anchor: middle;
+  pointer-events: none;
+  paint-order: stroke;           /* contorno branco atrás do texto = legível sobre as linhas */
+  stroke: var(--card);
+  stroke-width: 3.4px;
+  stroke-linejoin: round;
+}
+.labelPrimary { font-size: 15px; fill: var(--brand-azul-institucional); font-weight: 700; }
+.labelSecondary { font-size: 12.5px; opacity: 0; }  /* rótulo secundário só no destaque */
+.labelShown { opacity: 1; }
+
+/* ---------- Painel de detalhe ---------- */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;     /* altura estável: cobre o conteúdo mais alto, então a caixa nunca redimensiona ao trocar de nó */
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+.tag {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  margin-bottom: 16px;
+}
+.tag.typeCore      { background: var(--brand-azul-escuro); }
+.tag.typePessoa    { background: var(--brand-azul-corporativo); }
+.tag.typeMotor     { background: var(--brand-amarelo); color: var(--brand-azul-institucional); }
+.tag.typeTriagem   { background: var(--brand-azul-conexao); color: var(--brand-azul-institucional); }
+.tag.typeEntrega   { background: var(--brand-azul-principal); }
+.tag.typePlanejado { background: transparent; color: var(--brand-azul-corporativo); border: 1.5px dashed var(--brand-azul-conexao); }
+
+.panelTitle {
+  margin: 0 0 12px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--brand-azul-institucional);
+  line-height: 1.15;
+}
+.panelText { color: var(--muted); font-size: 0.98rem; line-height: 1.55; margin: 0; }
+
+.connections { margin-top: 22px; }
+.connLabel {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--brand-azul-principal);
+  margin-bottom: 11px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: var(--font-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--brand-azul-institucional);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-soft), border-color var(--dur-fast) var(--ease-soft),
+    box-shadow var(--dur-fast) var(--ease-soft);
+}
+.chip:hover, .chip:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+.hint {
+  margin: auto 0 0;
+  padding-top: 22px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: 1fr; }
+  .hint { margin-top: 18px; }
+}
+@media (max-width: 640px) {
+  .section { padding: 28px 0 44px; width: min(1180px, calc(100% - 26px)); }
+  .graphCard, .panel { border-radius: var(--radius-md); }
+  .panel { padding: 20px; }
+  /* O viewBox (1000) encolhe muito na tela; textos/traços precisam ser maiores em unidades de viewBox. */
+  .labelPrimary { font-size: 25px; }
+  .labelSecondary { font-size: 21px; }
+  .edge { stroke-width: 1.5; }
+  .edgeLit { stroke-width: 2.2; }
+}
+
+/* ---------- Acessibilidade: sem movimento ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
