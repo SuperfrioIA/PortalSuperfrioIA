@@ -1,6 +1,22 @@
 # HANDOFF — Analisador de Mapa Estatísticos (NF × WMS) — SuperFrio/IceStar
 
-**Status:** Confirmado funcionando pelo usuário após modularização (teste real no navegador com upload de PDF/XLSX). Integrado ao Hub SuperFrio & Icestar em 2026-07-07 como app da seção **QHSE**, `tipo_acesso = iframe`. Atualizado para **v2.0** em 2026-07-08 (validação de peso por soma dos itens). ✅
+**Status:** Confirmado funcionando pelo usuário após modularização (teste real no navegador com upload de PDF/XLSX). Integrado ao Hub SuperFrio & Icestar em 2026-07-07 como app da seção **QHSE**, `tipo_acesso = iframe`. Atualizado para **v2.0** em 2026-07-08 (validação de peso por soma dos itens). Atualizado para **v2.11** em 2026-07-22 (ver changelog abaixo). ✅
+
+---
+
+## Changelog v2.0 → v2.11 (2026-07-22)
+
+Todas as mudanças abaixo estão em `app.js` (lógica) e `index.html` (CSS/títulos):
+
+- **Casamento sempre pela coluna NF** (`rowMatchesNf`): o romaneio saiu do match. Um mesmo romaneio agrupa várias notas, então casar por romaneio somava o peso de outras NFs e gerava **falsa divergência**. Corrigido.
+- **Coluna SIF capturada do WMS** (`CAMPOS` ganhou `{key:"sif"}`) e novo `xlsxPorProduto` (agrupa as linhas do WMS por produto: soma peso e junta SIFs).
+- **Detalhamento por produto** (`buildDetail`): tabela NF × XLSX lado a lado — Item · Descrição · Peso líq. KG (NF) · SIF (NF) · Peso líq. KG (XLSX) · SIF (XLSX) · **Status por item**. Linha destacada em amarelo quando não confere; status em texto colorido (azul "Confere" / dourado "Divergência"), sem box.
+- **Comparação de SIF** (`sifNum`/`sifDiverge`): SIF da NF × SIF do XLSX; se divergem, o item e a NF viram Divergência (mesmo com peso batendo; Δ em kg segue 0). SIFs divergentes destacados.
+- **`extractSif` retorna só o número do SIF** (ex.: `LACRE SIF :0006974/SIF1889` → `1889`), evitando falso positivo na comparação e limpando a exibição.
+- **Títulos** da tabela principal: "NF (XML)" e "Esperado (XML)".
+- **Layout**: separador vertical único entre SIF (NF) e Peso líq. XLSX (comparativo NF|XLSX); código do item em uma linha.
+
+Origem: desenvolvido/validado em standalone (repo pessoal) e portado para cá preservando a estrutura modular (index.html + app.js). Baseline v2.0 era idêntico ao standalone v2.0, então o port foi 1:1 por função.
 
 ---
 

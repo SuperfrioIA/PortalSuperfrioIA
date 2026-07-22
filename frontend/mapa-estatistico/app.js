@@ -214,12 +214,20 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     return dv===parseInt(k[43],10);
   }
   const nNFdaChave=k=>String(parseInt(k.substr(25,9),10));
-  // SIF (Serviço de Inspeção Federal) — valor do "LACRE SIF"/"SIF" dos dados adicionais
+  // SIF (Serviço de Inspeção Federal) — extrai SÓ O NÚMERO do SIF dos dados adicionais.
+  // O rótulo costuma vir como "LACRE SIF :0006974/SIF1889", onde o SIF real é só o "1889"
+  // (número após o "SIF" interno). Se não houver "SIF" interno, usa o 1º grupo de dígitos
+  // do token (ex.: "236-ICMS" -> 236, "2544" -> 2544).
   function extractSif(s){
     if(!s) return "";
     let m=/LACRE\s+SIF\s*:?\s*([0-9][\w\/.\-]*)/i.exec(s);
     if(!m) m=/\bSIF\s*:?\s*([0-9][\w\/.\-]*)/i.exec(s);
-    return m?m[1].replace(/[.\s]+$/,"").trim():"";
+    if(!m) return "";
+    const tok=m[1].replace(/[.\s]+$/,"").trim();
+    const inner=[...tok.matchAll(/SIF\s*(\d+)/ig)];         // "0006974/SIF1889" -> 1889
+    if(inner.length) return inner[inner.length-1][1];
+    const num=/(\d+)/.exec(tok);                            // senão, o número do token
+    return num?num[1]:"";
   }
 
   // Acha o Y (geometria PDF) da linha de cabeçalho "CÓD/DESCRIÇÃO/NCM" da tabela de itens —
@@ -438,6 +446,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     {key:"fechamento",   label:"Data Fechamento",    exact:["data fechamento"], any:["data fecham"]},
     {key:"codProduto",   label:"Código Produto",     any:["codigo produto","cod produto"]},
     {key:"descProduto",  label:"Descrição Produto",  any:["descricao produto","descricao do produto"]},
+    {key:"sif",          label:"SIF",                exact:["sif"]},
     {key:"lote",         label:"Lote",               exact:["lote"]},
     {key:"dataProducao", label:"Data Produção",      any:["data producao","fabricacao"]},
     {key:"dataValidade", label:"Data Validade",      any:["data validade","validade"]},
@@ -489,22 +498,31 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
   $("thToggleAll").addEventListener("keydown",ev=>{ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); toggleAllDetails(); } });
 
   /* ---------- reconcile ---------- */
-  function rowMatchesNf(row,alvo){ const c=[]; if(state.nfCol)c.push(norm(row[state.nfCol])); if(state.romCol)c.push(norm(row[state.romCol])); return c.includes(alvo); }
+  // Casa uma linha do Excel com a NF conferida SEMPRE pela coluna "NF" do relatório do WMS.
+  // O romaneio NÃO entra no match: um mesmo romaneio agrupa várias notas fiscais, então
+  // casar por romaneio somaria o peso líquido de outras NFs do romaneio (super-contagem).
+  function rowMatchesNf(row,alvo){ return state.nfCol ? norm(row[state.nfCol])===alvo : false; }
   function conferir(){
     const notes=validNotes();
     state.results=notes.map(n=>{ const alvo=norm(n.nf);
       const matched=state.rows.filter(r=>rowMatchesNf(r,alvo));
       const recebido=matched.reduce((s,r)=>s+(Number(r[state.netCol])||0),0);
-      return {nf:n.nf.trim(),alvo,esperado:parsePeso(n.peso)||0,recebido,matched,sif:n.sif||"",itens:n.itens||[]}; });
+      const res={nf:n.nf.trim(),alvo,esperado:parsePeso(n.peso)||0,recebido,matched,sif:n.sif||"",itens:n.itens||[]};
+      // divergência de SIF: SIF da NF ≠ SIF do XLSX em algum item recebido (mesma regra do detalhe)
+      const grps=xlsxPorProduto(res); let sifDiv=false;
+      (res.itens||[]).forEach(it=>{ const key=sa(it.codigo||"")||sa(it.desc||""); const g=key?grps.get(key):null;
+        if(g && it.peso!=null && sifDiverge(res.sif,g.sifs)) sifDiv=true; });
+      res.sifDiv=sifDiv;
+      return res; });
     const inf=new Set(state.results.map(r=>r.alvo)); const extra={}; const todasExcel=new Set();
-    state.rows.forEach(r=>{ const v=state.nfCol?norm(r[state.nfCol]):(state.romCol?norm(r[state.romCol]):"");
+    state.rows.forEach(r=>{ const v=state.nfCol?norm(r[state.nfCol]):"";
       if(v){ todasExcel.add(v); if(!inf.has(v)) extra[v]=(extra[v]||0)+(Number(r[state.netCol])||0); } });
-    state.extra=extra; state.notasExcel=(state.nfCol||state.romCol)?todasExcel.size:null; applyTolerance();
+    state.extra=extra; state.notasExcel=state.nfCol?todasExcel.size:null; applyTolerance();
   }
   function applyTolerance(){
     const tol=parseFloat($("tol").value)||0; let nOk=0,nWarn=0,totDiff=0;
     state.results.forEach(r=>{ r.diff=r.recebido-r.esperado; r.none=r.matched.length===0;
-      r.ok=Math.abs(r.diff)<=tol+1e-9 && !r.none; if(r.ok)nOk++;else{nWarn++;totDiff+=r.diff;} });
+      r.ok=Math.abs(r.diff)<=tol+1e-9 && !r.none && !r.sifDiv; if(r.ok)nOk++;else{nWarn++;totDiff+=r.diff;} });
     $("sNotas").textContent=state.results.length;
     $("sExcel").textContent=(state.notasExcel==null)?"—":state.notasExcel;
     $("sOk").textContent=nOk; $("sWarn").textContent=nWarn;
@@ -562,19 +580,82 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     rows.forEach(tr=>allOpen?closeDetail(tr):openDetail(tr,Number(tr.dataset.i)));
     syncToggleAllHeader();
   }
+  // Extrai o número comparável do SIF, tolerando os formatos que aparecem na NF:
+  // usa o número após "SIF" (ex.: "0006974/SIF1889" -> 1889); senão o 1º grupo de dígitos
+  // (ex.: "236-ICMS" -> 236, "2544" -> 2544); ignora zeros à esquerda.
+  function sifNum(s){
+    if(!s) return "";
+    const t=String(s);
+    const all=[...t.matchAll(/SIF\s*0*(\d+)/ig)];
+    let d = all.length ? all[all.length-1][1] : ((/(\d+)/.exec(t)||[])[1]||"");
+    return d ? (d.replace(/^0+/,"")||"0") : "";
+  }
+  // SIF da NF diverge do SIF do XLSX? Só compara quando os dois lados têm SIF numérico.
+  function sifDiverge(nfSif, xlsxSifs){
+    const nfN=sifNum(nfSif); if(!nfN) return false;
+    const nums=[...xlsxSifs].map(sifNum).filter(Boolean); if(!nums.length) return false;
+    return !nums.includes(nfN);
+  }
+  // Agrupa as linhas do WMS casadas com a NF por produto (código; cai p/ descrição),
+  // somando o peso líquido e juntando os SIFs distintos daquele produto no XLSX.
+  function xlsxPorProduto(r){
+    const cCod=state.colmap.codProduto, cDsc=state.colmap.descProduto, cSif=state.colmap.sif, net=state.netCol;
+    const map=new Map();
+    (r.matched||[]).forEach(row=>{
+      const codRaw=cCod?String(row[cCod]??"").trim():"";
+      const dscRaw=cDsc?String(row[cDsc]??"").trim():"";
+      const key=sa(codRaw)||sa(dscRaw)||"?";
+      let g=map.get(key);
+      if(!g){ g={codigo:codRaw,desc:dscRaw,peso:0,sifs:new Set()}; map.set(key,g); }
+      g.peso+=Number(row[net])||0;
+      const s=cSif?String(row[cSif]??"").trim():""; if(s) g.sifs.add(s);
+    });
+    return map;
+  }
+  const stat=(txt,cls)=>`<span class="dstat ${cls}">${txt}</span>`;
   function buildDetail(r){
     const itens=(r.itens&&r.itens.length)?r.itens:null;
-    const sif=esc(r.sif||"");
-    let h="<table><thead><tr><th>Item</th><th>Descrição</th><th class=\"n\">Peso líq. esperado (kg)</th><th>SIF</th></tr></thead><tbody>";
+    const sifNF=esc(r.sif||"");
+    const grupos=xlsxPorProduto(r);
+    const usados=new Set();
+    const cell=(v,cls)=>`<td class="dt${cls?" "+cls:""}">${v}</td>`;
+    const linha=(rowCls,cod,desc,pesoNF,sifNFv,pesoX,sifX,status)=>
+      `<tr${rowCls?` class="${rowCls}"`:""}>`+cell(cod)+cell(desc)+cell(pesoNF,"n")+cell(sifNFv)+cell(pesoX,"n")+cell(sifX)+cell(status)+"</tr>";
+    let h="<table><colgroup><col style=\"width:7%\"><col style=\"width:31%\"><col style=\"width:13%\"><col style=\"width:9%\"><col style=\"width:13%\"><col style=\"width:9%\"><col style=\"width:18%\"></colgroup><thead><tr>"+
+      "<th>Item</th><th>Descrição</th>"+
+      "<th class=\"n\">Peso líq. KG (NF)</th><th>SIF (NF)</th>"+
+      "<th class=\"n\">Peso líq. KG (XLSX)</th><th>SIF (XLSX)</th><th>Status</th>"+
+      "</tr></thead><tbody>";
     if(itens){
       itens.forEach((it,idx)=>{
-        const pesoTxt=(it.peso!=null)?fmt3(it.peso):(fmt(it.qtd)+" "+(it.unid||""));
-        h+=`<tr><td class="dt">${esc(it.codigo)||("#"+(idx+1))}</td><td class="dt">${esc(it.desc)||"—"}</td><td class="dt n">${pesoTxt}</td><td class="dt">${sif||"—"}</td></tr>`;
+        const key=sa(it.codigo||"")||sa(it.desc||"");
+        const g=key?grupos.get(key):null; if(g) usados.add(key);
+        const pesoNF=(it.peso!=null)?fmt3(it.peso):(fmt(it.qtd)+" "+(it.unid||""));
+        const pesoX=g?fmt3(g.peso):"—";
+        const sifXraw=g?([...g.sifs].join(", ")||"—"):"—";
+        let st,cls,sifBad=false;
+        if(!g){ st="Só na NF"; cls="warn"; }                                   // esperado, mas não recebido
+        else if(it.peso==null){ st="Verificar"; cls="warn"; }                  // sem peso numérico p/ comparar
+        else {
+          const pesoOk=Math.abs(it.peso-g.peso)<=5e-4;
+          sifBad=sifDiverge(sifNF,g.sifs);                                     // SIF da NF ≠ SIF do XLSX
+          if(pesoOk && !sifBad){ st="Confere"; cls="ok"; } else { st="Divergência"; cls="warn"; }
+        }
+        const sifNFc=sifBad?`<span class="sifbad">${sifNF||"—"}</span>`:(sifNF||"—");
+        const sifXc =sifBad?`<span class="sifbad">${sifXraw}</span>`:sifXraw;
+        h+=linha(cls==="ok"?"":"dwarn",esc(it.codigo)||("#"+(idx+1)),esc(it.desc)||"—",pesoNF,sifNFc,pesoX,sifXc,stat(st,cls));
       });
-      h+=`<tr class="dtot"><td class="dt"></td><td class="dt">Total esperado</td><td class="dt n">${fmt3(r.esperado)}</td><td class="dt"></td></tr>`;
+      // Produtos presentes no XLSX mas sem item correspondente na NF (recebidos a mais)
+      grupos.forEach((g,key)=>{ if(usados.has(key)) return;
+        h+=linha("dwarn",esc(g.codigo)||"—",esc(g.desc)||"—","—","—",fmt3(g.peso),[...g.sifs].join(", ")||"—",stat("Só no XLSX","warn"));
+      });
     }else{
-      h+=`<tr><td class="dt">—</td><td class="dt">Itens do produto não capturados do PDF (nota manual ou layout não reconhecido)</td><td class="dt n">${fmt3(r.esperado)}</td><td class="dt">${sif||"—"}</td></tr>`;
+      // nota manual / layout não reconhecido: sem itens da NF para alinhar por produto
+      const okTot=Math.abs((r.esperado||0)-(r.recebido||0))<=5e-4 && !r.none;
+      h+=linha(okTot?"":"dwarn","—","Itens não capturados do PDF (nota manual ou layout não reconhecido)",fmt3(r.esperado),sifNF||"—",fmt3(r.recebido),"—",stat(okTot?"Confere":(r.none?"Sem recebimento":"Divergência"),okTot?"ok":(r.none?"none":"warn")));
     }
+    // Totais: esperado (NF) × recebido (XLSX)
+    h+="<tr class=\"dtot\">"+cell("")+cell("Total")+cell(fmt3(r.esperado),"n")+cell("")+cell(fmt3(r.recebido),"n")+cell("")+cell("")+"</tr>";
     return h+"</tbody></table>";
   }
 
