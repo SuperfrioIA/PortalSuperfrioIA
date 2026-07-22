@@ -166,12 +166,21 @@
   .pill.none{background:#FFF6DA;border:1px solid var(--brand-amarelo);color:#9A6E00}
   td.diff.pos{color:var(--brand-azul-principal);font-weight:600} td.diff.neg{color:#B98600;font-weight:700} td.diff.zero{color:var(--muted)}
   tr.detail td{background:var(--card-2);padding:0} tr.detail .inner{padding:12px 14px 14px}
-  tr.detail table{width:auto;border-collapse:collapse;font-size:12px}
-  tr.detail td.dt:nth-child(2),tr.detail th:nth-child(2){max-width:480px;white-space:normal}
-  tr.detail th{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:4px 8px}
+  tr.detail table{width:100%;border-collapse:collapse;font-size:12px}
+  tr.detail th:nth-child(2),tr.detail td.dt:nth-child(2){white-space:normal}
+  tr.detail td.dt:first-child{white-space:nowrap}
+  tr.detail th:nth-child(5),tr.detail td.dt:nth-child(5){border-left:1px solid rgba(10,42,94,.22)}
+  tr.detail th{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:4px 10px}
   tr.detail th.n{text-align:right}
-  tr.detail td.dt{padding:5px 8px;border-top:1px solid var(--border);color:var(--ink-soft)} tr.detail td.dt.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+  tr.detail td.dt{padding:5px 10px;border-top:1px solid var(--border);color:var(--ink-soft)} tr.detail td.dt.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
   tr.detail .dtot td.dt{border-top:1px solid var(--line-strong);color:var(--ink);font-weight:600}
+  tr.detail tr.dwarn td.dt{background:#FFF8E4}
+  tr.detail tr.dwarn td.dt:first-child{border-left:3px solid var(--brand-amarelo)}
+  tr.detail .dstat{font-weight:700}
+  tr.detail .dstat.ok{color:var(--brand-azul-principal)}
+  tr.detail .dstat.warn{color:#B98600}
+  tr.detail .dstat.none{color:#9A6E00}
+  tr.detail .sifbad{color:#B98600;font-weight:700}
   .extra{display:none;margin-top:16px;font-size:12px;color:var(--ink-soft)} .extra b{color:#B98600}
   .caret{display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
   tr.note.open .caret{transform:rotate(90deg);color:var(--brand-azul-principal)}
@@ -229,7 +238,7 @@
       <div class="step" id="st3"><span class="dot">3</span> Resultado</div>
     </nav>
     <div class="side-foot">
-      <span class="plat">Dev. GEE · Qualidade · v2.0</span>
+      <span class="plat">Dev. GEE · Qualidade · v2.11</span>
     </div>
   </aside>
 
@@ -322,7 +331,7 @@
       </div>
       <div class="filterbar" id="filterInfo"></div>
       <table class="res">
-        <thead><tr><th id="thToggleAll" role="button" tabindex="0" aria-pressed="false" title="Abrir/recolher todos os detalhes"><span class="caret">▸</span> NF (PDF)/XML</th><th class="n">Esperado (PDF)</th><th class="n">Recebido (XLSX)</th><th class="n">Diferença</th><th>Status</th></tr></thead>
+        <thead><tr><th id="thToggleAll" role="button" tabindex="0" aria-pressed="false" title="Abrir/recolher todos os detalhes"><span class="caret">▸</span> NF (XML)</th><th class="n">Esperado (XML)</th><th class="n">Recebido (XLSX)</th><th class="n">Diferença</th><th>Status</th></tr></thead>
         <tbody id="resBody"></tbody>
       </table>
       <div class="extra" id="extra"></div>
