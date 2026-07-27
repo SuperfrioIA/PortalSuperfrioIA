@@ -1439,3 +1439,201 @@ table.mtx tr.mtx-grp th { background: var(--bg3); padding: 6px 12px; text-align:
   .admin-table tbody tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .admin-table .actions { justify-content: flex-start; padding-top: 6px; }
 }
+
+/* ============ PROJETOS IA ============
+   Reaproveita os tokens da marca e os componentes já existentes (.admin-top,
+   .back-link, .pill, .modal-*) — nada de paleta nova. Cores de fase seguem o
+   mesmo espectro azul→amarelo→verde já usado em .pill.perm/.pill.on; a única
+   cor fora da marca é --warn (terracota), reservada ao indicador de atraso. */
+.projetos { max-width: 1180px; margin: 0 auto; padding: 32px 40px 60px; }
+
+/* Contadores no topo da lista */
+.proj-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 4px 0 18px; }
+.proj-tile { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+.proj-tile .n { font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.proj-tile .l { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); margin-top: 3px; }
+.proj-tile.total { border-left: 3px solid var(--brand-amarelo); }
+
+/* Filtros + alternador de visão + novo projeto */
+.proj-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.proj-toolbar select {
+  font-family: inherit; font-size: 12px; font-weight: 600; color: var(--text2);
+  background: var(--surface); border: 1px solid var(--border2); border-radius: 999px;
+  padding: 6px 12px; cursor: pointer; max-width: 180px;
+}
+.proj-clear { background: none; border: none; color: var(--brand-azul-principal); font-size: 12px; font-weight: 600; cursor: pointer; display: none; font-family: inherit; }
+.proj-clear.on { display: inline; }
+.proj-views { display: inline-flex; background: var(--bg3); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
+.proj-views button { background: none; border: none; font-family: inherit; font-size: 12px; font-weight: 600; color: var(--text3); padding: 6px 16px; border-radius: 999px; cursor: pointer; }
+.proj-views button.on { background: #fff; color: var(--text); box-shadow: var(--shadow-sm); }
+.proj-toolbar-spacer { flex: 1; }
+
+.proj-vazio { margin-top: 12px; padding: 40px; text-align: center; color: var(--text2); background: var(--bg2); border: 1px dashed var(--border2); border-radius: var(--radius); }
+
+/* Badges de fase (grupo) e atraso — variantes de .pill já existente */
+.pill.fase-aval   { color: var(--text3); background: var(--bg3); border-color: var(--border2); }
+.pill.fase-constr { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.10); border-color: rgba(30, 111, 217, 0.25); }
+.pill.fase-impl   { color: #7A4E00; background: rgba(255, 196, 0, 0.20); border-color: rgba(255, 196, 0, 0.62); }
+.pill.fase-sup    { color: var(--ok); background: var(--ok-bg); border-color: rgba(26, 140, 78, 0.25); }
+.pill.atraso      { color: var(--warn); background: var(--warn-bg); border-color: rgba(180, 83, 9, 0.3); }
+
+/* ---------- Cards ---------- */
+.proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.proj-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; text-align: left; cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; gap: 9px;
+  box-shadow: var(--shadow-sm); transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.proj-card:hover { border-color: rgba(30, 111, 217, 0.4); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.proj-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.proj-card h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.proj-card .area { display: block; font-size: 11.5px; color: var(--text3); margin-top: 2px; }
+.proj-card .obj { font-size: 12.5px; color: var(--text2); line-height: 1.45; }
+.proj-card .marco { font-size: 11.5px; color: var(--text2); }
+.proj-card .marco b { color: var(--text); }
+.proj-card .quem { font-size: 11px; color: var(--text3); }
+.proj-card .quem b { color: var(--text2); font-weight: 600; }
+
+/* Mini barra de rollout (no card e na visão Rollout) */
+.mini-roll { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text2); }
+.mrbar { display: block; height: 5px; border-radius: 3px; background: var(--bg3); overflow: hidden; }
+.mrbar i { display: block; height: 100%; background: var(--brand-azul-principal); border-radius: 3px; }
+
+/* ---------- Gantt (cronograma, portfólio e projeto) ---------- */
+.gantt { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg2); padding: 14px 16px 10px; overflow-x: auto; }
+.gantt-inner { min-width: 720px; position: relative; }
+.g-axis { position: relative; height: 18px; font-size: 10.5px; color: var(--text3); font-weight: 600; margin-bottom: 6px; }
+.g-axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.g-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.g-row:first-of-type { border-top: none; }
+.g-lbl { flex: 0 0 150px; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-lbl .sub { display: block; font-size: 10.5px; font-weight: 600; color: var(--text3); }
+.g-lbl .sub.late { color: var(--warn); }
+.g-track { position: relative; flex: 1; height: 16px; background: var(--bg3); border-radius: 4px; }
+.g-bar { position: absolute; top: 0; height: 100%; border-radius: 4px; }
+.g-bar.seg-aval, .g-bar.fut { background: var(--border2); }
+.g-bar.seg-constr, .g-bar.cur { background: var(--brand-azul-principal); }
+.g-bar.seg-impl { background: rgba(255, 196, 0, 0.62); }
+.g-bar.seg-sup, .g-bar.done { background: var(--ok); }
+.g-bar.faded { opacity: 0.4; }
+.g-bar.open { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.g-marco { position: absolute; top: -3px; width: 10px; height: 10px; background: var(--brand-azul-principal); transform: translateX(-50%) rotate(45deg); border-radius: 2px; border: 2px solid #fff; box-shadow: var(--shadow-sm); }
+.g-hoje { position: absolute; top: -6px; bottom: -6px; width: 2px; background: var(--brand-amarelo); }
+.g-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--brand-azul-institucional); }
+.g-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text2); }
+.g-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.g-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+/* Swatches do portfólio (por grupo de fase) e do projeto (por estado da fase)
+   são conjuntos deliberadamente separados — "concluída" (verde, projeto) não é
+   a mesma cor de "Construção TI" (azul, portfólio), mesmo os dois usando barra
+   azul/verde em contextos diferentes do gantt. */
+.sw-aval, .sw-previsto { background: var(--border2); }
+.sw-constr, .sw-fatual { background: var(--brand-azul-principal); }
+.sw-impl { background: rgba(255, 196, 0, 0.62); }
+.sw-sup, .sw-fconcluida { background: var(--ok); }
+.sw-marco { background: var(--brand-azul-principal); transform: rotate(45deg); }
+.sw-hoje { background: var(--brand-amarelo); }
+.sw-tick { background: var(--brand-azul-institucional); }
+
+/* ---------- Visão Rollout (portfólio) ---------- */
+.roll-rows { display: flex; flex-direction: column; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.roll-row { display: grid; grid-template-columns: 200px 1fr 150px 1fr; gap: 14px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; background: none; border-left: none; border-right: none; border-top: none; font-family: inherit; width: 100%; text-align: left; }
+.roll-row:last-child { border-bottom: none; }
+.roll-row:hover { background: var(--bg); }
+.roll-row.off { opacity: 0.55; cursor: default; }
+.roll-row .nm { font-size: 13px; font-weight: 600; color: var(--text); }
+.roll-row .nm .sub { display: block; font-size: 10.5px; font-weight: 600; color: var(--text3); }
+.roll-row .bar { display: flex; align-items: center; gap: 8px; }
+.roll-row .bar .mrbar { flex: 1; height: 6px; }
+.roll-row .num { font-size: 12px; color: var(--text2); }
+.roll-row .prox { font-size: 11.5px; color: var(--text3); text-align: right; }
+.roll-row .prox b { color: var(--text2); }
+
+/* ---------- Detalhe do projeto ---------- */
+.proj-det-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin: 14px 0 20px; flex-wrap: wrap; }
+.proj-det-head h3 { margin: 0 0 4px; font-size: 22px; font-weight: 700; color: var(--text); }
+.proj-det-head .sub { margin: 0 0 10px; font-size: 13.5px; color: var(--text2); max-width: 56ch; }
+.proj-edit-note { display: block; margin-top: 6px; font-size: 10.5px; color: var(--text3); text-align: right; }
+
+.stepper-wrap { overflow-x: auto; margin: 8px 0 0; padding-bottom: 4px; }
+.stepper { display: flex; min-width: 640px; }
+.step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; background: none; border: none; font-family: inherit; cursor: default; padding: 6px 2px; }
+.step i { width: 14px; height: 14px; border-radius: 50%; background: var(--bg3); border: 2px solid var(--border2); display: block; }
+.step::before { content: ""; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px; background: var(--border2); z-index: 0; }
+.step:first-child::before { display: none; }
+.step span { font-size: 10.5px; font-weight: 600; color: var(--text3); text-align: center; max-width: 88px; }
+.step.done i { background: var(--brand-azul-principal); border-color: var(--brand-azul-principal); }
+.step.done::before { background: var(--brand-azul-principal); }
+.step.done { cursor: pointer; }
+.step.done span { color: var(--text2); }
+.step.done:hover span { color: var(--brand-azul-principal); }
+.step.cur i { background: #fff; border-color: var(--brand-amarelo); box-shadow: 0 0 0 3px rgba(255, 196, 0, 0.25); }
+.step.cur span { color: var(--text); font-weight: 700; }
+.step.sel span { color: var(--brand-azul-principal); }
+.fase-nota { margin-top: 10px; padding: 9px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12.5px; color: var(--text2); }
+.fase-nota .data { color: var(--text); font-weight: 700; }
+
+.det-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 22px 0 18px; }
+.det-tabs button { background: none; border: none; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--text3); padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.det-tabs button:hover { color: var(--text); }
+.det-tabs button.on { color: var(--brand-azul-principal); border-bottom-color: var(--brand-amarelo); }
+
+.exec { display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px; }
+.exec-txt .bloco { margin-bottom: 16px; }
+.exec-txt .bloco .k { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); margin-bottom: 4px; }
+.exec-txt .bloco p { margin: 0; font-size: 13.5px; color: var(--text2); line-height: 1.55; }
+.exec-meta { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; align-self: start; display: flex; flex-direction: column; gap: 10px; }
+.exec-meta > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.exec-meta .k { color: var(--text3); }
+.exec-meta .v { color: var(--text); font-weight: 600; text-align: right; }
+.exec-meta .v.data { font-variant-numeric: tabular-nums; }
+.exec-meta .marco-box { flex-direction: column; gap: 2px; }
+.exec-meta .marco-box .v { text-align: left; }
+@media (max-width: 880px) { .exec { grid-template-columns: 1fr; } }
+
+/* Rollout (aba do detalhe) */
+.ro-sum { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 14px 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; }
+.ro-sum .item { font-size: 12.5px; color: var(--text2); }
+.ro-sum .item b { color: var(--text); }
+.ro-sum .bar { display: flex; align-items: center; gap: 8px; }
+.ro-sum .bar .mrbar { width: 100px; height: 7px; }
+.ro-filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+.ro-filtros button { font-family: inherit; font-size: 11.5px; font-weight: 600; color: var(--text2); background: var(--bg3); border: 1px solid var(--border2); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+.ro-filtros button.on { background: var(--brand-azul-principal); color: #fff; border-color: var(--brand-azul-principal); }
+.ro-filtros .proj-toolbar-spacer { flex: 1; }
+.ro-det { margin-bottom: 14px; padding: 12px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12.5px; color: var(--text2); }
+.ro-det b { color: var(--text); }
+.ro-det .ro-edit { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+.ro-det .ro-edit label { font-size: 11px; font-weight: 600; color: var(--text3); display: flex; align-items: center; gap: 5px; }
+.ro-det .ro-edit input[type="date"],
+.ro-det .ro-edit input[type="text"] {
+  font-family: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border2);
+  background: #fff; border-radius: var(--radius-sm); color: var(--text);
+}
+.ro-reg { margin-bottom: 16px; }
+.ro-reg h5 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); }
+.ro-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 7px; font-family: inherit;
+  font-size: 11.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+  cursor: pointer; border: 1px solid var(--border2); background: var(--surface); color: var(--text2);
+}
+.fchip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px; background: var(--text3); }
+.fchip small { font-weight: 600; font-size: 10.5px; color: var(--text3); font-variant-numeric: tabular-nums; }
+.fchip.st-treinada { background: rgba(30, 111, 217, 0.10); border-color: transparent; color: var(--brand-azul-principal); }
+.fchip.st-treinada::before { background: var(--brand-azul-principal); }
+.fchip.st-agendada { background: rgba(255, 196, 0, 0.20); border-color: transparent; color: #7A4E00; }
+.fchip.st-agendada::before { background: var(--brand-amarelo); }
+.fchip.st-pendente::before { background: var(--text3); }
+.fchip.st-nao_se_aplica { border-style: dashed; color: var(--text3); opacity: 0.65; }
+.fchip.st-nao_se_aplica::before { background: transparent; border: 1px solid var(--text3); }
+.fchip.sel { box-shadow: 0 0 0 2px rgba(30, 111, 217, 0.25); }
+.fchip.add-fchip { border-style: dashed; color: var(--brand-azul-principal); }
+
+@media (max-width: 880px) {
+  .projetos { padding: 22px 18px 40px; }
+  .roll-row { grid-template-columns: 1fr; gap: 6px; }
+  .roll-row .prox { text-align: left; }
+  .stepper { min-width: 520px; }
+}
