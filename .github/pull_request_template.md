@@ -14,6 +14,9 @@ Ver [CONTRIBUTING.md](../CONTRIBUTING.md) para o detalhe de cada receita.
 
 - [ ] Nenhum segredo (senha/token/chave) commitado
 - [ ] Nenhuma dependência nova sem necessidade clara
+- [ ] **Permissão declarada**: toda rota nova tem guarda explícita (`get_current_user`,
+      `require_admin` ou `require_permissao`), e toda ação nova está no catálogo
+      (`backend/<modulo>/permissoes.py`). Se a rota é pública de propósito, diga por quê.
 - [ ] CSP respeitado (sem `<script>`/`<style>` inline novo sem justificativa)
 - [ ] Se módulo novo: migration revisada manualmente e testada localmente (`alembic upgrade head`)
 - [ ] Suíte de testes rodada localmente e verde
