@@ -12,8 +12,9 @@ startup (e nos testes) elimina essa dependência de ordem de import.
 `test_permissoes_catalogo.py::test_todo_modulo_esta_no_agregador` cobra isso.
 """
 from backend.processos_abertos import permissoes as processos_abertos_permissoes
+from backend.projetos_ia import permissoes as projetos_ia_permissoes
 
-_MODULOS = (processos_abertos_permissoes,)
+_MODULOS = (processos_abertos_permissoes, projetos_ia_permissoes)
 
 
 def carregar() -> None:

@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 
 from backend.core.database import DATABASE_URL, Base
 import backend.portal.models  # noqa: F401 — registra Secao/App no metadata
+import backend.projetos_ia.models  # noqa: F401 — registra Projeto/Fase/Filial/Rollout
 import backend.usuarios.models  # noqa: F401 — registra Usuario/Role/vinculos
 
 config = context.config

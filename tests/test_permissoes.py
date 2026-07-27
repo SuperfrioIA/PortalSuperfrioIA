@@ -23,9 +23,9 @@ def test_portal_home_admin_ve_tudo(client, admin_headers):
     r = client.get("/api/portal/home", headers=admin_headers)
     assert r.status_code == 200
     secoes = r.json()["secoes"]
-    assert {s["slug"] for s in secoes} == {"armazem", "backoffice"}
+    assert {s["slug"] for s in secoes} == {"armazem", "backoffice", "inovacao"}
     total_apps = sum(len(s["apps"]) for s in secoes)
-    assert total_apps == 8  # 7 exemplos + processos-abertos (app real do repo)
+    assert total_apps == 9  # 7 exemplos + processos-abertos + projetos-ia (apps reais do repo)
 
 
 def test_portal_home_operador_so_armazem(client, operador_headers):

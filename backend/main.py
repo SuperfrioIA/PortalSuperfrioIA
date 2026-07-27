@@ -16,6 +16,8 @@ from backend.permissoes import carregar as carregar_permissoes
 from backend.portal.router import router as portal_router
 from backend.portal.router import router_admin as portal_admin_router
 from backend.processos_abertos.router import router as processos_abertos_router
+from backend.projetos_ia.router import router as projetos_ia_router
+from backend.projetos_ia.router import router_admin as projetos_ia_admin_router
 from backend.seed import seed_initial
 from backend.usuarios.router import router_admin as usuarios_admin_router
 
@@ -116,6 +118,8 @@ app.include_router(portal_router)
 app.include_router(portal_admin_router)
 app.include_router(usuarios_admin_router)
 app.include_router(processos_abertos_router)
+app.include_router(projetos_ia_router)
+app.include_router(projetos_ia_admin_router)
 
 
 @app.get("/api/health")

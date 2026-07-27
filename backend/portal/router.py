@@ -195,8 +195,10 @@ class AppUpdate(BaseModel):
 
 
 def _check_tipo_acesso(tipo: Optional[str]) -> None:
-    if tipo is not None and tipo not in ("url", "iframe"):
-        raise HTTPException(400, "tipo_acesso deve ser 'url' ou 'iframe'")
+    # "interno" = tela nativa do próprio SPA do portal (ex.: Projetos IA), sem
+    # iframe nem nova aba — o front reconhece esse tipo em `openApp()`.
+    if tipo is not None and tipo not in ("url", "iframe", "interno"):
+        raise HTTPException(400, "tipo_acesso deve ser 'url', 'iframe' ou 'interno'")
 
 
 def _check_url(url: Optional[str]) -> None:

@@ -22,6 +22,15 @@ SECOES = [
         "icone": "briefcase",
         "ordem": 2,
     },
+    {
+        "slug": "inovacao",
+        "nome": "Inovação",
+        "nome_es": "Innovación",
+        "descricao": "Portfólio de projetos de IA e iniciativas de inovação.",
+        "descricao_es": "Portafolio de proyectos de IA e iniciativas de innovación.",
+        "icone": "radar",
+        "ordem": 3,
+    },
 ]
 
 APPS = [
@@ -134,6 +143,26 @@ APPS = [
         "tipo_acesso": "url",
         "badge": None,
         "ordem": 4,
+    },
+    # Inovação
+    {
+        # App real (frontend/projetos-ia/ ou tela nativa do SPA — ver
+        # backend/projetos_ia/). Precisa estar cadastrado para aparecer na
+        # matriz de acesso: é o app dono da permissão `projetos-ia:editar`.
+        # tipo_acesso "interno": abre uma tela nativa do portal, não iframe/URL
+        # externa — o valor de `url` é só um identificador, o front reconhece
+        # pelo tipo_acesso em `openApp()`.
+        "secao": "inovacao",
+        "slug": "projetos-ia",
+        "nome": "Projetos IA",
+        "nome_es": "Proyectos IA",
+        "descricao": "Visibilidade executiva do portfólio de projetos de IA: fase, próximo marco e rollout por filial.",
+        "descricao_es": "Visibilidad ejecutiva del portafolio de proyectos de IA: fase, próximo hito y despliegue por filial.",
+        "icone": "radar",
+        "url": "/projetos-ia",
+        "tipo_acesso": "interno",
+        "badge": None,
+        "ordem": 1,
     },
 ]
 
