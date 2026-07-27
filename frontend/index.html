@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20260727projia1">
-<script src="js/boot.js?v=20260727projia1"></script>
+<link rel="stylesheet" href="css/styles.css?v=20260727filiais1">
+<script src="js/boot.js?v=20260727filiais1"></script>
 </head>
 <body>
 
@@ -231,6 +231,7 @@
     <button class="admin-tab" data-tab="roles" data-i18n="admin.tab.roles">Roles</button>
     <button class="admin-tab" data-tab="usuarios" data-i18n="admin.tab.usuarios">Usuários</button>
     <button class="admin-tab" data-tab="filiais" data-i18n="admin.tab.filiais">Filiais</button>
+    <button class="admin-tab" data-tab="unidades-negocio" data-i18n="admin.tab.un">Unidades de negócio</button>
   </nav>
 
   <div class="admin-content">
@@ -271,7 +272,16 @@
         <h2 data-i18n="admin.filiais.heading">Filiais cadastradas</h2>
         <button class="btn-primary inline" id="btn-new-filial" data-i18n="admin.filiais.new">+ Nova filial</button>
       </div>
+      <input class="admin-busca" id="filiais-busca" type="search" data-i18n-ph="admin.filiais.buscaPh" placeholder="Buscar por código, nome ou cidade...">
       <div class="admin-table-wrap"><table class="admin-table" id="table-filiais"></table></div>
+    </div>
+
+    <div class="admin-pane hidden" id="pane-unidades-negocio">
+      <div class="admin-pane-head">
+        <h2 data-i18n="admin.un.heading">Unidades de negócio</h2>
+        <button class="btn-primary inline" id="btn-new-un" data-i18n="admin.un.new">+ Nova B.U</button>
+      </div>
+      <div class="admin-table-wrap"><table class="admin-table" id="table-unidades-negocio"></table></div>
     </div>
   </div>
 </div>
@@ -344,9 +354,9 @@
   </div>
 </div>
 
-<script src="js/i18n.js?v=20260727projia1"></script>
-<script src="js/app.js?v=20260727projia1"></script>
-<script src="js/admin.js?v=20260727projia1"></script>
-<script src="js/projetos.js?v=20260727projia1"></script>
+<script src="js/i18n.js?v=20260727filiais1"></script>
+<script src="js/app.js?v=20260727filiais1"></script>
+<script src="js/admin.js?v=20260727filiais1"></script>
+<script src="js/projetos.js?v=20260727filiais1"></script>
 </body>
 </html>

@@ -18,6 +18,9 @@
     roles: [],
     usuarios: [],
     filiais: [],
+    unidades_negocio: [],
+    // Termo da busca da aba Filiais (59 linhas em produção — rolar não resolve).
+    filialBusca: "",
     // Estrutura da matriz de acesso (app × ação), vinda de /api/admin/matriz.
     // Linhas = catálogo de apps (banco); colunas = vocabulário fixo (código).
     matriz: { acoes: [], secoes: [], descricoes: {}, orfas: [] },
@@ -25,6 +28,18 @@
   };
 
   const ACAO_VER = "ver";
+
+  // Região por UF — mesmo mapa do seed das filiais (backend/projetos_ia/seed.py).
+  // O Conciliador não tem região; aqui ela existe porque a tela de rollout
+  // agrupa as filiais por ela.
+  const REGIAO_POR_UF = {
+    SP: "Sudeste", RJ: "Sudeste", MG: "Sudeste", ES: "Sudeste",
+    PR: "Sul", SC: "Sul", RS: "Sul",
+    MT: "Centro-Oeste", MS: "Centro-Oeste", GO: "Centro-Oeste", DF: "Centro-Oeste",
+    AM: "Norte", PA: "Norte", AC: "Norte", RO: "Norte", RR: "Norte", AP: "Norte", TO: "Norte",
+    BA: "Nordeste", PE: "Nordeste", CE: "Nordeste", MA: "Nordeste", PI: "Nordeste",
+    RN: "Nordeste", PB: "Nordeste", SE: "Nordeste", AL: "Nordeste",
+  };
 
   // Rótulo da ação: usa o i18n quando existe a chave, senão o nome vindo da API.
   function acaoLabel(acao) {
@@ -70,13 +85,14 @@
 
   /* ---------- Load all ---------- */
   async function loadAll() {
-    const [secoes, apps, roles, usuarios, matriz, filiais] = await Promise.all([
+    const [secoes, apps, roles, usuarios, matriz, filiais, unidades] = await Promise.all([
       api("GET", "/api/admin/secoes"),
       api("GET", "/api/admin/apps"),
       api("GET", "/api/admin/roles"),
       api("GET", "/api/admin/usuarios"),
       api("GET", "/api/admin/matriz"),
       api("GET", "/api/admin/filiais"),
+      api("GET", "/api/admin/unidades-negocio"),
     ]);
     ADM.secoes = secoes;
     ADM.apps = apps;
@@ -84,6 +100,7 @@
     ADM.usuarios = usuarios;
     ADM.matriz = matriz;
     ADM.filiais = filiais;
+    ADM.unidades_negocio = unidades;
   }
 
   /* ---------- Open / close ---------- */
@@ -117,6 +134,7 @@
     else if (ADM.tab === "roles") renderRoles();
     else if (ADM.tab === "usuarios") renderUsuarios();
     else if (ADM.tab === "filiais") renderFiliais();
+    else if (ADM.tab === "unidades-negocio") renderUnidadesNegocio();
   }
 
   /* ---------- Render genérico de tabela ----------
@@ -295,22 +313,55 @@
 
   /* ---------- Render: FILIAIS ---------- */
   function renderFiliais() {
+    const termo = ADM.filialBusca.trim().toLowerCase();
+    const rows = termo
+      ? ADM.filiais.filter(
+          (f) => `${f.codigo || ""} ${f.nome} ${f.cidade || ""}`.toLowerCase().indexOf(termo) !== -1
+        )
+      : ADM.filiais;
     renderTable(document.getElementById("table-filiais"), {
       entity: "filiais",
-      emptyMsg: t("admin.empty.filiais"),
-      rows: ADM.filiais,
+      emptyMsg: termo ? t("admin.empty.filiaisFiltro") : t("admin.empty.filiais"),
+      rows,
       headers: [
-        th("admin.col.filial"), th("admin.col.uf"), th("admin.col.regiao"),
+        th("admin.col.codigo"), th("admin.col.filial"), th("admin.col.cidade"),
+        th("admin.col.uf"), th("admin.col.regiao"), th("admin.col.bu"),
         th("admin.col.status"), thRight("admin.col.acoes"),
       ],
       rowHtml: (f) => `<tr>
+        <td>${escapeHtml(f.codigo || t("admin.dash"))}</td>
         <td><div class="col-nome">${escapeHtml(f.nome)}</div></td>
+        <td>${escapeHtml(f.cidade || t("admin.dash"))}</td>
         <td>${escapeHtml(f.uf || t("admin.dash"))}</td>
         <td>${escapeHtml(f.regiao)}</td>
+        <td>${escapeHtml(f.unidade_negocio_nome || t("admin.dash"))}</td>
         <td><span class="pill ${f.ativo ? "on" : "off"}">${escapeHtml(f.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
         <td class="actions">
           <button data-act="edit" data-id="${f.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${f.id}">${escapeHtml(f.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
+        </td>
+      </tr>`,
+    });
+  }
+
+  /* ---------- Render: UNIDADES DE NEGÓCIO (B.U) ---------- */
+  function renderUnidadesNegocio() {
+    renderTable(document.getElementById("table-unidades-negocio"), {
+      entity: "unidades-negocio",
+      emptyMsg: t("admin.empty.un"),
+      rows: ADM.unidades_negocio,
+      headers: [
+        th("admin.col.bu"), th("admin.col.responsavel"), th("admin.col.filiaisVinculadas"),
+        th("admin.col.status"), thRight("admin.col.acoes"),
+      ],
+      rowHtml: (u) => `<tr>
+        <td><div class="col-nome">${escapeHtml(u.nome)}</div></td>
+        <td>${escapeHtml(u.responsavel || t("admin.dash"))}</td>
+        <td>${u.filiais}</td>
+        <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
+        <td class="actions">
+          <button data-act="edit" data-id="${u.id}">${escapeHtml(t("admin.act.edit"))}</button>
+          <button class="danger" data-act="toggle" data-id="${u.id}">${escapeHtml(u.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </td>
       </tr>`,
     });
@@ -342,7 +393,10 @@
   }
 
   function findRecord(entity, id) {
-    const map = { apps: ADM.apps, secoes: ADM.secoes, roles: ADM.roles, usuarios: ADM.usuarios, filiais: ADM.filiais };
+    const map = {
+      apps: ADM.apps, secoes: ADM.secoes, roles: ADM.roles, usuarios: ADM.usuarios,
+      filiais: ADM.filiais, "unidades-negocio": ADM.unidades_negocio,
+    };
     return (map[entity] || []).find((r) => r.id === id);
   }
 
@@ -356,6 +410,7 @@
       roles: isNew ? t("admin.new.role") : `${t("admin.edit.role")} — ${record.nome}`,
       usuarios: isNew ? t("admin.new.usuario") : `${t("admin.edit.usuario")} — ${record.username}`,
       filiais: isNew ? t("admin.new.filial") : `${t("admin.edit.filial")} — ${record.nome}`,
+      "unidades-negocio": isNew ? t("admin.new.un") : `${t("admin.edit.un")} — ${record.nome}`,
     };
     const form = document.getElementById("modal-form");
     document.getElementById("modal-title").textContent = titles[entity];
@@ -411,25 +466,77 @@
     if (entity === "roles") return formRole(r);
     if (entity === "usuarios") return formUsuario(r);
     if (entity === "filiais") return formFilial(r);
+    if (entity === "unidades-negocio") return formUnidadeNegocio(r);
     return "";
+  }
+
+  // Opções de B.U: ativas + a que já está vinculada (mesmo inativa), pra editar
+  // uma filial não desfazer o vínculo sem querer.
+  function buOptions(atual) {
+    const disponiveis = ADM.unidades_negocio.filter((u) => u.ativo || u.id === atual);
+    return (
+      `<option value="">${escapeHtml(t("admin.f.semBu"))}</option>` +
+      disponiveis
+        .map((u) => {
+          const rotulo = u.ativo ? u.nome : `${u.nome} ${t("admin.f.buInativa")}`;
+          return `<option value="${u.id}" ${u.id === atual ? "selected" : ""}>${escapeHtml(rotulo)}</option>`;
+        })
+        .join("")
+    );
   }
 
   function formFilial(r) {
     return `
-      <div class="form-field">
-        <label>${escapeHtml(t("admin.col.filial"))}</label>
-        <input name="nome" required value="${attr(r && r.nome)}" placeholder="ex: CD Cajamar">
+      <div class="row-2">
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.codigo"))} ${r ? escapeHtml(t("admin.f.slugLocked")) : ""}</label>
+          <input name="codigo" required maxlength="20" value="${attr(r && r.codigo)}" ${r ? "disabled" : ""} placeholder="ex: 1020">
+          ${r ? "" : `<div class="field-hint">${escapeHtml(t("admin.f.codigoHint"))}</div>`}
+        </div>
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.col.filial"))}</label>
+          <input name="nome" required value="${attr(r && r.nome)}" placeholder="ex: RMSPI">
+        </div>
       </div>
       <div class="row-2">
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.cidade"))}</label>
+          <input name="cidade" value="${attr(r && r.cidade)}" placeholder="ex: São Paulo">
+        </div>
         <div class="form-field">
           <label>${escapeHtml(t("admin.f.uf"))}</label>
           <input name="uf" value="${attr(r && r.uf)}" maxlength="4" placeholder="ex: SP">
         </div>
+      </div>
+      <div class="row-2">
         <div class="form-field">
           <label>${escapeHtml(t("admin.f.regiao"))}</label>
           <input name="regiao" required value="${attr(r && r.regiao)}" placeholder="ex: Sudeste">
+          <div class="field-hint">${escapeHtml(t("admin.f.regiaoHint"))}</div>
+        </div>
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.responsavel"))}</label>
+          <input name="responsavel" value="${attr(r && r.responsavel)}">
         </div>
       </div>
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.f.bu"))}</label>
+        <select name="unidade_negocio_id">${buOptions(r && r.unidade_negocio_id)}</select>
+      </div>
+    `;
+  }
+
+  function formUnidadeNegocio(r) {
+    return `
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.f.buNome"))}</label>
+        <input name="nome" required maxlength="120" value="${attr(r && r.nome)}">
+      </div>
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.f.responsavel"))}</label>
+        <input name="responsavel" maxlength="120" value="${attr(r && r.responsavel)}">
+      </div>
+      <div class="field-hint">${escapeHtml(t("admin.f.buHint"))}</div>
     `;
   }
 
@@ -881,9 +988,18 @@
       out.is_admin = !!fd.get("is_admin");
       out.roles = fd.getAll("roles");
     } else if (entity === "filiais") {
+      // `codigo` só na criação: é a chave de negócio e a API não aceita mudá-lo.
+      if (isNew) out.codigo = (fd.get("codigo") || "").trim();
       out.nome = (fd.get("nome") || "").trim();
-      out.uf = (fd.get("uf") || "").trim() || null;
+      out.cidade = (fd.get("cidade") || "").trim() || null;
+      out.uf = (fd.get("uf") || "").trim().toUpperCase() || null;
       out.regiao = (fd.get("regiao") || "").trim();
+      out.responsavel = (fd.get("responsavel") || "").trim() || null;
+      const bu = (fd.get("unidade_negocio_id") || "").trim();
+      out.unidade_negocio_id = bu ? parseInt(bu, 10) : null;
+    } else if (entity === "unidades-negocio") {
+      out.nome = (fd.get("nome") || "").trim();
+      out.responsavel = (fd.get("responsavel") || "").trim() || null;
     }
     return out;
   }
@@ -902,6 +1018,13 @@
     document.getElementById("btn-new-role").addEventListener("click", () => openModal("roles", null));
     document.getElementById("btn-new-usuario").addEventListener("click", () => openModal("usuarios", null));
     document.getElementById("btn-new-filial").addEventListener("click", () => openModal("filiais", null));
+    document.getElementById("btn-new-un").addEventListener("click", () => openModal("unidades-negocio", null));
+
+    const buscaFilial = document.getElementById("filiais-busca");
+    buscaFilial.addEventListener("input", () => {
+      ADM.filialBusca = buscaFilial.value;
+      renderFiliais();
+    });
 
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-cancel").addEventListener("click", closeModal);
@@ -924,6 +1047,16 @@
     // innerHTML é reconstruído a cada openModal — input events fazem bubbling.
     document.getElementById("modal-form").addEventListener("input", () => {
       modalDirty = true;
+    });
+
+    // Digitar a UF preenche a região quando ela ainda está vazia — nunca
+    // sobrescreve o que a pessoa escreveu.
+    document.getElementById("modal-form").addEventListener("input", (ev) => {
+      if (!ev.target || ev.target.name !== "uf") return;
+      const campoRegiao = document.querySelector("#modal-form [name='regiao']");
+      if (!campoRegiao || campoRegiao.value.trim()) return;
+      const regiao = REGIAO_POR_UF[ev.target.value.trim().toUpperCase()];
+      if (regiao) campoRegiao.value = regiao;
     });
 
     document.getElementById("modal-save").addEventListener("click", submitModal);
