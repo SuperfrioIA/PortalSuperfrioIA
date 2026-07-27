@@ -14,12 +14,16 @@ async function fetchExtraHistory(){
     return [];
   }
 }
+// Endpoint global de permissoes: um so pra toda a plataforma, em vez de um
+// /pode-editar por app. Nunca devolve 401/403 — anonimo recebe lista vazia.
+const PERMISSAO_EDITAR='processos-abertos:editar';
 async function fetchPodeEditar(){
   try{
     const token=localStorage.getItem('sf_portal_token')||'';
-    const res=await fetch('/api/processos-abertos/pode-editar',{headers:{'Authorization':'Bearer '+token}});
+    const res=await fetch('/api/auth/me/permissoes',{headers:{'Authorization':'Bearer '+token}});
     if(!res.ok)throw new Error('status '+res.status);
-    return (await res.json()).pode_editar===true;
+    const body=await res.json();
+    return (body.permissoes||[]).indexOf(PERMISSAO_EDITAR)!==-1;
   }catch(e){
     console.error('Falha ao checar permissao de edicao',e);
     return false;

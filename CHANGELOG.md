@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0] — 2026-07-26
+### Adicionado
+- Matriz de acesso na tela de Administração — apps nas linhas, ações nas colunas (Ver, Editar, Exportar, Administrar), com marcação por coluna e por seção
+- Catálogo de permissões declarado em código — cada módulo declara suas ações e um slug errado passa a derrubar o boot em vez de virar erro silencioso
+- Endpoint único `GET /api/auth/me/permissoes` para o frontend consultar tudo que o usuário pode fazer, no lugar de um `/pode-editar` por app
+- Coluna "Permissões de ação" na lista de roles e coluna "O que isso dá de acesso" na lista de usuários
+- Passo obrigatório de declaração de permissão no guia de contribuição e no template de PR
+### Corrigido
+- Desativar uma role não revogava o acesso aos apps — a checagem ignorava `roles.ativo` e mantinha os cards visíveis para quem já tinha a role
+### Alterado
+- Processos Abertos passou a exigir a permissão `processos-abertos:editar` no lugar de uma role de nome fixo; ambientes que já tinham a role antiga são migrados automaticamente
+- `GET /api/processos-abertos/pode-editar` está depreciado e será removido depois que o app embutido estiver no endpoint global
+
 ## [0.4.0] — 2026-07-07
 ### Adicionado
 - Timeline de changelog e sistemas no portal — nova tela "Novidades" com o histórico de mudanças em linha do tempo

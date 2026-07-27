@@ -6,43 +6,28 @@ processadas num arquivo compartilhado — sem banco, sem ORM, sem migration —
 em vez de cada upload ficar preso ao localStorage de quem processou.
 
 Leitura é pública (mesmo nível de acesso que os arquivos estáticos do app,
-que já são abertos sem login). Escrita exige a role `processos-abertos-editor`
+que já são abertos sem login). Escrita exige a permissão `processos-abertos:editar`
 (ou ser admin) — ver o app na home é uma permissão, atualizar os dados é outra.
+
+A permissão é declarada em `permissoes.py` deste módulo e concedida pela matriz de
+acesso na tela de Administração. Nada de slug escrito na mão aqui.
 """
 import json
 import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.auth.dependencies import get_current_user, get_current_user_optional
-from backend.core.database import DB_PATH, db
-from backend.usuarios import service as usuarios_service
+from backend.auth.dependencies import get_current_user_optional, require_permissao, usuario_pode
+from backend.core.database import DB_PATH
+from backend.processos_abertos.permissoes import EDITAR
 
 router = APIRouter(prefix="/api/processos-abertos", tags=["processos-abertos"])
 
 _DATA_PATH: Path = DB_PATH.parent / "processos_abertos_extra.json"
 _lock = threading.Lock()
-
-ROLE_EDITOR = "processos-abertos-editor"
-
-
-def _pode_editar(user: dict) -> bool:
-    if user.get("is_admin"):
-        return True
-    with db() as session:
-        return usuarios_service.tem_role(session, user["id"], ROLE_EDITOR)
-
-
-def require_editor(user: dict = Depends(get_current_user)) -> dict:
-    if not _pode_editar(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Requer a role '{ROLE_EDITOR}' (ou ser admin) pra atualizar Processos Abertos",
-        )
-    return user
 
 
 class Semana(BaseModel):
@@ -77,15 +62,19 @@ def listar_historico() -> list[dict]:
     return _ler()
 
 
-@router.get("/pode-editar")
+@router.get("/pode-editar", deprecated=True)
 def pode_editar(user: dict | None = Depends(get_current_user_optional)) -> dict:
-    """Pra o frontend decidir se mostra o botão 'Atualizar dados' — nunca falha
-    com 401/403, quem não está logado ou não tem a role só recebe False."""
-    return {"pode_editar": bool(user) and _pode_editar(user)}
+    """DEPRECADO — use `GET /api/auth/me/permissoes` e cheque `processos-abertos:editar`.
+
+    Mantido porque o app estático é servido com cache (`?v=`) e pode estar rodando
+    uma versão anterior do JS por algum tempo depois do deploy. Remover quando o
+    frontend embutido já estiver no endpoint global.
+    """
+    return {"pode_editar": usuario_pode(user, EDITAR)}
 
 
 @router.post("/historico")
-def salvar_semana(semana: Semana, _: dict = Depends(require_editor)) -> list[dict]:
+def salvar_semana(semana: Semana, _: dict = Depends(require_permissao(EDITAR))) -> list[dict]:
     """Upsert por `date`: mesma semana reprocessada substitui a anterior."""
     with _lock:
         semanas = _ler()

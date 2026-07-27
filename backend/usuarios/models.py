@@ -50,3 +50,16 @@ usuario_roles = Table(
     Column("usuario_id", Integer, ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True),
     Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
 )
+
+# Grant role→ação (`<app>:editar` e afins). A coluna `ver` da matriz NÃO passa por
+# aqui: continua em `role_apps`. Ver `backend/core/permissoes.py`.
+#
+# `permissao_slug` é texto sem FK de propósito — o catálogo de permissões vive em
+# código, não em tabela. Quando (e se) virar entidade, é só acrescentar a FK aqui
+# sem mexer no resto. `test_permissoes_catalogo.py` cobre o risco de slug órfão.
+role_permissoes = Table(
+    "role_permissoes",
+    Base.metadata,
+    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+    Column("permissao_slug", Text, primary_key=True),
+)

@@ -33,6 +33,65 @@ CSP entre apps — uma mudança mal calculada em um módulo pode vazar para os o
 
 ---
 
+## Passo obrigatório em qualquer receita — declare a permissão
+
+Vale para as 3 receitas. **Antes de considerar a integração pronta, responda: quem pode ver
+isso, e quem pode mexer nisso?**
+
+A plataforma tem uma **matriz de acesso** (apps nas linhas, ações nas colunas), editável na
+tela **Administração › Roles**. O vocabulário de ações é fechado — todo app usa os mesmos
+verbos:
+
+| Ação | O que libera | Onde é concedida |
+|---|---|---|
+| `ver` | o card aparece na home e a pessoa abre o app | marcar na coluna **Ver** da matriz (grava em `role_apps`) |
+| `editar` | alterar dados dentro do app | declarar no módulo + marcar na matriz |
+| `exportar` | baixar dados do app | idem |
+| `administrar` | configurar o próprio app | idem |
+
+**`ver` você não declara** — todo app cadastrado tem essa coluna automaticamente.
+
+Para qualquer ação **além de `ver`**, crie `backend/<seu-modulo>/permissoes.py`:
+
+```python
+from backend.core.permissoes import registrar_modulo
+
+PERMISSOES = registrar_modulo(
+    "seu-app",                       # tem que bater com o slug em `apps`
+    nome="Seu App",
+    acoes={"editar": "O que essa permissão libera, em português — a tela mostra isto."},
+)
+
+EDITAR = "seu-app:editar"
+```
+
+Acrescente o import em `backend/permissoes.py` (o agregador) e proteja a rota:
+
+```python
+from backend.auth.dependencies import require_permissao
+from backend.seu_modulo.permissoes import EDITAR
+
+@router.post("/algo")
+def algo(_: dict = Depends(require_permissao(EDITAR))):
+    ...
+```
+
+**Nunca escreva o slug direto na chamada** — importe a constante. Isso garante que o catálogo
+foi registrado, e `require_permissao` valida o slug **no import**: se errar, a aplicação não
+sobe (em vez de virar um 403 misterioso em produção). Admin passa por cima de tudo
+automaticamente; não reimplemente `if is_admin`.
+
+Se o frontend precisa esconder um botão, use `GET /api/auth/me/permissoes` e cheque
+`permissoes.includes("seu-app:editar")` — **não crie um `/pode-editar` por app.** Esse endpoint
+nunca devolve 401/403; anônimo recebe lista vazia.
+
+> **Limitação conhecida:** apps estáticos em `frontend/` são servidos **sem login** (o mount em
+> `backend/main.py`). Tirar o `ver` de alguém remove o card da home, mas não impede o acesso
+> pela URL direta. Portanto: proteja a **API**, não conte com a permissão do card para esconder
+> dado sensível. Ver `docs/PERMISSIONAMENTO_HOJE.md`.
+
+---
+
 ## Passo 0 — qual desses 3 casos é o seu app?
 
 | Seu app é... | Caminho |
@@ -127,8 +186,11 @@ e relatar o resultado (não só "ok, tudo certo" — diga o que verificou):
       `requirements.txt` / bibliotecas vendored antes de incluir mais uma.
 - [ ] CSP respeitado — nenhum `<script>`/`<style>` inline novo sem justificativa explícita
       (ver Receita 1).
-- [ ] Se mexeu perto de autenticação/permissões: `require_admin` / `get_current_user`
-      continuam sendo chamados onde já eram, nada foi enfraquecido.
+- [ ] Se mexeu perto de autenticação/permissões: `require_admin` / `get_current_user` /
+      `require_permissao` continuam sendo chamados onde já eram, nada foi enfraquecido.
+- [ ] **Toda rota nova tem guarda explícita** e toda ação nova está declarada no catálogo
+      (ver "Passo obrigatório em qualquer receita", no topo). Rota pública é decisão
+      consciente e justificada no PR, não esquecimento.
 - [ ] Se módulo novo (Receita 2): migration revisada manualmente, testada localmente,
       e a regra de ouro (módulo não lê tabela de outro direto) foi respeitada.
 - [ ] Suíte de testes existente rodada localmente e verde antes do PR.

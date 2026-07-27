@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from backend.auth.router import router as auth_router
 from backend.core.database import init_db
 from backend.core.limiter import limiter
+from backend.permissoes import carregar as carregar_permissoes
 from backend.portal.router import router as portal_router
 from backend.portal.router import router_admin as portal_admin_router
 from backend.processos_abertos.router import router as processos_abertos_router
@@ -21,6 +22,9 @@ from backend.usuarios.router import router_admin as usuarios_admin_router
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Catálogo primeiro: a matriz da tela de Administração precisa dele completo,
+    # inclusive de módulos cujo router não seja importado aqui.
+    carregar_permissoes()
     init_db()
     seed_initial()
     yield

@@ -1177,6 +1177,10 @@ body {
 .pill.admin { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
 .pill.iframe { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
 .pill.url { color: var(--text2); background: var(--bg3); border-color: var(--border); }
+/* Permissão de ação: amarelo da marca (ênfase) — distingue da pílula azul de app. */
+.pill.perm { color: #7A4E00; background: rgba(255, 196, 0, 0.20); border-color: rgba(255, 196, 0, 0.62); }
+/* Admin total: passa por cima de tudo, inclusive das permissões de ação. */
+.pill.admin-total { color: #fff; background: var(--brand-azul-institucional); border-color: var(--brand-azul-institucional); }
 .pill.new { color: var(--ok); background: var(--ok-bg); border-color: rgba(26, 140, 78, 0.25); }
 .pill.beta { color: var(--warn); background: var(--warn-bg); border-color: rgba(180, 83, 9, 0.25); }
 .pill-stack { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1293,6 +1297,124 @@ body {
 }
 .modal-body .check-row input { width: auto; margin: 0; accent-color: var(--brand-azul-principal); }
 .modal-body .check-row .meta { font-size: 11px; color: var(--text3); margin-left: 4px; }
+
+/* ---------- Matriz de acesso (app × ação) — modal de role ----------
+   Linhas = apps do catálogo; colunas = vocabulário fixo de ações.
+   A coluna "Ver" é o antigo grant role→app; as demais são as permissões
+   declaradas em código pelos módulos. Célula "—" = o app não tem a ação. */
+.modal.modal--wide { max-width: 860px; }
+
+.modal-body fieldset.mtx-fs { max-height: none; overflow: visible; padding: 12px; }
+.modal-body .mtx-filtro { margin: 8px 0 10px; }
+.mtx-wrap {
+  overflow: auto;
+  max-height: 46vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+}
+/* As regras de .col-nome/.col-slug são escopadas em .admin-table; a matriz é
+   outra tabela e precisa das suas. */
+table.mtx .col-nome { display: block; font-weight: 700; color: var(--text); line-height: 1.25; }
+table.mtx .col-slug {
+  display: block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text3);
+  line-height: 1.25;
+}
+table.mtx {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 520px;
+  font-size: 13px;
+}
+table.mtx th, table.mtx td { border-bottom: 1px solid var(--border); }
+table.mtx thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg2);
+  padding: 8px 6px;
+  text-align: center;
+}
+table.mtx thead th.mtx-app {
+  text-align: left;
+  padding-left: 12px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text2);
+}
+.mtx-hname {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.modal-body table.mtx input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--brand-azul-principal);
+  cursor: pointer;
+}
+table.mtx thead input.mtx-all { margin-top: 5px; }
+table.mtx td { text-align: center; padding: 7px 6px; }
+table.mtx tbody th.mtx-app {
+  text-align: left;
+  font-weight: 400;
+  padding: 7px 12px;
+  background: var(--bg2);
+}
+table.mtx tbody tr:hover th.mtx-app,
+table.mtx tbody tr:hover td { background: rgba(63, 169, 245, 0.07); }
+table.mtx .on-col { background: rgba(63, 169, 245, 0.07); }
+.mtx-na { color: var(--text3); }
+
+table.mtx tr.mtx-grp th { background: var(--bg3); padding: 6px 12px; text-align: left; }
+.mtx-gname {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text2);
+}
+.mtx-gall {
+  float: right;
+  width: auto;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-azul-principal);
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+.mtx-gall:hover { background: rgba(30, 111, 217, 0.10); }
+.mtx-regra {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid rgba(180, 83, 9, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.mtx-orfas { margin-top: 10px; font-size: 11.5px; color: var(--text2); }
+.mtx-orfas code {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  background: var(--bg3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
 
 .modal-foot {
   display: flex;
