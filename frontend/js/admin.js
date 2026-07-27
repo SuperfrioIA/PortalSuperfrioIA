@@ -17,8 +17,20 @@
     apps: [],
     roles: [],
     usuarios: [],
+    // Estrutura da matriz de acesso (app × ação), vinda de /api/admin/matriz.
+    // Linhas = catálogo de apps (banco); colunas = vocabulário fixo (código).
+    matriz: { acoes: [], secoes: [], descricoes: {}, orfas: [] },
     editing: null,   // {entity, record} ou null
   };
+
+  const ACAO_VER = "ver";
+
+  // Rótulo da ação: usa o i18n quando existe a chave, senão o nome vindo da API.
+  function acaoLabel(acao) {
+    const k = `admin.acao.${acao.slug}`;
+    const traduzido = t(k);
+    return traduzido === k ? acao.nome : traduzido;
+  }
 
   // Vira true quando o usuário digita algo no formulário do modal. Usado para
   // pedir confirmação antes de descartar (ESC ou clique no fundo do overlay).
@@ -57,16 +69,18 @@
 
   /* ---------- Load all ---------- */
   async function loadAll() {
-    const [secoes, apps, roles, usuarios] = await Promise.all([
+    const [secoes, apps, roles, usuarios, matriz] = await Promise.all([
       api("GET", "/api/admin/secoes"),
       api("GET", "/api/admin/apps"),
       api("GET", "/api/admin/roles"),
       api("GET", "/api/admin/usuarios"),
+      api("GET", "/api/admin/matriz"),
     ]);
     ADM.secoes = secoes;
     ADM.apps = apps;
     ADM.roles = roles;
     ADM.usuarios = usuarios;
+    ADM.matriz = matriz;
   }
 
   /* ---------- Open / close ---------- */
@@ -183,17 +197,23 @@
       emptyMsg: t("admin.empty.roles"),
       rows: ADM.roles,
       headers: [
-        th("admin.col.role"), th("admin.col.appsLiberados"), th("admin.col.usuarios"),
-        th("admin.col.status"), thRight("admin.col.acoes"),
+        th("admin.col.role"), th("admin.col.appsLiberados"), th("admin.col.permissoes"),
+        th("admin.col.usuarios"), th("admin.col.status"), thRight("admin.col.acoes"),
       ],
       rowHtml: (r) => {
         const pills = r.apps.map((a) => `<span class="pill url">${escapeHtml(a)}</span>`).join(" ");
+        // Permissões de ação ficam numa coluna própria, com pílula de outra cor:
+        // é a distinção que a tela antiga não fazia (a role aparecia como "sem apps").
+        const perms = (r.permissoes || [])
+          .map((p) => `<span class="pill perm">${escapeHtml(p)}</span>`)
+          .join(" ");
         return `<tr>
         <td>
           <div class="col-nome">${escapeHtml(r.nome)}</div>
           <div class="col-slug">${escapeHtml(r.slug)}</div>
         </td>
         <td><div class="pill-stack">${pills || `<span class="col-meta">${escapeHtml(t("admin.noApps"))}</span>`}</div></td>
+        <td><div class="pill-stack">${perms || `<span class="col-meta">${escapeHtml(t("admin.noPerms"))}</span>`}</div></td>
         <td>${r.usuarios_count}</td>
         <td><span class="pill ${r.ativo ? "on" : "off"}">${escapeHtml(r.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
         <td class="actions">
@@ -205,6 +225,36 @@
     });
   }
 
+  /* ---------- Acesso efetivo de um usuário ----------
+     Soma das roles ATIVAS — role desativada não conta, igual ao backend.
+     Calculado aqui porque a lista de roles (com apps e permissões) já está
+     carregada; evita um endpoint por usuário só para montar a coluna. */
+  function acessoEfetivoHtml(u) {
+    if (u.is_admin) {
+      return `<span class="pill admin-total">${escapeHtml(t("admin.acesso.adminTotal"))}</span>
+              <div class="col-meta">${escapeHtml(t("admin.acesso.adminTudo"))}</div>`;
+    }
+    const apps = new Set();
+    const perms = new Set();
+    ADM.roles
+      .filter((r) => r.ativo && u.roles.indexOf(r.slug) !== -1)
+      .forEach((r) => {
+        (r.apps || []).forEach((a) => apps.add(a));
+        (r.permissoes || []).forEach((p) => perms.add(p));
+      });
+    if (!apps.size && !perms.size) {
+      return `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`;
+    }
+    const partes = [];
+    if (apps.size) {
+      partes.push(`<span class="pill url">${apps.size} ${escapeHtml(t("admin.acesso.apps"))}</span>`);
+    }
+    if (perms.size) {
+      partes.push(`<span class="pill perm">${perms.size} ${escapeHtml(t("admin.acesso.perms"))}</span>`);
+    }
+    return `<div class="pill-stack">${partes.join(" ")}</div>`;
+  }
+
   /* ---------- Render: USUÁRIOS ---------- */
   function renderUsuarios() {
     renderTable(document.getElementById("table-usuarios"), {
@@ -212,7 +262,7 @@
       emptyMsg: t("admin.empty.usuarios"),
       rows: ADM.usuarios,
       headers: [
-        th("admin.col.usuario"), th("admin.col.email"), th("admin.col.roles"),
+        th("admin.col.usuario"), th("admin.col.roles"), th("admin.col.acesso"),
         th("admin.col.tipo"), th("admin.col.status"),
         `<th style="width:220px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>`,
       ],
@@ -223,9 +273,10 @@
         <td>
           <div class="col-nome">${escapeHtml(u.nome || u.username)}</div>
           <div class="col-slug">${escapeHtml(u.username)}</div>
+          <div class="col-meta">${escapeHtml(u.email || t("admin.dash"))}</div>
         </td>
-        <td><span class="col-meta">${escapeHtml(u.email || t("admin.dash"))}</span></td>
         <td><div class="pill-stack">${pills || `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</div></td>
+        <td>${acessoEfetivoHtml(u)}</td>
         <td>${u.is_admin ? `<span class="pill admin">${escapeHtml(t("admin.type.admin"))}</span>` : `<span class="col-meta">${escapeHtml(t("admin.type.user"))}</span>`}</td>
         <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
         <td class="actions">
@@ -278,8 +329,13 @@
       roles: isNew ? t("admin.new.role") : `${t("admin.edit.role")} — ${record.nome}`,
       usuarios: isNew ? t("admin.new.usuario") : `${t("admin.edit.usuario")} — ${record.username}`,
     };
+    const form = document.getElementById("modal-form");
     document.getElementById("modal-title").textContent = titles[entity];
-    document.getElementById("modal-form").innerHTML = buildForm(entity, record);
+    form.innerHTML = buildForm(entity, record);
+    // A matriz precisa de mais largura que os formulários comuns.
+    document.querySelector("#modal-overlay .modal")
+      .classList.toggle("modal--wide", entity === "roles");
+    if (entity === "roles") wireMatriz(form);
     document.getElementById("modal-error").textContent = "";
     modalDirty = false;
     document.getElementById("modal-overlay").classList.add("visible");
@@ -440,18 +496,185 @@
     `;
   }
 
-  function formRole(r) {
-    const selected = new Set(r ? r.apps : []);
-    const appChecks = ADM.apps
+  /* ---------- Matriz de acesso (app × ação) ----------
+     Substitui a lista solta de "apps liberados". A coluna `ver` é o antigo grant
+     role→app; as demais são as permissões declaradas em código pelos módulos.
+     Célula "—" = o app não tem aquela ação (não é checkbox desmarcado). */
+  function matrizHtml(marcados) {
+    const acoes = ADM.matriz.acoes || [];
+    const secoes = ADM.matriz.secoes || [];
+    if (!acoes.length || !secoes.length) {
+      return `<fieldset>
+        <legend>${escapeHtml(t("admin.f.matriz"))}</legend>
+        <div class="col-meta">${escapeHtml(t("admin.f.noAppsYet"))}</div>
+      </fieldset>`;
+    }
+
+    const thead = acoes
       .map(
-        (a) => `
-        <label class="check-row">
-          <input type="checkbox" name="apps" value="${escapeHtml(a.slug)}" ${selected.has(a.slug) ? "checked" : ""}>
-          <span>${escapeHtml(a.nome)}</span>
-          <span class="meta">${escapeHtml(a.secao_nome)} · ${escapeHtml(a.slug)}</span>
-        </label>`
+        (a) => `<th data-col="${escapeHtml(a.slug)}">
+          <span class="mtx-hname">${escapeHtml(acaoLabel(a))}</span>
+          <input type="checkbox" class="mtx-all" data-acao="${escapeHtml(a.slug)}"
+                 aria-label="${escapeHtml(acaoLabel(a))}">
+        </th>`
       )
       .join("");
+
+    const corpo = secoes
+      .map((s) => {
+        const linhas = s.apps
+          .map((app) => {
+            const cells = acoes
+              .map((a) => {
+                const key = `${app.slug}:${a.slug}`;
+                if (app.acoes.indexOf(a.slug) === -1) {
+                  return `<td data-col="${escapeHtml(a.slug)}"><span class="mtx-na">—</span></td>`;
+                }
+                const desc = (ADM.matriz.descricoes || {})[key] || "";
+                return `<td data-col="${escapeHtml(a.slug)}">
+                  <input type="checkbox" class="mtx-cb"
+                         data-app="${escapeHtml(app.slug)}" data-acao="${escapeHtml(a.slug)}"
+                         ${marcados.has(key) ? "checked" : ""}
+                         title="${escapeHtml(desc)}"
+                         aria-label="${escapeHtml(acaoLabel(a))} — ${escapeHtml(app.nome)}">
+                </td>`;
+              })
+              .join("");
+            const busca = `${app.nome} ${app.slug}`.toLowerCase();
+            return `<tr data-secao="${escapeHtml(s.slug)}" data-busca="${escapeHtml(busca)}">
+              <th class="mtx-app">
+                <span class="col-nome">${escapeHtml(app.nome)}</span>
+                <span class="col-slug">${escapeHtml(app.slug)}</span>
+              </th>${cells}
+            </tr>`;
+          })
+          .join("");
+        return `<tr class="mtx-grp" data-grp="${escapeHtml(s.slug)}">
+          <th colspan="${acoes.length + 1}">
+            <span class="mtx-gname">${escapeHtml(s.nome)}</span>
+            <button type="button" class="mtx-gall" data-secao="${escapeHtml(s.slug)}">${escapeHtml(t("admin.f.matrizSecaoAll"))}</button>
+          </th>
+        </tr>${linhas}`;
+      })
+      .join("");
+
+    const orfas = (ADM.matriz.orfas || []).length
+      ? `<div class="mtx-orfas">
+           ${escapeHtml(t("admin.f.matrizOrfas"))}
+           ${ADM.matriz.orfas.map((o) => `<code>${escapeHtml(o.slug)}</code>`).join(" ")}
+         </div>`
+      : "";
+
+    return `<fieldset class="mtx-fs">
+      <legend>${escapeHtml(t("admin.f.matriz"))}</legend>
+      <div class="field-hint">${escapeHtml(t("admin.f.matrizHint"))}</div>
+      <input type="search" class="mtx-filtro" placeholder="${escapeHtml(t("admin.f.matrizFiltro"))}"
+             aria-label="${escapeHtml(t("admin.f.matrizFiltro"))}">
+      <div class="mtx-wrap">
+        <table class="mtx">
+          <thead><tr><th class="mtx-app">${escapeHtml(t("admin.f.matrizApp"))}</th>${thead}</tr></thead>
+          <tbody>${corpo}</tbody>
+        </table>
+      </div>
+      <div class="mtx-regra" hidden>${escapeHtml(t("admin.f.matrizVerAuto"))}</div>
+      ${orfas}
+    </fieldset>`;
+  }
+
+  /* Liga os comportamentos da matriz depois que o innerHTML do modal é montado. */
+  function wireMatriz(form) {
+    const tabela = form.querySelector("table.mtx");
+    if (!tabela) return;
+    const regra = form.querySelector(".mtx-regra");
+    const cbDe = (app, acao) =>
+      tabela.querySelector(`.mtx-cb[data-app="${app}"][data-acao="${acao}"]`);
+
+    function avisarRegra() {
+      if (!regra) return;
+      regra.hidden = false;
+      clearTimeout(regra._t);
+      regra._t = setTimeout(() => { regra.hidden = true; }, 5000);
+    }
+
+    // Liberar uma ação num app que a pessoa não pode abrir seria permissão morta:
+    // marcar qualquer ação marca `ver`; desmarcar `ver` limpa a linha.
+    function aplicarRegraVer(app, acao, ligado) {
+      if (acao !== ACAO_VER && ligado) {
+        const ver = cbDe(app, ACAO_VER);
+        if (ver && !ver.checked) { ver.checked = true; return true; }
+      }
+      if (acao === ACAO_VER && !ligado) {
+        tabela.querySelectorAll(`.mtx-cb[data-app="${app}"]`).forEach((c) => {
+          if (c.dataset.acao !== ACAO_VER) c.checked = false;
+        });
+      }
+      return false;
+    }
+
+    tabela.addEventListener("change", (ev) => {
+      const cb = ev.target;
+      if (cb.classList.contains("mtx-cb")) {
+        if (aplicarRegraVer(cb.dataset.app, cb.dataset.acao, cb.checked)) avisarRegra();
+        return;
+      }
+      if (cb.classList.contains("mtx-all")) {
+        const acao = cb.dataset.acao;
+        tabela.querySelectorAll(`.mtx-cb[data-acao="${acao}"]`).forEach((c) => {
+          if (c.closest("tr").hidden) return;   // respeita o filtro
+          c.checked = cb.checked;
+          aplicarRegraVer(c.dataset.app, acao, cb.checked);
+        });
+      }
+    });
+
+    tabela.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".mtx-gall");
+      if (!btn) return;
+      tabela.querySelectorAll(`tr[data-secao="${btn.dataset.secao}"]`).forEach((tr) => {
+        if (tr.hidden) return;
+        tr.querySelectorAll(".mtx-cb").forEach((c) => { c.checked = true; });
+      });
+      // marcar em massa também suja o formulário (o listener de input não pega isto)
+      form.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    // Destaca a coluna sob o cursor — sem isso é fácil errar de coluna na horizontal.
+    function marcarColuna(acao, ligado) {
+      tabela.querySelectorAll(`[data-col="${acao}"]`).forEach((el) => {
+        el.classList.toggle("on-col", ligado);
+      });
+    }
+    tabela.addEventListener("mouseover", (ev) => {
+      const c = ev.target.closest("[data-col]");
+      if (c) marcarColuna(c.dataset.col, true);
+    });
+    tabela.addEventListener("mouseout", (ev) => {
+      const c = ev.target.closest("[data-col]");
+      if (c) marcarColuna(c.dataset.col, false);
+    });
+
+    const filtro = form.querySelector(".mtx-filtro");
+    if (filtro) {
+      filtro.addEventListener("input", () => {
+        const termo = filtro.value.trim().toLowerCase();
+        tabela.querySelectorAll("tbody tr[data-busca]").forEach((tr) => {
+          tr.hidden = !!termo && tr.dataset.busca.indexOf(termo) === -1;
+        });
+        tabela.querySelectorAll("tbody tr.mtx-grp").forEach((tr) => {
+          const visiveis = tabela.querySelectorAll(
+            `tr[data-secao="${tr.dataset.grp}"]:not([hidden])`
+          ).length;
+          tr.hidden = visiveis === 0;
+        });
+      });
+    }
+  }
+
+  function formRole(r) {
+    // Estado inicial da grade: `ver` vem de role.apps, o resto de role.permissoes.
+    const marcados = new Set();
+    ((r && r.apps) || []).forEach((a) => marcados.add(`${a}:${ACAO_VER}`));
+    ((r && r.permissoes) || []).forEach((p) => marcados.add(p));
     return `
       <div class="form-field">
         <label>${escapeHtml(t("admin.f.slug"))} ${r ? escapeHtml(t("admin.f.slugLocked")) : ""}</label>
@@ -465,10 +688,7 @@
         <label>${escapeHtml(t("admin.f.descricao"))}</label>
         <textarea name="descricao">${attr(r && r.descricao)}</textarea>
       </div>
-      <fieldset>
-        <legend>${escapeHtml(t("admin.f.appsLiberados"))}</legend>
-        ${appChecks || `<div class="col-meta">${escapeHtml(t("admin.f.noAppsYet"))}</div>`}
-      </fieldset>
+      ${matrizHtml(marcados)}
     `;
   }
 
@@ -593,7 +813,16 @@
       if (isNew) out.slug = (fd.get("slug") || "").trim();
       out.nome = (fd.get("nome") || "").trim();
       out.descricao = (fd.get("descricao") || "").trim() || null;
-      out.apps = fd.getAll("apps");
+      // A grade é uma coisa só na tela, mas duas na API: `ver` grava em role_apps,
+      // as demais ações em role_permissoes.
+      const apps = [];
+      const permissoes = [];
+      form.querySelectorAll(".mtx-cb:checked").forEach((cb) => {
+        if (cb.dataset.acao === ACAO_VER) apps.push(cb.dataset.app);
+        else permissoes.push(`${cb.dataset.app}:${cb.dataset.acao}`);
+      });
+      out.apps = apps;
+      out.permissoes = permissoes;
     } else if (entity === "usuarios") {
       if (isNew) {
         out.username = (fd.get("username") || "").trim();
