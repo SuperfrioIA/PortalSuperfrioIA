@@ -172,14 +172,14 @@ def test_fase_reaberta_limpa_registrado_por(client, admin_headers):
 
 def test_filiais_admin_crud_e_bloqueio_para_nao_admin(client, admin_headers, operador_headers):
     r = client.post(
-        "/api/admin/filiais", json={"nome": "CD Teste", "uf": "SP", "regiao": "Sudeste"},
+        "/api/admin/filiais", json={"codigo": "T001", "nome": "CD Teste", "uf": "SP", "regiao": "Sudeste"},
         headers=admin_headers,
     )
     assert r.status_code == 201, r.text
     filial_id = r.json()["id"]
 
     r2 = client.post(
-        "/api/admin/filiais", json={"nome": "CD Bloqueado", "uf": "SP", "regiao": "Sudeste"},
+        "/api/admin/filiais", json={"codigo": "T002", "nome": "CD Bloqueado", "uf": "SP", "regiao": "Sudeste"},
         headers=operador_headers,
     )
     assert r2.status_code == 403
@@ -208,7 +208,7 @@ def test_rollout_status_derivado_de_data_sem_campo_manual(client, admin_headers)
     assert r.json()["fase_atual"] == 4  # Implantação — rollout já faz sentido
 
     filial = client.post(
-        "/api/admin/filiais", json={"nome": "CD Rollout", "uf": "SP", "regiao": "Sudeste"},
+        "/api/admin/filiais", json={"codigo": "T003", "nome": "CD Rollout", "uf": "SP", "regiao": "Sudeste"},
         headers=admin_headers,
     ).json()
 
@@ -254,7 +254,7 @@ def test_incluir_rollout_filial_duplicada_409(client, admin_headers):
     for ordem in range(4):
         client.patch(f"/api/projetos-ia/{slug}/fases/{ordem}", json={"concluido_em": _iso(HOJE)}, headers=admin_headers)
     filial = client.post(
-        "/api/admin/filiais", json={"nome": "CD Duplicado", "uf": "MG", "regiao": "Sudeste"},
+        "/api/admin/filiais", json={"codigo": "T004", "nome": "CD Duplicado", "uf": "MG", "regiao": "Sudeste"},
         headers=admin_headers,
     ).json()
     client.post(f"/api/projetos-ia/{slug}/rollout", json={"filial_id": filial["id"]}, headers=admin_headers)
@@ -269,3 +269,155 @@ def test_editar_com_role_dedicada(client, admin_headers, operador_headers):
     _dar_roles(client, admin_headers, "operador.armazem", ["armazem-full", "projetos-ia-editor"])
     r = client.post("/api/projetos-ia", json=_projeto("via-role"), headers=operador_headers)
     assert r.status_code == 201, r.text
+
+
+# ---------- Catálogo espelhando o Conciliador: código, nome repetido e B.U ----------
+
+def test_codigo_e_a_chave_de_negocio_da_filial(client, admin_headers):
+    base = {"codigo": "T100", "nome": "CD Codigo", "cidade": "Barueri", "uf": "sp", "regiao": "Sudeste"}
+    r = client.post("/api/admin/filiais", json=base, headers=admin_headers)
+    assert r.status_code == 201, r.text
+    criada = r.json()
+    assert criada["codigo"] == "T100"
+    assert criada["uf"] == "SP"  # normalizado no service
+
+    # Mesmo código, outro nome: 409 (é o código que identifica, não o nome).
+    r2 = client.post("/api/admin/filiais", json={**base, "nome": "Outro nome"}, headers=admin_headers)
+    assert r2.status_code == 409
+
+    # Mesmo nome, outro código: permitido — é o caso das cinco duplicadas de produção.
+    r3 = client.post("/api/admin/filiais", json={**base, "codigo": "T101"}, headers=admin_headers)
+    assert r3.status_code == 201, r3.text
+
+    # PATCH não muda o código, mesmo que venha no corpo.
+    r4 = client.patch(
+        f"/api/admin/filiais/{criada['id']}",
+        json={"codigo": "T999", "cidade": "Osasco"}, headers=admin_headers,
+    )
+    assert r4.status_code == 200
+    assert r4.json()["codigo"] == "T100"
+    assert r4.json()["cidade"] == "Osasco"
+
+    # Código é obrigatório na criação; obrigatório só com espaços é 400, não 500.
+    assert client.post(
+        "/api/admin/filiais", json={"nome": "CD Sem Codigo", "regiao": "Sul"}, headers=admin_headers
+    ).status_code == 422
+    assert client.post(
+        "/api/admin/filiais", json={"codigo": "T102", "nome": "   ", "regiao": "Sul"}, headers=admin_headers
+    ).status_code == 400
+
+
+def test_unidades_negocio_crud_e_bloqueio_para_nao_admin(client, admin_headers, operador_headers):
+    r = client.post(
+        "/api/admin/unidades-negocio", json={"nome": "B.U Teste", "responsavel": "Fulano"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201, r.text
+    bu = r.json()
+    assert bu["filiais"] == 0  # contador derivado
+
+    assert client.post(
+        "/api/admin/unidades-negocio", json={"nome": "B.U Bloqueada"}, headers=operador_headers
+    ).status_code == 403
+    assert client.post(
+        "/api/admin/unidades-negocio", json={"nome": "B.U Teste"}, headers=admin_headers
+    ).status_code == 409
+
+    # O nome pode mudar: a filial liga por id.
+    r2 = client.patch(
+        f"/api/admin/unidades-negocio/{bu['id']}", json={"nome": "B.U Renomeada"}, headers=admin_headers
+    )
+    assert r2.status_code == 200
+    assert r2.json()["nome"] == "B.U Renomeada"
+
+    r3 = client.post(f"/api/admin/unidades-negocio/{bu['id']}/toggle", headers=admin_headers)
+    assert r3.status_code == 200
+    assert r3.json()["ativo"] == 0
+
+
+def test_filial_vinculada_a_bu_e_bu_inexistente(client, admin_headers):
+    bu = client.post(
+        "/api/admin/unidades-negocio", json={"nome": "B.U Vinculo"}, headers=admin_headers
+    ).json()
+
+    r = client.post(
+        "/api/admin/filiais",
+        json={"codigo": "T200", "nome": "CD Vinculo", "regiao": "Sudeste", "unidade_negocio_id": bu["id"]},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["unidade_negocio_nome"] == "B.U Vinculo"
+
+    unidades = client.get("/api/admin/unidades-negocio", headers=admin_headers).json()
+    assert next(u for u in unidades if u["id"] == bu["id"])["filiais"] == 1
+
+    # Inativar a B.U não desfaz o vínculo.
+    client.post(f"/api/admin/unidades-negocio/{bu['id']}/toggle", headers=admin_headers)
+    filiais = client.get("/api/admin/filiais", headers=admin_headers).json()
+    assert next(f for f in filiais if f["codigo"] == "T200")["unidade_negocio_nome"] == "B.U Vinculo"
+
+    # B.U inexistente é erro do chamador, não 404 da filial.
+    r2 = client.post(
+        "/api/admin/filiais",
+        json={"codigo": "T201", "nome": "CD BU Fantasma", "regiao": "Sul", "unidade_negocio_id": 999999},
+        headers=admin_headers,
+    )
+    assert r2.status_code == 400
+
+
+# ---------- Seed das filiais de produção ----------
+
+def test_seed_carregou_as_filiais_de_producao(client, admin_headers):
+    from backend.projetos_ia.seed import FILIAIS
+
+    assert len(FILIAIS) == 59
+    assert sum(f["ativo"] for f in FILIAIS) == 23
+
+    por_codigo = {
+        f["codigo"]: f
+        for f in client.get("/api/admin/filiais", headers=admin_headers).json()
+        if f["codigo"]
+    }
+    assert [f["codigo"] for f in FILIAIS if f["codigo"] not in por_codigo] == []
+
+    rmspi = por_codigo["1020"]
+    assert (rmspi["nome"], rmspi["cidade"], rmspi["uf"], rmspi["regiao"], rmspi["ativo"]) == (
+        "RMSPI", "São Paulo", "SP", "Sudeste", 1,
+    )
+    assert por_codigo["1032"]["ativo"] == 0  # ARPI é inativa no Conciliador
+    # Nome repetido em duas filiais: só passa porque a chave é o código.
+    assert por_codigo["1030"]["nome"] == por_codigo["5001"]["nome"] == "ITA"
+
+
+def test_rollout_so_oferece_filiais_ativas(client, admin_headers):
+    codigos = {
+        f["codigo"] for f in client.get("/api/projetos-ia/filiais", headers=admin_headers).json()
+    }
+    assert "1020" in codigos      # RMSPI, ativa
+    assert "1032" not in codigos  # ARPI, inativa
+
+
+def test_seed_e_idempotente_e_nao_sobrescreve_edicao_manual(client, admin_headers):
+    from backend.seed import seed_initial
+
+    filiais = client.get("/api/admin/filiais", headers=admin_headers).json()
+    vgs = next(f for f in filiais if f["codigo"] == "1001")
+    client.patch(f"/api/admin/filiais/{vgs['id']}", json={"cidade": "Vargem (editado)"}, headers=admin_headers)
+    client.post(f"/api/admin/filiais/{vgs['id']}/toggle", headers=admin_headers)  # inativa na mão
+
+    seed_initial()  # é o que acontece a cada boot
+
+    depois = client.get("/api/admin/filiais", headers=admin_headers).json()
+    assert len(depois) == len(filiais)
+    codigos = [f["codigo"] for f in depois if f["codigo"]]
+    assert len(codigos) == len(set(codigos))
+
+    vgs_depois = next(f for f in depois if f["codigo"] == "1001")
+    assert vgs_depois["cidade"] == "Vargem (editado)"
+    assert vgs_depois["ativo"] == 0
+
+    # Devolve ao estado do seed para não contaminar outros testes.
+    client.post(f"/api/admin/filiais/{vgs['id']}/toggle", headers=admin_headers)
+    client.patch(
+        f"/api/admin/filiais/{vgs['id']}", json={"cidade": "Vargem Grande do Sul"}, headers=admin_headers
+    )

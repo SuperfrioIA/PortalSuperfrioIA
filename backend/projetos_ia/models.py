@@ -62,8 +62,36 @@ class ProjetoFase(Base):
     registrado_por: Mapped[str | None] = mapped_column(Text)
 
 
+class UnidadeNegocio(Base):
+    """Unidade de negócio (B.U) — espelha `business_units` do Conciliador de Estoque.
+
+    Cada filial pertence a no máximo uma. Não são apagadas: inativar preserva
+    o histórico e os vínculos, igual ao resto do cadastro.
+    """
+    __tablename__ = "unidades_negocio"
+    __table_args__ = (
+        Index("idx_unidades_negocio_ativo", "ativo"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    responsavel: Mapped[str | None] = mapped_column(Text)
+    ativo: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=sa_text("1"))
+
+
 class Filial(Base):
-    """Catálogo único de filiais, reaproveitado por todo projeto no rollout."""
+    """Catálogo único de filiais, reaproveitado por todo projeto no rollout.
+
+    Espelha `warehouses` do Conciliador de Estoque: `codigo` é a chave de
+    negócio (o mesmo código do ERP), imutável depois de criado. `nome` NÃO é
+    único de propósito — na produção do Conciliador cinco nomes aparecem em
+    duas filiais (uma ativa e uma inativa), e o rótulo não pode decidir
+    identidade.
+
+    `regiao` é o único campo que não vem do Conciliador: a tela de rollout
+    agrupa as filiais por ela. No seed, é derivada da UF.
+    """
     __tablename__ = "filiais"
     __table_args__ = (
         Index("idx_filiais_ativo", "ativo"),
@@ -71,9 +99,17 @@ class Filial(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    nome: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # Nullable porque filial cadastrada à mão antes desta coluna existir não
+    # tem código. Obrigatório na API para toda filial nova.
+    codigo: Mapped[str | None] = mapped_column(Text, unique=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    cidade: Mapped[str | None] = mapped_column(Text)
     uf: Mapped[str | None] = mapped_column(Text)
     regiao: Mapped[str] = mapped_column(Text, nullable=False)
+    responsavel: Mapped[str | None] = mapped_column(Text)
+    unidade_negocio_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("unidades_negocio.id", ondelete="SET NULL")
+    )
     ativo: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=sa_text("1"))
 
 
