@@ -25,7 +25,7 @@ def test_portal_home_admin_ve_tudo(client, admin_headers):
     secoes = r.json()["secoes"]
     assert {s["slug"] for s in secoes} == {"armazem", "backoffice"}
     total_apps = sum(len(s["apps"]) for s in secoes)
-    assert total_apps == 7
+    assert total_apps == 8  # 7 exemplos + processos-abertos (app real do repo)
 
 
 def test_portal_home_operador_so_armazem(client, operador_headers):

@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from backend.auth.service import decode_token
+from backend.core import permissoes as catalogo
 from backend.core.database import db
 from backend.usuarios import service as usuarios_service
 
@@ -55,3 +56,44 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
             detail="Acesso restrito a administradores",
         )
     return user
+
+
+def usuario_pode(user: dict | None, permissao_slug: str) -> bool:
+    """Checagem informativa, sem levantar 401/403.
+
+    Serve para o frontend decidir se mostra um botão. Visitante anônimo devolve
+    False em vez de erro. É aqui — e só aqui — que mora o bypass de admin, para
+    nenhum módulo precisar reimplementar `if is_admin`.
+    """
+    if not user:
+        return False
+    if user.get("is_admin"):
+        return True
+    with db() as session:
+        return usuarios_service.tem_permissao(session, user["id"], permissao_slug)
+
+
+def require_permissao(permissao_slug: str):
+    """Guarda de rota por permissão da matriz (`<app>:<acao>`).
+
+    O slug é validado **agora**, no import do router que chama esta função: se
+    não existir no catálogo, a aplicação não sobe. É o que substituiu o antigo
+    `ROLE_EDITOR = "processos-abertos-editor"`, em que errar a string virava um
+    403 silencioso em produção.
+    """
+    permissao = catalogo.obter(permissao_slug)  # KeyError explícito no boot
+
+    def _dep(user: dict = Depends(get_current_user)) -> dict:
+        if not usuario_pode(user, permissao_slug):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Requer a permissão '{permissao.nome}' em {permissao.modulo} "
+                    f"({permissao_slug}). Peça a um administrador para incluí-la em "
+                    "alguma das suas roles."
+                ),
+            )
+        return user
+
+    _dep.__name__ = f"require_{permissao_slug.replace(':', '_').replace('-', '_')}"
+    return _dep

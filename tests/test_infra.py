@@ -128,7 +128,12 @@ _DDL_LEGADO = [
 def test_banco_legado_recebe_stamp_sem_perder_dados():
     """Cenário do deploy do Lote 1: o portal.db de prod foi criado pelo código
     pré-Alembic. init_db deve carimbar (stamp) a baseline e seguir — sem tentar
-    recriar tabela e sem tocar nos dados."""
+    recriar tabela e sem tocar nos dados.
+
+    O carimbo é na baseline, nunca em head: é isso que faz as migrations
+    posteriores rodarem em vez de serem puladas. Com a 0002 no repositório, o
+    banco legado precisa terminar acima da baseline e com a tabela nova criada.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="superfrio_legacy_")) / "legado.db"
     conn = sqlite3.connect(tmp)
     for stmt in _DDL_LEGADO:
@@ -142,11 +147,16 @@ def test_banco_legado_recebe_stamp_sem_perder_dados():
     conn = sqlite3.connect(tmp)
     try:
         ver = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert ver == BASELINE_REVISION
+        assert ver != BASELINE_REVISION, "carimbou em head e pulou as migrations seguintes"
         sobrevive = conn.execute(
             "SELECT COUNT(*) FROM usuarios WHERE username = 'marcador'"
         ).fetchone()[0]
         assert sobrevive == 1
+        # migration 0002 aplicada em cima do banco carimbado
+        tabelas = {
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert "role_permissoes" in tabelas
     finally:
         conn.close()
 

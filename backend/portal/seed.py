@@ -65,6 +65,23 @@ APPS = [
         "badge": "NEW",
         "ordem": 3,
     },
+    {
+        # Único app do seed que existe de verdade neste repositório
+        # (frontend/processos-abertos/, Receita 1) — os demais são exemplos.
+        # Precisa estar cadastrado para aparecer como linha na matriz de acesso:
+        # é o app dono da permissão `processos-abertos:editar`.
+        "secao": "armazem",
+        "slug": "processos-abertos",
+        "nome": "Processos Abertos",
+        "nome_es": "Procesos Abiertos",
+        "descricao": "Acompanhamento semanal de recebimento, expedição e portaria em aberto.",
+        "descricao_es": "Seguimiento semanal de recepción, expedición y portería abiertos.",
+        "icone": "document",
+        "url": "/processos-abertos/",
+        "tipo_acesso": "iframe",
+        "badge": None,
+        "ordem": 4,
+    },
     # Backoffice
     {
         "secao": "backoffice",

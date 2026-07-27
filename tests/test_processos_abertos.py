@@ -26,19 +26,26 @@ def test_post_sem_login_401(client):
     assert r.status_code == 401
 
 
-def test_post_logado_sem_role_editor_403(client, operador_headers):
+def test_post_logado_sem_permissao_403(client, operador_headers):
     r = client.post(
         "/api/processos-abertos/historico", json=_semana(date="15/01/2026"), headers=operador_headers
     )
     assert r.status_code == 403
 
 
-def test_post_com_role_editor_200(client, admin_headers, operador_headers):
-    client.post(
+def test_post_com_permissao_200(client, admin_headers, operador_headers):
+    # A role concede a permissão do catálogo — não é mais o slug dela que vale.
+    # Sem `apps`, para não mexer no que o operador enxerga na home.
+    r0 = client.post(
         "/api/admin/roles",
-        json={"slug": "processos-abertos-editor", "nome": "Processos Abertos - Editor"},
+        json={
+            "slug": "processos-abertos-editor",
+            "nome": "Processos Abertos - Editor",
+            "permissoes": ["processos-abertos:editar"],
+        },
         headers=admin_headers,
     )
+    assert r0.status_code == 201, r0.text
     usuarios = client.get("/api/admin/usuarios", headers=admin_headers).json()
     operador_id = next(u["id"] for u in usuarios if u["username"] == "operador.armazem")
     r = client.patch(
@@ -70,7 +77,7 @@ def test_pode_editar_admin_true(client, admin_headers):
     assert r.json() == {"pode_editar": True}
 
 
-def test_pode_editar_logado_sem_role_false(client, analista_headers):
+def test_pode_editar_logado_sem_permissao_false(client, analista_headers):
     r = client.get("/api/processos-abertos/pode-editar", headers=analista_headers)
     assert r.json() == {"pode_editar": False}
 
