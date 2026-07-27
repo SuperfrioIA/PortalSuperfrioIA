@@ -17,6 +17,7 @@
     apps: [],
     roles: [],
     usuarios: [],
+    filiais: [],
     // Estrutura da matriz de acesso (app × ação), vinda de /api/admin/matriz.
     // Linhas = catálogo de apps (banco); colunas = vocabulário fixo (código).
     matriz: { acoes: [], secoes: [], descricoes: {}, orfas: [] },
@@ -69,18 +70,20 @@
 
   /* ---------- Load all ---------- */
   async function loadAll() {
-    const [secoes, apps, roles, usuarios, matriz] = await Promise.all([
+    const [secoes, apps, roles, usuarios, matriz, filiais] = await Promise.all([
       api("GET", "/api/admin/secoes"),
       api("GET", "/api/admin/apps"),
       api("GET", "/api/admin/roles"),
       api("GET", "/api/admin/usuarios"),
       api("GET", "/api/admin/matriz"),
+      api("GET", "/api/admin/filiais"),
     ]);
     ADM.secoes = secoes;
     ADM.apps = apps;
     ADM.roles = roles;
     ADM.usuarios = usuarios;
     ADM.matriz = matriz;
+    ADM.filiais = filiais;
   }
 
   /* ---------- Open / close ---------- */
@@ -113,6 +116,7 @@
     else if (ADM.tab === "secoes") renderSecoes();
     else if (ADM.tab === "roles") renderRoles();
     else if (ADM.tab === "usuarios") renderUsuarios();
+    else if (ADM.tab === "filiais") renderFiliais();
   }
 
   /* ---------- Render genérico de tabela ----------
@@ -289,6 +293,29 @@
     });
   }
 
+  /* ---------- Render: FILIAIS ---------- */
+  function renderFiliais() {
+    renderTable(document.getElementById("table-filiais"), {
+      entity: "filiais",
+      emptyMsg: t("admin.empty.filiais"),
+      rows: ADM.filiais,
+      headers: [
+        th("admin.col.filial"), th("admin.col.uf"), th("admin.col.regiao"),
+        th("admin.col.status"), thRight("admin.col.acoes"),
+      ],
+      rowHtml: (f) => `<tr>
+        <td><div class="col-nome">${escapeHtml(f.nome)}</div></td>
+        <td>${escapeHtml(f.uf || t("admin.dash"))}</td>
+        <td>${escapeHtml(f.regiao)}</td>
+        <td><span class="pill ${f.ativo ? "on" : "off"}">${escapeHtml(f.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
+        <td class="actions">
+          <button data-act="edit" data-id="${f.id}">${escapeHtml(t("admin.act.edit"))}</button>
+          <button class="danger" data-act="toggle" data-id="${f.id}">${escapeHtml(f.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
+        </td>
+      </tr>`,
+    });
+  }
+
   /* ---------- Row actions ---------- */
   function bindRowActions(tableEl, entity) {
     tableEl.querySelectorAll("button[data-act]").forEach((btn) => {
@@ -315,7 +342,7 @@
   }
 
   function findRecord(entity, id) {
-    const map = { apps: ADM.apps, secoes: ADM.secoes, roles: ADM.roles, usuarios: ADM.usuarios };
+    const map = { apps: ADM.apps, secoes: ADM.secoes, roles: ADM.roles, usuarios: ADM.usuarios, filiais: ADM.filiais };
     return (map[entity] || []).find((r) => r.id === id);
   }
 
@@ -328,6 +355,7 @@
       secoes: isNew ? t("admin.new.secao") : `${t("admin.edit.secao")} — ${record.nome}`,
       roles: isNew ? t("admin.new.role") : `${t("admin.edit.role")} — ${record.nome}`,
       usuarios: isNew ? t("admin.new.usuario") : `${t("admin.edit.usuario")} — ${record.username}`,
+      filiais: isNew ? t("admin.new.filial") : `${t("admin.edit.filial")} — ${record.nome}`,
     };
     const form = document.getElementById("modal-form");
     document.getElementById("modal-title").textContent = titles[entity];
@@ -382,7 +410,27 @@
     if (entity === "apps") return formApp(r);
     if (entity === "roles") return formRole(r);
     if (entity === "usuarios") return formUsuario(r);
+    if (entity === "filiais") return formFilial(r);
     return "";
+  }
+
+  function formFilial(r) {
+    return `
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.col.filial"))}</label>
+        <input name="nome" required value="${attr(r && r.nome)}" placeholder="ex: CD Cajamar">
+      </div>
+      <div class="row-2">
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.uf"))}</label>
+          <input name="uf" value="${attr(r && r.uf)}" maxlength="4" placeholder="ex: SP">
+        </div>
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.regiao"))}</label>
+          <input name="regiao" required value="${attr(r && r.regiao)}" placeholder="ex: Sudeste">
+        </div>
+      </div>
+    `;
   }
 
   function attr(v) {
@@ -832,6 +880,10 @@
       out.email = (fd.get("email") || "").trim() || null;
       out.is_admin = !!fd.get("is_admin");
       out.roles = fd.getAll("roles");
+    } else if (entity === "filiais") {
+      out.nome = (fd.get("nome") || "").trim();
+      out.uf = (fd.get("uf") || "").trim() || null;
+      out.regiao = (fd.get("regiao") || "").trim();
     }
     return out;
   }
@@ -849,6 +901,7 @@
     document.getElementById("btn-new-secao").addEventListener("click", () => openModal("secoes", null));
     document.getElementById("btn-new-role").addEventListener("click", () => openModal("roles", null));
     document.getElementById("btn-new-usuario").addEventListener("click", () => openModal("usuarios", null));
+    document.getElementById("btn-new-filial").addEventListener("click", () => openModal("filiais", null));
 
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-cancel").addEventListener("click", closeModal);

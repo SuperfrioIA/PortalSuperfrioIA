@@ -31,6 +31,7 @@ const ICONS = {
   cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L23 6H6"/>',
   document: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
   truck: '<rect x="1" y="6" width="13" height="10" rx="1"/><path d="M14 9h4l3 3v4h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
+  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/><path d="M12 3v2"/><path d="M21 12h-2"/>',
   default: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/><path d="M9 21V9"/>',
 };
 function iconSvg(key) {
@@ -192,10 +193,10 @@ function badgeHtml(app) {
 }
 
 function cardHtml(app) {
-  const arrow = app.tipo_acesso === "iframe"
+  const arrow = app.tipo_acesso === "iframe" || app.tipo_acesso === "interno"
     ? `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`
     : `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>`;
-  const acessoLabel = app.tipo_acesso === "iframe" ? t("card.open.iframe") : t("card.open.url");
+  const acessoLabel = app.tipo_acesso === "iframe" || app.tipo_acesso === "interno" ? t("card.open.iframe") : t("card.open.url");
 
   return `
     <a class="app-card" data-slug="${escapeHtml(app.slug)}" href="${escapeHtml(app.url)}">
@@ -264,6 +265,11 @@ function findAppBySlug(slug) {
 }
 
 function openApp(app) {
+  if (app.tipo_acesso === "interno") {
+    // Tela nativa do próprio SPA (ex.: Projetos IA) — sem iframe, sem nova aba.
+    if (window.SF && window.SF.openProjetosIa) window.SF.openProjetosIa();
+    return;
+  }
   if (app.tipo_acesso === "iframe") {
     const iframe = document.getElementById("iframe-content");
     // Sandbox COM allow-same-origin (decisão 2026-07-07, reverte o item A1 da
@@ -545,6 +551,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!document.getElementById("screen-sistemas").classList.contains("hidden")) {
       renderSistemas();
     }
+    if (!document.getElementById("screen-projetos").classList.contains("hidden")) {
+      if (window.SF && window.SF.renderProjetosIa) window.SF.renderProjetosIa();
+    }
   });
 
   /* Abrir/voltar admin (handlers vivem em admin.js) */
@@ -563,6 +572,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // Rebusca /api/portal/home pra refletir apps editados/criados no admin
     // (sem isso o menu mostra o state.secoes velho até dar F5).
     loadPortal();
+  });
+  document.getElementById("btn-back-from-projetos").addEventListener("click", () => {
+    document.getElementById("screen-projetos").classList.add("hidden");
+    document.getElementById("screen-portal").classList.remove("hidden");
   });
 
   /* "Todos os apps" no topo da sidebar */
