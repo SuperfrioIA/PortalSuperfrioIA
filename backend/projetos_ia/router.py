@@ -80,15 +80,35 @@ class RolloutUpdate(BaseModel):
 
 
 class FilialCreate(BaseModel):
-    nome: str
-    uf: Optional[str] = None
+    # `codigo` é a chave de negócio (mesmo código do ERP, como no Conciliador):
+    # obrigatório aqui e ausente do Update de propósito — não muda depois de criado.
+    codigo: str = Field(min_length=1, max_length=20)
+    nome: str = Field(min_length=1)
+    cidade: Optional[str] = None
+    uf: Optional[str] = Field(default=None, max_length=4)
     regiao: str
+    responsavel: Optional[str] = None
+    unidade_negocio_id: Optional[int] = None
 
 
 class FilialUpdate(BaseModel):
-    nome: Optional[str] = None
-    uf: Optional[str] = None
+    nome: Optional[str] = Field(default=None, min_length=1)
+    cidade: Optional[str] = None
+    uf: Optional[str] = Field(default=None, max_length=4)
     regiao: Optional[str] = None
+    responsavel: Optional[str] = None
+    unidade_negocio_id: Optional[int] = None
+
+
+class UnidadeNegocioCreate(BaseModel):
+    nome: str = Field(min_length=1, max_length=120)
+    responsavel: Optional[str] = Field(default=None, max_length=120)
+
+
+class UnidadeNegocioUpdate(BaseModel):
+    # O nome PODE mudar: a filial liga por id, não por nome.
+    nome: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    responsavel: Optional[str] = Field(default=None, max_length=120)
 
 
 # ============ Projetos ============
@@ -200,3 +220,31 @@ def admin_atualizar_filial(filial_id: int, body: FilialUpdate, _: dict = Depends
 def admin_toggle_filial(filial_id: int, _: dict = Depends(require_admin)):
     with db() as session:
         return service.toggle_filial(session, filial_id)
+
+
+# ============ Unidades de negócio (B.U — catálogo, admin) ============
+
+@router_admin.get("/unidades-negocio")
+def admin_listar_unidades_negocio(_: dict = Depends(require_admin)):
+    with db() as session:
+        return service.listar_unidades_negocio(session)
+
+
+@router_admin.post("/unidades-negocio", status_code=201)
+def admin_criar_unidade_negocio(body: UnidadeNegocioCreate, _: dict = Depends(require_admin)):
+    with db() as session:
+        return service.criar_unidade_negocio(session, body.model_dump())
+
+
+@router_admin.patch("/unidades-negocio/{unidade_id}")
+def admin_atualizar_unidade_negocio(
+    unidade_id: int, body: UnidadeNegocioUpdate, _: dict = Depends(require_admin)
+):
+    with db() as session:
+        return service.atualizar_unidade_negocio(session, unidade_id, body.model_dump(exclude_unset=True))
+
+
+@router_admin.post("/unidades-negocio/{unidade_id}/toggle")
+def admin_toggle_unidade_negocio(unidade_id: int, _: dict = Depends(require_admin)):
+    with db() as session:
+        return service.toggle_unidade_negocio(session, unidade_id)

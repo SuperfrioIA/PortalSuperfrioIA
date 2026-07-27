@@ -10,11 +10,17 @@ aqui a partir da data real (`date.today()`), nunca de um campo gravado.
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 
 from backend.core.database import _now
 from backend.core.http import row_or_404, unique_or_409
-from backend.projetos_ia.models import Filial, Projeto, ProjetoFase, ProjetoRollout
+from backend.projetos_ia.models import (
+    Filial,
+    Projeto,
+    ProjetoFase,
+    ProjetoRollout,
+    UnidadeNegocio,
+)
 
 FASES = (
     "Ideia recebida", "Em avaliação", "POC / Validação", "Construção TI",
@@ -198,31 +204,156 @@ def atualizar_fase(session, slug: str, ordem: int, campos: dict, usuario_nome: s
 
 # ---------- Filiais (catálogo, administrado em /api/admin/filiais) ----------
 
+def _stmt_filiais():
+    """Filial + nome da B.U (LEFT JOIN — filial sem B.U é o caso normal)."""
+    return (
+        select(Filial.__table__, UnidadeNegocio.nome.label("unidade_negocio_nome"))
+        .join_from(
+            Filial, UnidadeNegocio,
+            UnidadeNegocio.id == Filial.unidade_negocio_id, isouter=True,
+        )
+        .order_by(Filial.regiao, Filial.nome)
+    )
+
+
+def _filial_detalhe(session, filial_id: int) -> dict:
+    row_or_404(session, Filial, filial_id, "filiais")  # 404 padronizado da casa
+    return dict(session.execute(_stmt_filiais().where(Filial.id == filial_id)).mappings().fetchone())
+
+
+def _valida_unidade_negocio(session, unidade_negocio_id) -> None:
+    """B.U inexistente é erro do chamador (400), não 404 da filial."""
+    if unidade_negocio_id is None:
+        return
+    existe = session.execute(
+        select(UnidadeNegocio.id).where(UnidadeNegocio.id == unidade_negocio_id)
+    ).scalar_one_or_none()
+    if existe is None:
+        raise HTTPException(400, f"unidade de negócio {unidade_negocio_id} não existe")
+
+
+def _texto(valores: dict, campos: tuple[str, ...]) -> dict:
+    """Apara espaços e transforma "" em None (o Pydantic aceita string vazia)."""
+    out = dict(valores)
+    for campo in campos:
+        if isinstance(out.get(campo), str):
+            out[campo] = out[campo].strip() or None
+    return out
+
+
+def _normaliza_filial(dados: dict, criando: bool) -> dict:
+    """UF sempre em maiúscula (`sp` e `SP` são a mesma coisa) e obrigatório em
+    branco vira 400 — sem isso um `nome` só com espaços viraria 500 no NOT NULL."""
+    out = _texto(dados, ("codigo", "nome", "cidade", "uf", "regiao", "responsavel"))
+    if out.get("uf"):
+        out["uf"] = out["uf"].upper()
+    obrigatorios = ("codigo", "nome", "regiao")
+    vazios = [
+        c for c in obrigatorios
+        if (criando and not out.get(c)) or (not criando and c in out and not out[c])
+    ]
+    if vazios:
+        raise HTTPException(400, f"campo(s) obrigatório(s) em branco: {', '.join(vazios)}")
+    return out
+
+
 def listar_filiais(session, apenas_ativas: bool = False) -> list[dict]:
-    stmt = select(Filial.__table__).order_by(Filial.regiao, Filial.nome)
+    stmt = _stmt_filiais()
     if apenas_ativas:
         stmt = stmt.where(Filial.ativo == 1)
     return [dict(r) for r in session.execute(stmt).mappings().fetchall()]
 
 
 def criar_filial(session, dados: dict) -> dict:
-    with unique_or_409("nome", dados["nome"]):
+    """`codigo` é a chave de negócio (mesmo do ERP/Conciliador) — daí o 409 nele."""
+    dados = _normaliza_filial(dados, criando=True)
+    _valida_unidade_negocio(session, dados.get("unidade_negocio_id"))
+    with unique_or_409("codigo", dados["codigo"]):
         cur = session.execute(insert(Filial).values(**dados))
-    return row_or_404(session, Filial, cur.inserted_primary_key[0], "filiais")
+    return _filial_detalhe(session, cur.inserted_primary_key[0])
 
 
 def atualizar_filial(session, filial_id: int, campos: dict) -> dict:
     row_or_404(session, Filial, filial_id, "filiais")
+    campos = _normaliza_filial(campos, criando=False)
+    if "unidade_negocio_id" in campos:
+        _valida_unidade_negocio(session, campos["unidade_negocio_id"])
     if campos:
         session.execute(update(Filial).where(Filial.id == filial_id).values(**campos))
-    return row_or_404(session, Filial, filial_id, "filiais")
+    return _filial_detalhe(session, filial_id)
 
 
 def toggle_filial(session, filial_id: int) -> dict:
     row = row_or_404(session, Filial, filial_id, "filiais")
     novo = 0 if row["ativo"] else 1
     session.execute(update(Filial).where(Filial.id == filial_id).values(ativo=novo))
-    return row_or_404(session, Filial, filial_id, "filiais")
+    return _filial_detalhe(session, filial_id)
+
+
+# ---------- Unidades de negócio (B.U — catálogo admin) ----------
+
+def _stmt_unidades_negocio():
+    """B.U + quantas filiais estão vinculadas (derivado, não guardamos contador).
+
+    `group_by` só pela PK: Postgres aceita por dependência funcional e SQLite
+    não se importa.
+    """
+    return (
+        select(UnidadeNegocio.__table__, func.count(Filial.id).label("filiais"))
+        .join_from(
+            UnidadeNegocio, Filial,
+            Filial.unidade_negocio_id == UnidadeNegocio.id, isouter=True,
+        )
+        .group_by(UnidadeNegocio.id)
+        .order_by(UnidadeNegocio.nome)
+    )
+
+
+def _unidade_negocio_detalhe(session, unidade_id: int) -> dict:
+    row_or_404(session, UnidadeNegocio, unidade_id, "unidades de negócio")
+    stmt = _stmt_unidades_negocio().where(UnidadeNegocio.id == unidade_id)
+    return dict(session.execute(stmt).mappings().fetchone())
+
+
+def listar_unidades_negocio(session, apenas_ativas: bool = False) -> list[dict]:
+    stmt = _stmt_unidades_negocio()
+    if apenas_ativas:
+        stmt = stmt.where(UnidadeNegocio.ativo == 1)
+    return [dict(r) for r in session.execute(stmt).mappings().fetchall()]
+
+
+def _normaliza_unidade_negocio(dados: dict, criando: bool) -> dict:
+    out = _texto(dados, ("nome", "responsavel"))
+    if (criando and not out.get("nome")) or (not criando and "nome" in out and not out["nome"]):
+        raise HTTPException(400, "nome da unidade de negócio em branco")
+    return out
+
+
+def criar_unidade_negocio(session, dados: dict) -> dict:
+    dados = _normaliza_unidade_negocio(dados, criando=True)
+    with unique_or_409("nome", dados["nome"]):
+        cur = session.execute(insert(UnidadeNegocio).values(**dados))
+    return _unidade_negocio_detalhe(session, cur.inserted_primary_key[0])
+
+
+def atualizar_unidade_negocio(session, unidade_id: int, campos: dict) -> dict:
+    """O nome pode mudar — a filial liga por id, não por nome (igual no Conciliador)."""
+    row_or_404(session, UnidadeNegocio, unidade_id, "unidades de negócio")
+    campos = _normaliza_unidade_negocio(campos, criando=False)
+    if campos:
+        with unique_or_409("nome", campos.get("nome")):
+            session.execute(
+                update(UnidadeNegocio).where(UnidadeNegocio.id == unidade_id).values(**campos)
+            )
+    return _unidade_negocio_detalhe(session, unidade_id)
+
+
+def toggle_unidade_negocio(session, unidade_id: int) -> dict:
+    """Inativar não desfaz os vínculos — a filial continua apontando pra B.U."""
+    row = row_or_404(session, UnidadeNegocio, unidade_id, "unidades de negócio")
+    novo = 0 if row["ativo"] else 1
+    session.execute(update(UnidadeNegocio).where(UnidadeNegocio.id == unidade_id).values(ativo=novo))
+    return _unidade_negocio_detalhe(session, unidade_id)
 
 
 # ---------- Rollout (projeto × filial) ----------
