@@ -258,6 +258,11 @@ body {
   min-height: 100vh;
 }
 
+/* A sidebar é sticky e travada em 100vh: sem overflow próprio, tudo que passa
+   da altura da tela (Idioma + rodapé com o botão Sair) fica fora do viewport e
+   NÃO é alcançável pelo scroll da página — o sticky segura a barra no topo.
+   Em tela de notebook (~600px úteis) o conteúdo passa de 100vh, então ela
+   precisa rolar sozinha. dvh evita o mesmo corte com a barra de URL do mobile. */
 .sidebar {
   background: var(--bg2);
   border-right: 1px solid var(--border);
@@ -267,7 +272,15 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
 }
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 .sidebar-brand {
   display: flex;
   flex-direction: column;
@@ -662,6 +675,19 @@ body {
   .login-aside { padding: 28px; }
   .login-aside-copy h1 { font-size: 26px; }
   .login-main { padding: 28px; }
+}
+
+/* Tela baixa (notebook 1366x768 → ~600px úteis com barra do navegador e taskbar):
+   comprime os respiros da sidebar para o menu inteiro caber sem rolar. Se ainda
+   assim não couber (usuário com muitas seções), o overflow-y da .sidebar resolve. */
+@media (min-width: 881px) and (max-height: 780px) {
+  .sidebar { padding: 14px 14px 12px; }
+  .sidebar-brand { padding: 2px 8px 10px; gap: 5px; }
+  .sidebar-brand img { max-width: 150px; }
+  .sidebar-section-label { margin: 12px 10px 5px; }
+  .sidebar-link { padding: 7px 10px; }
+  .sidebar-foot { padding: 10px 8px 2px; }
+  .sidebar-foot .avatar { width: 30px; height: 30px; font-size: 12px; }
 }
 
 .hidden { display: none !important; }
@@ -1164,7 +1190,17 @@ body {
 .admin-table .col-slug { font-family: 'DM Mono', ui-monospace, monospace; font-size: 12px; color: var(--text2); }
 .admin-table .col-nome { font-weight: 700; color: var(--text); }
 .admin-table .col-meta { font-size: 11px; color: var(--text3); }
+/* A coluna de ações é um <td>: NÃO colocar display:flex aqui. Flex tira a
+   célula do layout de tabela (ela deixa de ser table-cell), e aí perde o
+   alinhamento de altura/borda com o resto da linha — o estrago só aparece
+   quando as outras colunas crescem (pilha de roles em 2+ linhas). O flex vai
+   no .actions-row lá dentro; o text-align aqui é só rede de segurança para
+   um <td class="actions"> que venha sem o wrapper. */
 .admin-table .actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.admin-table .actions-row {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
@@ -1461,7 +1497,8 @@ table.mtx tr.mtx-grp th { background: var(--bg3); padding: 6px 12px; text-align:
   .admin-table thead { display: none; }
   .admin-table tbody td { display: block; padding: 6px 14px; border: none; }
   .admin-table tbody tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .admin-table .actions { justify-content: flex-start; padding-top: 6px; }
+  .admin-table .actions { text-align: left; padding-top: 6px; }
+  .admin-table .actions-row { justify-content: flex-start; }
 }
 
 /* ============ PROJETOS IA ============

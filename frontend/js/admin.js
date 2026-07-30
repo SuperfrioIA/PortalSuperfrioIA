@@ -177,10 +177,10 @@
         <td>${a.badge ? `<span class="pill ${a.badge.toLowerCase()}">${escapeHtml(a.badge)}</span>` : `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</td>
         <td>${a.ordem}</td>
         <td><span class="pill ${a.ativo ? "on" : "off"}">${escapeHtml(a.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
-        <td class="actions">
+        <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${a.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${a.id}">${escapeHtml(a.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
-        </td>
+        </div></td>
       </tr>`,
     });
   }
@@ -204,10 +204,10 @@
         <td>${s.apps_count}</td>
         <td>${s.ordem}</td>
         <td><span class="pill ${s.ativo ? "on" : "off"}">${escapeHtml(s.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
-        <td class="actions">
+        <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${s.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${s.id}">${escapeHtml(s.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
-        </td>
+        </div></td>
       </tr>`,
     });
   }
@@ -238,10 +238,10 @@
         <td><div class="pill-stack">${perms || `<span class="col-meta">${escapeHtml(t("admin.noPerms"))}</span>`}</div></td>
         <td>${r.usuarios_count}</td>
         <td><span class="pill ${r.ativo ? "on" : "off"}">${escapeHtml(r.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
-        <td class="actions">
+        <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${r.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${r.id}">${escapeHtml(r.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
-        </td>
+        </div></td>
       </tr>`;
       },
     });
@@ -301,11 +301,11 @@
         <td>${acessoEfetivoHtml(u)}</td>
         <td>${u.is_admin ? `<span class="pill admin">${escapeHtml(t("admin.type.admin"))}</span>` : `<span class="col-meta">${escapeHtml(t("admin.type.user"))}</span>`}</td>
         <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
-        <td class="actions">
+        <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${u.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button data-act="passwd" data-id="${u.id}">${escapeHtml(t("admin.act.password"))}</button>
           <button class="danger" data-act="toggle" data-id="${u.id}" ${meEu ? `disabled title="${escapeHtml(t("admin.cantDeactivateSelf"))}"` : ""}>${escapeHtml(u.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
-        </td>
+        </div></td>
       </tr>`;
       },
     });
@@ -336,10 +336,10 @@
         <td>${escapeHtml(f.regiao)}</td>
         <td>${escapeHtml(f.unidade_negocio_nome || t("admin.dash"))}</td>
         <td><span class="pill ${f.ativo ? "on" : "off"}">${escapeHtml(f.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
-        <td class="actions">
+        <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${f.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${f.id}">${escapeHtml(f.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
-        </td>
+        </div></td>
       </tr>`,
     });
   }
@@ -359,10 +359,10 @@
         <td>${escapeHtml(u.responsavel || t("admin.dash"))}</td>
         <td>${u.filiais}</td>
         <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.f") : t("admin.status.inactive.f"))}</span></td>
-        <td class="actions">
+        <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${u.id}">${escapeHtml(t("admin.act.edit"))}</button>
           <button class="danger" data-act="toggle" data-id="${u.id}">${escapeHtml(u.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
-        </td>
+        </div></td>
       </tr>`,
     });
   }
