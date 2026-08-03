@@ -93,6 +93,14 @@ async def security_headers(request: Request, call_next) -> Response:
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "same-origin")
+    if response.headers.get("content-type", "").startswith("text/html"):
+        # Sem isso, o index.html só tem Last-Modified/ETag e cai no cache heurístico
+        # do navegador — quem abre um app embutido via iframe no portal (Receita 1)
+        # pode continuar vendo a versão de antes do último deploy, porque um hard
+        # reload na página do portal não obriga o iframe a rebuscar (é uma navegação
+        # própria). "no-cache" força revalidação (ETag) a cada carregamento — barato
+        # quando nada mudou (304), correto quando mudou.
+        response.headers["Cache-Control"] = "no-cache"
     path = request.url.path
     # A apresentação em /governanca/ tem CSP próprio (script inline) e pode ser embutida
     # same-origin no overlay do portal.
