@@ -8,7 +8,7 @@ Modelo de permissão (detalhes em `backend/core/permissoes.py`): a matriz é
 app × ação. A coluna `ver` mora em `role_apps`; as demais ações moram em
 `role_permissoes`. Nos dois casos, **role inativa não concede nada**.
 """
-from sqlalchemy import select
+from sqlalchemy import func, insert, select
 
 from backend.core.permissoes import ACAO_VER, listar as listar_catalogo
 from backend.portal import service as portal_service
@@ -23,6 +23,35 @@ def por_username(session, username: str, apenas_ativos: bool = True) -> dict | N
         stmt = stmt.where(Usuario.ativo == 1)
     row = session.execute(stmt).mappings().fetchone()
     return dict(row) if row else None
+
+
+def por_email(session, email: str, apenas_ativos: bool = True) -> dict | None:
+    """Como `por_username`, mas por e-mail (case-insensitive) — usado pelo login
+    SSO (`backend/auth/provisioning.py`), onde o Entra devolve e-mail e não o
+    nosso `username`."""
+    stmt = select(Usuario.__table__).where(func.lower(Usuario.email) == email.lower())
+    if apenas_ativos:
+        stmt = stmt.where(Usuario.ativo == 1)
+    row = session.execute(stmt).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def provisionar_usuario_ad(session, email: str, nome: str | None) -> dict:
+    """Cria um usuário novo vindo do primeiro login via SSO (Entra) — sem senha
+    e sem nenhuma role, igual a um usuário local recém-criado: o admin concede
+    acesso depois na tela de Administração. `username` = o próprio e-mail (o
+    Entra não dá um identificador curto, e `username` já é UNIQUE)."""
+    cur = session.execute(
+        insert(Usuario).values(
+            username=email, nome=nome or email, email=email,
+            password_hash=None, auth_source="ad", is_admin=0,
+        )
+    )
+    user_id = cur.inserted_primary_key[0]
+    row = session.execute(
+        select(Usuario.__table__).where(Usuario.id == user_id)
+    ).mappings().fetchone()
+    return dict(row)
 
 
 def app_ids_permitidos(session, usuario_id: int) -> list[int]:

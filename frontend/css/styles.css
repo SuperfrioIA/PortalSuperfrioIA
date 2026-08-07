@@ -241,6 +241,41 @@ body {
 }
 .form-error.visible { display: block; }
 
+.login-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 20px 0 16px;
+  color: var(--text3);
+  font-size: 12px;
+}
+.login-divider::before, .login-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--border2);
+}
+.login-divider span { padding: 0 10px; }
+
+.btn-sso {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-sso:hover { background: var(--bg3); border-color: var(--text3); }
+
 .login-hint {
   margin-top: 24px;
   padding-top: 18px;
