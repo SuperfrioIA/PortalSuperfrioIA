@@ -11,6 +11,16 @@ const state = {
   query: "",
 };
 
+// Volta do SSO Microsoft: o backend devolve a sessão pelo FRAGMENTO da URL
+// (#sso_token=...), nunca por query string (fragmentos não vão pro servidor
+// nem caem em log). Precisa rodar antes de qualquer outra coisa ler o token.
+const ssoMatch = location.hash.match(/sso_token=([^&]+)/);
+if (ssoMatch) {
+  state.token = decodeURIComponent(ssoMatch[1]);
+  localStorage.setItem(TOKEN_KEY, state.token);
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
 // Exposto pro admin.js
 window.SF = window.SF || {};
 window.SF.state = state;
@@ -87,6 +97,18 @@ function logout(reason) {
 window.SF.logout = logout;
 
 /* ---------- Render ---------- */
+async function checkSsoConfig() {
+  let ssoEnabled = false;
+  try {
+    const res = await fetch(`${API}/api/auth/config`);
+    if (res.ok) ssoEnabled = !!(await res.json()).sso_enabled;
+  } catch (_e) {
+    ssoEnabled = false;
+  }
+  document.getElementById("btn-sso-entra").classList.toggle("hidden", !ssoEnabled);
+  document.getElementById("login-sso-divider").classList.toggle("hidden", !ssoEnabled);
+}
+
 function showLogin() {
   const boot = document.getElementById("boot-hide-login");
   if (boot) boot.remove();
@@ -95,6 +117,7 @@ function showLogin() {
   document.getElementById("login-error").classList.remove("visible");
   document.getElementById("form-login").reset();
   setTimeout(() => document.getElementById("login-username").focus(), 50);
+  checkSsoConfig();
 }
 
 function showPortal() {

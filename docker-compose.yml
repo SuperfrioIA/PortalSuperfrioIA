@@ -15,6 +15,12 @@ services:
       # Banco: sem DATABASE_URL no .env, cai no SQLite do volume ./data (rollback do Lote 2).
       # Com DATABASE_URL=postgresql+psycopg://... aponta pro Postgres do service `db`.
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/portal.db}
+      # SSO Microsoft Entra ID (Degrau 3) — vazios = SSO desligado, só login local.
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-}
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:-}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
+      ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-}
+      ENTRA_ALLOWED_GROUP_ID: ${ENTRA_ALLOWED_GROUP_ID:-}
     volumes:
       - ./data:/app/data
     depends_on:
