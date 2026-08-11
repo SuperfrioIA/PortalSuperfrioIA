@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperFrio · IceStar — Integração In/Out</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/chartjs-plugin-datalabels.min.js"></script>
+<script src="vendor/xlsx.min.js"></script>
+<style>
+/* Paleta padrão Plataforma LATAM (IceStar | SuperFrio) — mesmos tokens do
+   Processos Abertos, ver frontend/processos-abertos/index.html */
+:root{
+  --brand-azul-institucional:#071A3A;--brand-azul-corporativo:#0A2A5E;
+  --brand-azul-principal:#1E6FD9;--brand-azul-conexao:#3FA9F5;
+  --brand-amarelo:#FFC400;--brand-amarelo-suave:#FFD84D;
+  --brand-branco:#FFFFFF;--brand-cinza-claro:#C7D2E3;--brand-azul-escuro:#050F24;
+}
+/* Tokens do dashboard mapeados na paleta de marca. --green/--amber/--red ficam
+   fora dela de propósito: são cores semânticas de status (ok/atenção/crítico),
+   não cor de identidade visual. */
+:root{
+  --navy:var(--brand-azul-corporativo); --navy2:#123A76; --navy-deep:var(--brand-azul-escuro);
+  --blue:var(--brand-azul-principal); --blue-l:var(--brand-azul-conexao);
+  --green:#1E8449; --green-l:#2ECC71; --green-bar:#A9DFBF;
+  --amber:#E67E22; --amber-l:#F39C12;
+  --red:#C0392B; --red-l:#D65A4A;
+  --ink:#1A1A1A; --muted:#4A5E7A; --line:#E0E4EC; --bg:#E9EFF7; --card:#FFFFFF;
+  --shadow:0 1px 3px rgba(10,42,94,.08),0 1px 2px rgba(10,42,94,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Montserrat',system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+/* Cabeçalho padrão do Hub — mesmo bloco de frontend/processos-abertos/: hero
+   institucional escuro, back-link, onda de transição pro fundo claro. */
+.pa-hero{position:relative;background:linear-gradient(135deg,#050F24 0%,#071A3A 55%,#0A2A5E 100%);color:#fff;padding:18px clamp(20px,4vw,32px) 34px;overflow:hidden}
+.pa-hero-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.pa-logo{height:36px;width:auto;object-fit:contain}
+.back-link{background:transparent;border:1px solid rgba(255,255,255,.28);color:rgba(255,255,255,.82);padding:6px 10px;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .12s;text-decoration:none}
+.back-link:hover{background:rgba(255,255,255,.10);color:#fff}
+.back-link svg{stroke:currentColor}
+.pa-hero-inner{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;max-width:1360px;margin:0 auto;width:100%}
+.pa-hero-text{flex:1 1 260px;min-width:0}
+.pa-eyebrow{margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--brand-azul-conexao)}
+.pa-hero h1{margin:0 0 6px;font-size:clamp(20px,3vw,26px);font-weight:700;color:#fff}
+.pa-subtitle-p{margin:0;font-size:12.5px;color:var(--brand-cinza-claro);line-height:1.5}
+.pa-date-pill{background:rgba(255,255,255,.15);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;white-space:nowrap}
+.pa-wave{position:absolute;left:0;right:0;bottom:-1px;width:100%;height:36px;display:block}
+.wrap{max-width:1360px;margin:0 auto 60px;padding:20px 32px 0;position:relative;z-index:2}
+.tabs{display:flex;gap:26px;border-bottom:1px solid var(--line);margin:8px 0 22px}
+.tab{padding:12px 2px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-size:14px;display:flex;align-items:center;gap:7px}
+.tab.active{color:var(--navy);border-bottom-color:var(--navy)}
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--blue),var(--blue-l));color:#fff;border:none;padding:11px 18px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow)}
+.btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.btn:active{transform:translateY(1px)}
+.filepill{font-size:12px;color:var(--muted)}
+.metricsel{margin-left:auto;display:flex;align-items:center;gap:8px}
+.metricsel .lab{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.sec-label{display:flex;align-items:center;gap:9px;font-weight:800;color:var(--navy);letter-spacing:.06em;font-size:13px;text-transform:uppercase;margin:26px 0 14px}
+.sec-label .dot{width:7px;height:7px;border-radius:2px;background:var(--blue)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.kpi{background:var(--card);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);border-top:3px solid var(--line);position:relative}
+.kpi .k-label{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.kpi .k-val{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:6px 0 2px}
+.kpi .k-sub{font-size:12px;color:var(--muted);font-weight:600}
+.kpi.b-blue{border-top-color:var(--blue)}.kpi.b-green{border-top-color:var(--green)}
+.kpi.b-amber{border-top-color:var(--amber)}.kpi.b-red{border-top-color:var(--red)}.kpi.b-navy{border-top-color:var(--navy)}
+.kpi.b-blue .k-val{color:var(--blue)}.kpi.b-green .k-val{color:var(--green)}
+.kpi.b-amber .k-val{color:var(--amber)}.kpi.b-red .k-val{color:var(--red)}.kpi.b-navy .k-val{color:var(--navy)}
+.trend-up{color:var(--green)}.trend-dn{color:var(--red)}.trend-fl{color:var(--muted)}
+.date-r{font-weight:700;color:var(--navy);font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:20px 22px;margin-bottom:18px}
+.card h3{font-size:13px;font-weight:800;color:var(--navy);letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.card .hint{font-size:12px;color:var(--muted);margin:8px 0 12px}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 16px}
+.chip{padding:7px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;user-select:none}
+.chip.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.chip.sm{padding:5px 12px;font-size:12px}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted);text-transform:uppercase;text-align:right;padding:10px 12px;border-bottom:2px solid var(--line)}
+th.l,td.l{text-align:left}
+td{padding:11px 12px;border-bottom:1px solid #eef2f7;font-size:13px;font-weight:600;text-align:right}
+tr:hover td{background:#f7faff}
+.unit{font-weight:800;color:var(--navy)}
+.pct-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-weight:800;font-size:12px}
+.pg{background:#e3f6ec;color:#1a9e6a}.pa{background:#fdf0da;color:#c67c17}.pr{background:#fbe4e4;color:#c93b3b}
+.bar-cell{width:190px}
+.bar-track{background:#eef2f7;border-radius:6px;height:16px;position:relative;overflow:hidden;width:100%}
+.bar-fill{height:100%;border-radius:6px;background:var(--green-bar)}
+.selwrap{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.empty{text-align:center;color:var(--muted);padding:40px;font-size:14px}
+.chart-box{position:relative;height:300px}
+.chart-box.tall{height:360px}
+canvas{max-width:100%}
+.hidden{display:none}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
+@media(max-width:640px){.wrap{padding-left:16px;padding-right:16px}.pa-hero h1{font-size:22px}.kpis{grid-template-columns:1fr}.metricsel{margin-left:0;width:100%}}
+.foot{text-align:center;color:var(--muted);font-size:12px;padding:24px}
+table.matrix{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+table.matrix th,table.matrix td{padding:6px 8px;white-space:nowrap}
+table.matrix thead th{background:var(--navy);color:#fff;text-align:center;font-size:11px;letter-spacing:.03em;font-weight:800;padding:9px 8px;position:sticky;top:0}
+table.matrix .munit{position:sticky;left:0;background:#fff;text-align:left;font-weight:800;color:var(--navy);z-index:1;box-shadow:1px 0 0 var(--line);border-bottom:1px solid #eef2f7}
+table.matrix thead .munit{background:var(--navy);color:#fff;z-index:2}
+table.heat td.hcell{text-align:center;font-weight:600;color:#1b2b45;border:1px solid #fff;min-width:56px;font-variant-numeric:tabular-nums}
+table.heat td.hcell.dash{color:#b3bccb;background:#f6f8fb!important;font-weight:500}
+table.heat td.htot{text-align:center;font-weight:700;border-left:2px solid var(--line)}
+table.heat tr.mtotal td{border-top:2px solid var(--line);font-weight:700}
+table.heat tr.mtotal .munit{background:#f4f7fc}
+table.heat tr:hover .munit{background:#f2f7ff}
+table.heat tbody tr:hover td.hcell{outline:1.5px solid rgba(15,33,68,.18);outline-offset:-2px}
+.heatscale{display:flex;align-items:center;gap:0;margin-top:12px;font-size:11px;color:var(--muted);font-weight:700}
+.heatscale .sw{width:26px;height:12px;display:inline-block}
+table.matrix .mdash{color:var(--muted);text-align:right;display:block}
+</style>
+</head>
+<body>
+<h2 class="sr-only">SuperFrio — Dashboard de pedidos integrados e manuais por unidade</h2>
+<header class="pa-hero">
+  <div class="pa-hero-top">
+    <a class="back-link" href="/" target="_top" title="Voltar ao hub">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+      <span>Voltar ao hub</span>
+    </a>
+    <img class="pa-logo" src="/img/icestar-superfrio-logo-white.png" alt="IceStar · SuperFrio">
+  </div>
+  <div class="pa-hero-inner">
+    <div class="pa-hero-text">
+      <p class="pa-eyebrow">Portal SuperFrio &amp; IceStar</p>
+      <h1>Integração In/Out</h1>
+      <p class="pa-subtitle-p">Acompanhamento de pedidos integrados vs. manuais por unidade</p>
+    </div>
+    <span class="pa-date-pill" id="heroBadge">—</span>
+  </div>
+  <svg class="pa-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0,40 L0,18 Q360,40 720,20 T1440,16 L1440,40 Z" fill="#E9EFF7"/></svg>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab active" data-tab="dash">▦ Dashboard</div>
+    <div class="tab" data-tab="diag">◑ Diagnóstico</div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn hidden" id="btnUpload">⭱ Atualizar base</button>
+    <input type="file" id="file" accept=".xlsx,.xls" class="hidden">
+    <span class="filepill" id="filepill">Carregando base…</span>
+      <div class="chip-row hidden" id="yearchips" style="margin:0"></div>
+    <div class="metricsel">
+      <span class="lab">Métrica:</span>
+      <div class="chip sm active" data-metric="0">Pedidos</div>
+      <div class="chip sm" data-metric="1">Linhas</div>
+      <div class="chip sm" data-metric="2">Ondas</div>
+    </div>
+  </div>
+  <div style="text-align:right;margin:-8px 0 8px"><span class="date-r" id="datestamp"></span></div>
+
+  <!-- DASHBOARD -->
+  <div id="tab-dash">
+    <div class="sec-label"><span class="dot"></span>Visão geral — % integrado (<span id="metricName">Pedidos</span>)</div>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="sec-label"><span class="dot"></span>Evolução mensal</div>
+    <div class="card">
+      <h3>◔ % Integrado por mês <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">· rótulos = % e variação Δpp vs. mês anterior</span></h3>
+      <div class="chip-row" id="dirchips">
+        <div class="chip active" data-dir="IN">Inbound</div>
+        <div class="chip" data-dir="OUT">Outbound</div>
+        <div class="chip" data-dir="BOTH">Ambos</div>
+      </div>
+      <div class="chart-box"><canvas id="evoChart"></canvas></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>▤ Volume por mês</h3>
+        <div class="hint">Barras empilhadas: integrado vs. manual (direção selecionada acima)</div>
+        <div class="chart-box"><canvas id="volChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>◕ % Integrado geral</h3>
+        <div class="hint">Composição do período — Inbound + Outbound</div>
+        <div class="chart-box"><canvas id="donutChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>◑ Integrado vs. Manual — direção</h3>
+        <div class="hint">Composição total do período</div>
+        <div class="chart-box"><canvas id="dirChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>▮ Ranking de unidades por volume</h3>
+        <div class="chip-row" id="rankdir">
+          <div class="chip sm active" data-rdir="IN">Inbound</div>
+          <div class="chip sm" data-rdir="OUT">Outbound</div>
+        </div>
+        <div class="chart-box tall"><canvas id="rankChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="sec-label"><span class="dot"></span>Detalhe por unidade</div>
+    <div class="card">
+      <div class="chip-row" id="tabledir">
+        <div class="chip active" data-tdir="IN">Inbound</div>
+        <div class="chip" data-tdir="OUT">Outbound</div>
+      </div>
+      <table id="unitTable"><thead><tr>
+        <th class="l">Unidade</th><th>Integrado</th><th>Manual</th><th>Total</th>
+        <th>% Integrado</th><th class="l bar-cell">Nível de integração</th><th>Participação</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="sec-label"><span class="dot"></span>Evolução por unidade</div>
+    <div class="card">
+      <h3>◔ % Integrado por mês — Inbound vs. Outbound <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">· selecione a unidade</span></h3>
+      <div class="selwrap">
+        <span style="font-size:12.5px;font-weight:700;color:var(--muted)">Unidade:</span>
+        <select id="unitSel"></select>
+      </div>
+      <div class="chart-box"><canvas id="unitEvoChart"></canvas></div>
+    </div>
+
+    <div class="sec-label"><span class="dot"></span>Tabela mensal por unidade</div>
+    <div class="card">
+      <h3>▦ Mapa de calor — % integrado por mês</h3>
+      <div class="hint">Cor por intensidade: verde forte = alto % integrado · vermelho = baixo. Passe o mouse para ver o volume de pedidos.</div>
+      <div class="selwrap">
+        <div class="chip-row" id="matrixdir" style="margin:0">
+          <div class="chip active" data-mdir="IN">Inbound</div>
+          <div class="chip" data-mdir="OUT">Outbound</div>
+        </div>
+        <span style="width:14px"></span>
+        <span style="font-size:12.5px;font-weight:700;color:var(--muted)">Mostrar:</span>
+        <div class="chip-row" id="matrixval" style="margin:0">
+          <div class="chip sm active" data-mval="pct">% integrado</div>
+          <div class="chip sm" data-mval="vol">Volume</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto"><table id="matrixTable" class="matrix heat"></table></div>
+      <div class="legend" id="heatLegend"></div>
+    </div>
+
+    <div class="sec-label"><span class="dot"></span>Ranking de clientes</div>
+    <div class="card">
+      <div class="chip-row" id="clidir">
+        <div class="chip active" data-cdir="IN">Inbound</div>
+        <div class="chip" data-cdir="OUT">Outbound</div>
+      </div>
+      <div class="selwrap">
+        <span style="font-size:12.5px;font-weight:700;color:var(--muted)">Ordenar por:</span>
+        <div class="chip sm active" data-csort="vol">Maior volume</div>
+        <div class="chip sm" data-csort="low">Menor % integrado</div>
+      </div>
+      <table id="cliTable"><thead><tr>
+        <th class="l">Cliente</th><th class="l">Unidade</th><th>Integrado</th><th>Manual</th>
+        <th>Total</th><th>% Integrado</th><th class="l bar-cell">Nível</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- DIAGNÓSTICO -->
+  <div id="tab-diag" class="hidden">
+    <div class="sec-label"><span class="dot"></span>Resumo por zona de integração</div>
+    <div class="kpis" id="zones" style="grid-template-columns:repeat(3,1fr)"></div>
+
+    <div class="sec-label"><span class="dot"></span>Posicionamento das unidades</div>
+    <div class="card">
+      <h3>⊕ Volume × % Integrado — tamanho = total de pedidos</h3>
+      <div class="hint">Eixo X = % integrado · Eixo Y = volume (escala log) · quanto mais à direita e acima, melhor</div>
+      <div class="chip-row" id="scatterdir">
+        <div class="chip sm active" data-sdir="IN">Inbound</div>
+        <div class="chip sm" data-sdir="OUT">Outbound</div>
+      </div>
+      <div class="chart-box tall"><canvas id="scatterChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>◎ Unidades por faixa de integração (Inbound + Outbound)</h3>
+      <div class="hint">Verde ≥ 80% integrado · Amarelo 50–79% · Vermelho &lt; 50%</div>
+      <table id="diagTable"><thead><tr>
+        <th class="l">Zona</th><th class="l">Unidade</th><th>Total</th>
+        <th>Integ. IN</th><th>% IN</th><th>Integ. OUT</th><th>% OUT</th><th>% Geral</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="foot">Portal SuperFrio &amp; IceStar · Dados: base JDA In/Out · Métrica configurável (Pedidos / Linhas / Ondas)</div>
+</div>
+
+<script src="app.js?v=1"></script>
+</body>
+</html>
