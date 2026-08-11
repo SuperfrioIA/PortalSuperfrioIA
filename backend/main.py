@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from backend.auth.router import router as auth_router
 from backend.core.database import init_db
 from backend.core.limiter import limiter
+from backend.integracao_in_out.router import router as integracao_in_out_router
 from backend.permissoes import carregar as carregar_permissoes
 from backend.portal.router import router as portal_router
 from backend.portal.router import router_admin as portal_admin_router
@@ -126,6 +127,7 @@ app.include_router(portal_router)
 app.include_router(portal_admin_router)
 app.include_router(usuarios_admin_router)
 app.include_router(processos_abertos_router)
+app.include_router(integracao_in_out_router)
 app.include_router(projetos_ia_router)
 app.include_router(projetos_ia_admin_router)
 

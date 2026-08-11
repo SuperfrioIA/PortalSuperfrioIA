@@ -91,6 +91,21 @@ APPS = [
         "badge": None,
         "ordem": 4,
     },
+    {
+        # Também existe de verdade neste repositório (frontend/integracao-in-out/,
+        # Receita 1) — dono da permissão `integracao-in-out:editar`.
+        "secao": "armazem",
+        "slug": "integracao-in-out",
+        "nome": "Integração In/Out",
+        "nome_es": "Integración In/Out",
+        "descricao": "Pedidos integrados vs. manuais por unidade, mês a mês.",
+        "descricao_es": "Pedidos integrados vs. manuales por unidad, mes a mes.",
+        "icone": "truck",
+        "url": "/integracao-in-out/",
+        "tipo_acesso": "iframe",
+        "badge": "NEW",
+        "ordem": 5,
+    },
     # Backoffice
     {
         "secao": "backoffice",
