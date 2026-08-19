@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SuperFrio | Gerador de QR Code - Bipagem</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- ==================================================================
+       QR Code Generator (Kazuhiko Arase, licenca MIT) - arquivo local
+       qrcode.js (mesma pasta, sem CDN). Substitui o qrcodejs de CDN, que
+       dimensionava o QR contando caracteres e o gravava em bytes UTF-8:
+       nome com acento estourava ("code length overflow"). Local tambem
+       para a pagina funcionar sem internet e respeitar o CSP do portal
+       (script-src 'self' nao permite <script> inline).
+  =================================================================== -->
+  <script src="qrcode.js?v=1"></script>
+  <style>
+    :root {
+      /* Blues */
+      --brand-azul-institucional: #071A3A;
+      --brand-azul-corporativo:   #0A2A5E;
+      --brand-azul-principal:     #1E6FD9;
+      --brand-azul-conexao:       #3FA9F5;
+      /* Yellows */
+      --brand-amarelo:            #FFC400;
+      --brand-amarelo-suave:      #FFD84D;
+      /* Neutrals */
+      --brand-branco:             #FFFFFF;
+      --brand-cinza-claro:        #C7D2E3;
+      --brand-azul-escuro:        #050F24;
+      /* Gradients */
+      --grad-institucional: linear-gradient(135deg, #050F24 0%, #071A3A 50%, #0A2A5E 100%);
+      --grad-conexao:       linear-gradient(135deg, #1E6FD9 0%, #3FA9F5 100%);
+      /* Typography */
+      --font-primary: 'Montserrat', sans-serif;
+      /* Radius & shadow */
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --shadow-sm: 0 2px 8px rgba(7,26,58,.12);
+      --shadow-md: 0 6px 20px rgba(7,26,58,.18);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-primary);
+      background: #F7F9FC;
+      min-height: 100vh;
+      color: var(--brand-azul-institucional);
+      position: relative; overflow-x: hidden;
+    }
+    /* Cabecalho padrao do Hub - mesmo bloco de frontend/processos-abertos/ e
+       frontend/integracao-in-out/: hero institucional escuro, back-link,
+       onda de transicao pro fundo claro. */
+    .pa-hero {
+      position: relative; overflow: hidden;
+      background: var(--grad-institucional); color: #fff;
+      padding: 18px clamp(20px,4vw,32px) 34px;
+    }
+    .pa-hero-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .pa-logo { height: 30px; width: auto; object-fit: contain; }
+    .back-link {
+      background: transparent; border: 1px solid rgba(255,255,255,.28);
+      color: rgba(255,255,255,.82); padding: 6px 10px; border-radius: var(--radius-sm);
+      font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; transition: all .12s;
+      text-decoration: none;
+    }
+    .back-link:hover { background: rgba(255,255,255,.10); color: #fff; }
+    .back-link svg { stroke: currentColor; }
+    .pa-hero-inner { max-width: 430px; margin: 0 auto; width: 100%; }
+    .pa-eyebrow {
+      margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--brand-azul-conexao);
+    }
+    .pa-hero h1 { margin: 0 0 6px; font-size: clamp(20px,3vw,24px); font-weight: 700; color: #fff; }
+    .pa-subtitle-p { margin: 0; font-size: 12.5px; color: var(--brand-cinza-claro); line-height: 1.5; }
+    .pa-wave { position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 32px; display: block; }
+    .page { display: flex; justify-content: center; padding: 24px 20px 20px; position: relative; z-index: 1; }
+    /* onda decorativa no rodape (motivo de marca, sutil) */
+    .ondas { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 150px; z-index: 0; pointer-events: none; }
+    .container {
+      position: relative; z-index: 1;
+      background: var(--brand-branco);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      width: 100%; max-width: 430px; overflow: hidden;
+      border: 1px solid rgba(199,210,227,.6);
+    }
+    .content { padding: 24px 28px 28px; position: relative; }
+    label { display: block; font-size: 12.5px; color: var(--brand-azul-corporativo); margin-bottom: 5px;
+      font-weight: 600; letter-spacing: .2px; }
+    input {
+      width: 100%; padding: 11px 12px; border: 1.5px solid var(--brand-cinza-claro);
+      border-radius: var(--radius-sm); font-size: 15px; margin-bottom: 14px;
+      outline: none; transition: border .2s, box-shadow .2s;
+      font-family: inherit; color: var(--brand-azul-institucional); background: #fff;
+    }
+    input::placeholder { color: #9fb0c7; }
+    input:focus { border-color: var(--brand-azul-principal); box-shadow: 0 0 0 3px rgba(30,111,217,.15); }
+    button.btn-gerar {
+      width: 100%; padding: 13px; background: var(--brand-amarelo);
+      color: var(--brand-azul-institucional);
+      font-size: 15px; font-weight: 700; border: none; border-radius: var(--radius-sm);
+      cursor: pointer; transition: background .2s, transform .05s; letter-spacing: .3px;
+      font-family: inherit; box-shadow: var(--shadow-sm);
+    }
+    button.btn-gerar:hover { background: var(--brand-amarelo-suave); }
+    button.btn-gerar:active { transform: translateY(1px); }
+    .resultado { display: none; margin-top: 24px; text-align: center; }
+    .dica {
+      font-size: 12px; color: var(--brand-azul-corporativo); margin-bottom: 12px;
+      background: #F0F4FA; border: 1px solid rgba(199,210,227,.7);
+      border-radius: var(--radius-sm); padding: 9px 11px; font-weight: 500;
+    }
+    .qr-wrap { display: inline-block; background: #fff; border-radius: var(--radius-md);
+      border: 1px solid var(--brand-cinza-claro); box-shadow: var(--shadow-sm); }
+    .qr-label { margin-top: 12px; font-family: var(--font-primary); font-weight: 500;
+      font-size: 14px; color: var(--brand-azul-institucional); line-height: 1.8; }
+    button.btn-novo {
+      margin-top: 16px; padding: 10px 24px; background: transparent;
+      color: var(--brand-azul-principal); border: 1.5px solid var(--brand-azul-conexao);
+      border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: background .2s; font-family: inherit;
+    }
+    button.btn-novo:hover { background: rgba(63,169,245,.1); }
+    .versao {
+      margin-top: 20px; padding-top: 12px;
+      border-top: 1px solid rgba(199,210,227,.35);
+      text-align: center; font-size: 10px; font-weight: 300;
+      letter-spacing: 1.2px; text-transform: none;
+      color: var(--brand-azul-corporativo); opacity: .4;
+    }
+
+    /* ============ BLOCO DE IMPRESSAO (tela) ============ */
+    .print-box {
+      margin-top: 18px; padding: 12px; border-radius: var(--radius-sm);
+      background: #F0F4FA; border: 1px solid rgba(199,210,227,.7); text-align: left;
+    }
+    .print-box .pb-title {
+      font-size: 11.5px; font-weight: 700; color: var(--brand-azul-corporativo);
+      text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; text-align: center;
+    }
+    .print-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .print-row label { margin: 0; white-space: nowrap; }
+    select.sel-dpi {
+      flex: 1; padding: 8px 10px; border: 1.5px solid var(--brand-cinza-claro);
+      border-radius: var(--radius-sm); font-family: inherit; font-size: 13px;
+      color: var(--brand-azul-institucional); background: #fff;
+    }
+    button.btn-print {
+      width: 100%; padding: 12px; background: var(--brand-azul-principal); color: #fff;
+      font-size: 14px; font-weight: 700; border: none; border-radius: var(--radius-sm);
+      cursor: pointer; font-family: inherit; box-shadow: var(--shadow-sm);
+      margin-bottom: 8px; transition: background .2s;
+    }
+    button.btn-print:hover { background: var(--brand-azul-conexao); }
+    button.btn-zpl {
+      width: 100%; padding: 11px; background: #fff; color: var(--brand-azul-corporativo);
+      font-size: 13px; font-weight: 700; border: 1.5px solid var(--brand-cinza-claro);
+      border-radius: var(--radius-sm); cursor: pointer; font-family: inherit;
+      transition: border .2s, background .2s;
+    }
+    button.btn-zpl:hover { border-color: var(--brand-azul-conexao); background: #F7FAFF; }
+    .status { margin-top: 10px; font-size: 11.5px; font-weight: 600; line-height: 1.45; min-height: 15px; }
+    .status.ok   { color: #1B7F3B; }
+    .status.err  { color: #B3261E; }
+    .status.info { color: var(--brand-azul-corporativo); }
+
+    /* pre-visualizacao da etiqueta em escala (100mm = 378px -> 90%) */
+    .et-preview {
+      width: 341px; height: 171px; overflow: hidden; margin: 0 auto 12px;
+      border: 1px dashed var(--brand-cinza-claro); border-radius: 6px; background: #fff;
+    }
+    .et-preview .etiqueta { transform: scale(.9); transform-origin: top left; }
+
+    /* ============ ETIQUETA FISICA: 100 mm x 50 mm ============
+       Posicoes vem do objeto ET no script (mesmas coordenadas usadas
+       no canvas do PNG e no ZPL) - por isso tudo aqui e absoluto.
+       Tudo em preto puro: impressora termica nao faz meio-tom.     */
+    .etiqueta {
+      position: relative; width: 100mm; height: 50mm;
+      background: #fff; color: #000; overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .etiqueta > * { position: absolute; }
+    .etiqueta .et-nome {
+      font-weight: 700; text-align: center;
+      white-space: nowrap; overflow: hidden;
+    }
+    .etiqueta .et-qr   { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+    #area-etiqueta { display: none; }
+
+    @media print {
+      @page { size: 100mm 50mm; margin: 0; }
+      html, body {
+        width: 100mm; height: 50mm; margin: 0 !important; padding: 0 !important;
+        background: #fff !important; display: block !important; overflow: hidden;
+      }
+      body > *:not(#area-etiqueta) { display: none !important; }
+      #area-etiqueta { display: block !important; }
+      .etiqueta {
+        box-shadow: none; page-break-after: avoid; page-break-inside: avoid;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="pa-hero">
+    <div class="pa-hero-top">
+      <a class="back-link" href="/" target="_top" title="Voltar ao hub">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        <span>Voltar ao hub</span>
+      </a>
+      <img class="pa-logo" src="/img/icestar-superfrio-logo-white.png" alt="IceStar · SuperFrio">
+    </div>
+    <div class="pa-hero-inner">
+      <div class="pa-hero-text">
+        <p class="pa-eyebrow">Portal SuperFrio &amp; IceStar</p>
+        <h1>Gerador de QR Code</h1>
+        <p class="pa-subtitle-p">Preencha os dados para gerar o QR Code de bipagem</p>
+      </div>
+    </div>
+    <svg class="pa-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0,40 L0,18 Q360,40 720,20 T1440,16 L1440,40 Z" fill="#F7F9FC"/></svg>
+  </header>
+  <div class="page">
+  <div class="container">
+
+    <div class="content">
+
+      <div id="form-area">
+        <label>Usuario</label>
+        <input type="text" id="inp-usuario" placeholder="Ex: JOAO.SILVA" style="text-transform:uppercase;" />
+
+        <label>Senha</label>
+        <div style="position:relative;">
+          <input type="password" id="inp-senha" placeholder="Digite a senha" style="padding-right:44px;" />
+          <button type="button" id="btn-olho" style="position:absolute;right:10px;top:21px;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;color:#5B7488;padding:0;">&#128065;</button>
+        </div>
+
+        <label>Doca</label>
+        <input type="text" id="inp-doca" value="DOCA01" />
+
+        <button class="btn-gerar" id="btn-gerar">Gerar QR Code</button>
+      </div>
+
+      <div class="resultado" id="resultado">
+        <div class="print-box">
+          <div class="pb-title">&#128438; Impress&atilde;o da etiqueta &middot; 10 x 5 cm</div>
+
+          <div class="et-preview"><div id="etiqueta-preview"></div></div>
+
+          <button class="btn-print" id="btn-print">&#128424; Imprimir etiqueta (10 x 5 cm)</button>
+          <button class="btn-zpl" id="btn-salvar" style="margin-top:8px;">&#128190; Salvar imagem (PNG 10 x 5 cm)</button>
+
+          <div class="status info" id="status-print"></div>
+        </div>
+
+        <button class="btn-novo" id="btn-novo">&#128260; Novo QR Code</button>
+      </div>
+
+      <div class="versao">Dev. GEE &middot; Inova&ccedil;&atilde;o &middot; v2.0</div>
+    </div>
+  </div>
+  </div>
+
+  <svg class="ondas" viewBox="0 0 1440 150" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,80 C320,140 620,30 900,70 C1140,104 1300,60 1440,80 L1440,150 L0,150 Z" fill="#3FA9F5" opacity="0.10"/>
+    <path d="M0,100 C300,60 640,130 920,95 C1180,64 1320,110 1440,96 L1440,150 L0,150 Z" fill="#1E6FD9" opacity="0.12"/>
+    <path d="M0,118 C360,150 700,96 1000,120 C1220,138 1340,112 1440,122 L1440,150 L0,150 Z" fill="#071A3A" opacity="0.10"/>
+    <path d="M0,80 C320,140 620,30 900,70 C1140,104 1300,60 1440,80" fill="none" stroke="#FFC400" stroke-width="2" opacity="0.55"/>
+  </svg>
+
+  <!-- etiqueta real enviada para a impressora (100 x 50 mm) - so aparece no print -->
+  <div id="area-etiqueta"></div>
+
+  <script src="app.js?v=1"></script>
+</body>
+</html>
