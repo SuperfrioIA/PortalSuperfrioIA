@@ -302,7 +302,12 @@ function openApp(app) {
     // passa a conseguir ler localStorage/token do portal. Caminho alternativo mais
     // seguro (não aplicado ainda) documentado na auditoria, pra reverter se algum
     // app apresentar risco real.
-    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox");
+    // allow-downloads + allow-modals (2026-08-19): sem eles o navegador bloqueia
+    // silenciosamente qualquer <a download> (ex.: "salvar imagem" do gerador de
+    // QR Code) e qualquer alert()/confirm()/print() disparado pelo app embutido —
+    // nenhum dos dois amplia o que o iframe já podia fazer com allow-same-origin
+    // (não dão navegação de topo nem acesso novo a dado do portal).
+    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals");
     document.getElementById("iframe-title").textContent = app.nome;
     document.getElementById("iframe-url").textContent = app.url;
     iframe.src = app.url;
