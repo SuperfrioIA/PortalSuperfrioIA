@@ -106,6 +106,21 @@ APPS = [
         "badge": "NEW",
         "ordem": 5,
     },
+    {
+        # Também existe de verdade neste repositório (frontend/gerador-qrcode/,
+        # Receita 1) — sem backend, sem banco, só gera e imprime a etiqueta.
+        "secao": "armazem",
+        "slug": "gerador-qrcode",
+        "nome": "Gerador de QR Code (Bipagem)",
+        "nome_es": "Generador de Código QR (Escaneo)",
+        "descricao": "Gera e imprime a etiqueta de QR Code usada na bipagem.",
+        "descricao_es": "Genera e imprime la etiqueta de código QR usada en el escaneo.",
+        "icone": "document",
+        "url": "/gerador-qrcode/",
+        "tipo_acesso": "iframe",
+        "badge": None,
+        "ordem": 6,
+    },
     # Backoffice
     {
         "secao": "backoffice",
