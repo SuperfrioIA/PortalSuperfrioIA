@@ -28,6 +28,31 @@ async function fetchPodeEditar(){
     return false;
   }
 }
+async function fetchStatusIntegracao(){
+  try{
+    const res=await fetch('/api/processos-abertos/status-integracao');
+    if(!res.ok)throw new Error('status '+res.status);
+    return await res.json();
+  }catch(e){
+    console.error('Falha ao checar status da integracao FTP',e);
+    return null;
+  }
+}
+function renderStatusIntegracao(status){
+  const el=document.getElementById('ftpStatusBadge');
+  if(!el)return;
+  if(!status||!status.em){el.style.display='none';return;}
+  const hora=new Date(status.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  el.style.display='inline-flex';
+  el.title=status.mensagem||'';
+  if(status.ok){
+    el.style.background='#E3F2E8';el.style.color='#1E8449';
+    el.textContent='✓ Integração automática OK — '+hora;
+  }else{
+    el.style.background='#FDEBE3';el.style.color='#C0392B';
+    el.textContent='⚠ Falha na integração automática ('+status.tentativa+') — verifique o FTP';
+  }
+}
 let slinWB=null,jdaWB=null;
 let trendChart=null,pctChart=null,tiposChart=null,barChart=null,unitChart=null;
 let tiposFilter='all',unitMetric='total';
@@ -113,9 +138,10 @@ function toggleUpload() {
 }
 
 (async function init(){
-  const [historico,podeEditar]=await Promise.all([fetchExtraHistory(),fetchPodeEditar()]);
+  const [historico,podeEditar,statusIntegracao]=await Promise.all([fetchExtraHistory(),fetchPodeEditar(),fetchStatusIntegracao()]);
   extraHistory=historico;
   if(!podeEditar)document.getElementById('btnToggleUpload').style.display='none';
+  renderStatusIntegracao(statusIntegracao);
   renderAll();
 })();
 

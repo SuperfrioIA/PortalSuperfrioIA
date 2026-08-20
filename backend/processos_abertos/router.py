@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from backend.auth.dependencies import get_current_user_optional, require_permissao, usuario_pode
 from backend.core.database import DB_PATH
 from backend.processos_abertos.permissoes import EDITAR
+from backend.processos_abertos.status import ler_status
 
 router = APIRouter(prefix="/api/processos-abertos", tags=["processos-abertos"])
 
@@ -73,12 +74,17 @@ def pode_editar(user: dict | None = Depends(get_current_user_optional)) -> dict:
     return {"pode_editar": usuario_pode(user, EDITAR)}
 
 
-@router.post("/historico")
-def salvar_semana(semana: Semana, _: dict = Depends(require_permissao(EDITAR))) -> list[dict]:
-    """Upsert por `date`: mesma semana reprocessada substitui a anterior."""
+def salvar_semana_no_historico(semana: dict) -> list[dict]:
+    """Upsert por `date`: mesma semana reprocessada substitui a anterior.
+
+    Função pura, sem HTTP/permissão — chamada tanto pelo endpoint abaixo
+    (upload manual) quanto pelo job diário do FTP
+    (`backend/processos_abertos/jobs.py`). Valida o formato com o mesmo
+    modelo `Semana`, então nenhum dos dois caminhos consegue gravar lixo.
+    """
+    payload = Semana(**semana).model_dump()
     with _lock:
         semanas = _ler()
-        payload = semana.model_dump()
         idx = next((i for i, s in enumerate(semanas) if s.get("date") == payload["date"]), None)
         if idx is not None:
             semanas[idx] = payload
@@ -86,3 +92,15 @@ def salvar_semana(semana: Semana, _: dict = Depends(require_permissao(EDITAR))) 
             semanas.append(payload)
         _escrever(semanas)
     return semanas
+
+
+@router.post("/historico")
+def salvar_semana(semana: Semana, _: dict = Depends(require_permissao(EDITAR))) -> list[dict]:
+    return salvar_semana_no_historico(semana.model_dump())
+
+
+@router.get("/status-integracao")
+def status_integracao() -> dict:
+    """Status da última tentativa do job diário do FTP — público, mesmo nível
+    de acesso do restante do dashboard. Vazio antes da primeira execução."""
+    return ler_status()
