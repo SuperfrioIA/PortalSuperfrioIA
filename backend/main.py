@@ -12,10 +12,14 @@ from slowapi.errors import RateLimitExceeded
 from backend.auth.router import router as auth_router
 from backend.core.database import init_db
 from backend.core.limiter import limiter
+from backend.core.scheduler import agendar_diario
+from backend.core.scheduler import iniciar as iniciar_agendador
+from backend.core.scheduler import parar as parar_agendador
 from backend.integracao_in_out.router import router as integracao_in_out_router
 from backend.permissoes import carregar as carregar_permissoes
 from backend.portal.router import router as portal_router
 from backend.portal.router import router_admin as portal_admin_router
+from backend.processos_abertos.jobs import executar_as_0805, executar_as_0830_retry
 from backend.processos_abertos.router import router as processos_abertos_router
 from backend.projetos_ia.router import router as projetos_ia_router
 from backend.projetos_ia.router import router_admin as projetos_ia_admin_router
@@ -30,7 +34,15 @@ async def lifespan(_app: FastAPI):
     carregar_permissoes()
     init_db()
     seed_initial()
+
+    # Jobs agendados: registre aqui os próximos, seguindo o mesmo padrão
+    # (agendar_diario vem de backend/core/scheduler.py, genérico pra qualquer módulo).
+    iniciar_agendador()
+    agendar_diario(executar_as_0805, hora=8, minuto=5, job_id="processos_abertos_ftp_0805")
+    agendar_diario(executar_as_0830_retry, hora=8, minuto=30, job_id="processos_abertos_ftp_0830_retry")
+
     yield
+    parar_agendador()
 
 
 app = FastAPI(

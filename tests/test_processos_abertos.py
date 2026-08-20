@@ -93,6 +93,21 @@ def test_post_autenticado_persiste_e_aparece_no_get(client, admin_headers):
     assert any(s["date"] == "05/01/2026" for s in r2.json())
 
 
+def test_status_integracao_vazio_por_padrao(client):
+    r = client.get("/api/processos-abertos/status-integracao")
+    assert r.status_code == 200
+    assert r.json() == {}
+
+
+def test_job_grava_pelo_mesmo_caminho_do_upload_manual():
+    """O job do FTP chama `salvar_semana_no_historico` direto, sem HTTP/token
+    — este teste garante que esse caminho também valida e grava certo."""
+    from backend.processos_abertos.router import salvar_semana_no_historico
+
+    semanas = salvar_semana_no_historico(_semana(date="20/08/2026", total=42))
+    assert any(s["date"] == "20/08/2026" and s["total"] == 42 for s in semanas)
+
+
 def test_post_mesma_data_substitui_em_vez_de_duplicar(client, admin_headers):
     client.post(
         "/api/processos-abertos/historico",
