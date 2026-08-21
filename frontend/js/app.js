@@ -339,11 +339,18 @@ function openApp(app) {
     // QR Code) e qualquer alert()/confirm()/print() disparado pelo app embutido —
     // nenhum dos dois amplia o que o iframe já podia fazer com allow-same-origin
     // (não dão navegação de topo nem acesso novo a dado do portal).
-    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals");
+    // allow-top-navigation-by-user-activation (2026-08-21): sem ele o
+    // "Voltar ao hub" dos apps embutidos (href="/" target="_top", o padrão da
+    // casa) era BLOQUEADO pelo sandbox e simplesmente não fazia nada — o app
+    // só voltava pelo botão do overlay. A navegação de topo fica condicionada a
+    // um clique real da pessoa, e os apps embutidos são todos nossos, da mesma
+    // origem.
+    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-downloads allow-modals");
     document.getElementById("iframe-title").textContent = app.nome;
     document.getElementById("iframe-url").textContent = app.url;
     iframe.src = app.url;
     document.getElementById("iframe-overlay").classList.add("visible");
+    document.body.classList.add("overlay-aberto");
   } else {
     window.open(app.url, "_blank", "noopener");
   }
@@ -352,6 +359,7 @@ function openApp(app) {
 function closeIframe() {
   document.getElementById("iframe-overlay").classList.remove("visible", "gov");
   document.getElementById("iframe-content").src = "about:blank";
+  document.body.classList.remove("overlay-aberto");
 }
 
 /* Abre a apresentação "Governance TI" (estática em /governanca/) embutida no portal,
@@ -359,22 +367,24 @@ function closeIframe() {
    openApp desde 2026-07-07 (ambos com allow-same-origin agora — ver comentário lá). */
 function openGovernanca() {
   const iframe = document.getElementById("iframe-content");
-  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
   document.getElementById("iframe-title").textContent = t("portal.nav.governanca");
   document.getElementById("iframe-url").textContent = "";
   iframe.src = "/governanca/";
   document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
+  document.body.classList.add("overlay-aberto");
 }
 
 /* Abre o "Mapa IA" (estático em /mapa-ia/) embutido no portal, em tela cheia.
    Mesmo padrão do openGovernanca — conteúdo próprio e confiável (same-origin). */
 function openMapaIa() {
   const iframe = document.getElementById("iframe-content");
-  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
   document.getElementById("iframe-title").textContent = "Mapa IA";
   document.getElementById("iframe-url").textContent = "";
   iframe.src = "/mapa-ia/";
   document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
+  document.body.classList.add("overlay-aberto");
 }
 
 function escapeHtml(s) {
@@ -658,7 +668,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* iframe overlay */
   document.getElementById("iframe-close").addEventListener("click", closeIframe);
-  document.getElementById("gov-close").addEventListener("click", closeIframe);
   // Só fecha se o clique começou e terminou no próprio fundo do overlay.
   // Evita fechar o app aberto ao arrastar o mouse pra fora sem querer (ex.:
   // selecionar texto e soltar o botão fora da área do iframe).

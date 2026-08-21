@@ -688,33 +688,16 @@ body {
    pra ela ter 100% da altura. Fechar via × flutuante (ESC também fecha). */
 .iframe-overlay.gov { background: #050F24; }
 .iframe-overlay.gov .iframe-shell { margin: 0; border-radius: 0; box-shadow: none; }
+/* Em tela cheia o header vem do próprio app (back-link + logo, padrão do Hub),
+   então a barra do overlay sai de cena — e o X flutuante que existia aqui foi
+   removido em 21/08/2026: era um segundo controle de fechar, fora do padrão.
+   Esc continua fechando (ver o keydown em app.js). */
 .iframe-overlay.gov .iframe-head { display: none; }
 
-.gov-close { display: none; }
-.iframe-overlay.gov .gov-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  position: fixed;
-  top: 14px;
-  right: 18px;
-  z-index: 95;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(5, 15, 36, 0.6);
-  color: #fff;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  font-family: inherit;
-}
-.iframe-overlay.gov .gov-close:hover {
-  background: var(--brand-amarelo);
-  color: var(--brand-azul-institucional);
-  border-color: var(--brand-amarelo);
-}
+/* Enquanto um app embutido está aberto, a página de trás não rola: sem isto o
+   navegador desenha DUAS barras de rolagem (a do body e a do iframe). */
+body.overlay-aberto { overflow: hidden; }
+
 
 @media (max-width: 880px) {
   .portal { grid-template-columns: 1fr; }

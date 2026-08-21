@@ -64,6 +64,34 @@ html, body {
   margin-bottom: 22px;
 }
 .brandLogo { height: 44px; width: auto; display: block; }
+
+/* Padrão de header do Hub: "Voltar ao hub" à esquerda, logo à direita (mesmo bloco
+   de frontend/processos-abertos/ e frontend/integracao-in-out/). Aqui na variante
+   clara, porque este app tem fundo claro — a variante dos heros escuros usa borda
+   branca translúcida e ficaria invisível. O target="_top" é o que faz o link sair
+   do iframe quando o app está embutido no portal. */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--brand-cinza-claro);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.back-link:hover {
+  border-color: var(--brand-azul-principal);
+  color: var(--brand-azul-institucional);
+  background: rgba(30, 111, 217, 0.06);
+}
+.back-link svg { stroke: currentColor; }
 .brandRule {
   flex: 1;
   height: 2px;
