@@ -1148,27 +1148,6 @@ body {
 .admin-tab:hover { color: var(--text); }
 .admin-tab.active { color: var(--brand-azul-principal); border-bottom-color: var(--brand-amarelo); }
 
-/* Busca da aba Filiais: 59 filiais em produção não se acham rolando a tabela. */
-.admin-busca {
-  width: 100%;
-  max-width: 320px;
-  padding: 9px 12px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border2);
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--text);
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.admin-busca::placeholder { color: var(--text3); }
-.admin-busca:focus {
-  outline: none;
-  border-color: var(--brand-azul-principal);
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(30, 111, 217, 0.14);
-}
 
 .admin-pane-head {
   display: flex;
@@ -1287,6 +1266,8 @@ body {
 .pill.admin { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
 .pill.iframe { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
 .pill.url { color: var(--text2); background: var(--bg3); border-color: var(--border); }
+/* Contagem de roles na coluna Acesso — o nome de cada role vive no title. */
+.pill.role { color: var(--brand-azul-institucional); background: rgba(11, 61, 145, 0.07); border-color: rgba(11, 61, 145, 0.20); }
 /* Permissão de ação: amarelo da marca (ênfase) — distingue da pílula azul de app. */
 .pill.perm { color: #7A4E00; background: rgba(255, 196, 0, 0.20); border-color: rgba(255, 196, 0, 0.62); }
 /* Admin total: passa por cima de tudo, inclusive das permissões de ação. */
@@ -1377,6 +1358,62 @@ body {
 }
 .modal-body textarea { resize: vertical; min-height: 64px; font-family: inherit; }
 .modal-body .field-hint { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+/* Barra de filtros das abas da Administração. Discreta de propósito: é ferramenta
+   de apoio, não o conteúdo da tela. */
+.admin-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.admin-filtros .filtro-busca {
+  flex: 1 1 260px;
+  min-width: 200px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+}
+.admin-filtros select {
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  max-width: 220px;
+}
+.admin-filtros .filtro-busca::placeholder { color: var(--text3); }
+.admin-filtros .filtro-busca:focus, .admin-filtros select:focus {
+  outline: none;
+  border-color: var(--brand-azul-principal);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(30, 111, 217, 0.14);
+}
+/* Contagem sempre visível: um cadastro escondido pelo filtro não pode parecer apagado. */
+.admin-filtros .filtro-contagem {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.admin-filtros .filtro-limpar {
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text2);
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.admin-filtros .filtro-limpar:hover { background: var(--bg3); color: var(--text); }
 .modal-body .acesso-hint { margin: 4px 0 12px; }
 /* O margin-bottom é o mesmo respiro de .form-field: sem ele, dois row-2 seguidos
    (ou um row-2 com field-hint) encostam o hint no rótulo de baixo. */

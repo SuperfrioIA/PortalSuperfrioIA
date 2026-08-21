@@ -19,8 +19,8 @@
     usuarios: [],
     filiais: [],
     unidades_negocio: [],
-    // Termo da busca da aba Filiais (59 linhas em produção — rolar não resolve).
-    filialBusca: "",
+    // Filtros por aba (texto + status + extras). Ver `filtroDe`.
+    filtros: {},
     // Estrutura da matriz de acesso (app × ação), vinda de /api/admin/matriz.
     // Linhas = catálogo de apps (banco); colunas = vocabulário fixo (código).
     matriz: { acoes: [], secoes: [], descricoes: {}, orfas: [] },
@@ -137,18 +137,163 @@
     else if (ADM.tab === "unidades-negocio") renderUnidadesNegocio();
   }
 
+  /* ---------- Filtros: um componente para as 6 abas ----------
+     Tudo client-side: `loadAll()` já traz as listas inteiras, então filtrar é
+     instantâneo e não precisa de endpoint novo.
+
+     O padrão é **status "ativos"**: a lista mostra só o que está em uso. Para um
+     cadastro desativado não parecer apagado, a barra sempre informa "N de M" e
+     mostra o botão Limpar quando algum filtro está ligado. */
+  const STATUS_OPCOES = ["ativos", "inativos", "todos"];
+
+  function filtroDe(entity) {
+    if (!ADM.filtros[entity]) {
+      ADM.filtros[entity] = { texto: "", status: "ativos", extras: {} };
+    }
+    return ADM.filtros[entity];
+  }
+
+  /* Monta a barra uma vez por aba. Não pode ser remontada a cada render: refazer
+     o HTML do campo de busca a cada tecla digitada tiraria o foco dele. */
+  function montarBarraFiltros(cont, entity, extras) {
+    const f = filtroDe(entity);
+    cont.innerHTML = `
+      <input type="search" class="filtro-busca" value="${attr(f.texto)}"
+             placeholder="${attr(t("admin.filtro.buscaPh"))}" aria-label="${attr(t("admin.filtro.buscaPh"))}">
+      <select class="filtro-status" aria-label="${attr(t("admin.filtro.statusLabel"))}">
+        ${STATUS_OPCOES.map(
+          (s) =>
+            `<option value="${s}" ${f.status === s ? "selected" : ""}>${escapeHtml(
+              t("admin.filtro.status." + s)
+            )}</option>`
+        ).join("")}
+      </select>
+      ${extras
+        .map(
+          (e) =>
+            `<select class="filtro-extra" data-key="${attr(e.key)}" aria-label="${attr(e.todos)}"></select>`
+        )
+        .join("")}
+      <span class="filtro-contagem"></span>
+      <button type="button" class="filtro-limpar hidden">${escapeHtml(t("admin.filtro.limpar"))}</button>`;
+
+    cont.querySelector(".filtro-busca").addEventListener("input", (ev) => {
+      f.texto = ev.target.value;
+      renderActiveTab();
+    });
+    cont.querySelector(".filtro-status").addEventListener("change", (ev) => {
+      f.status = ev.target.value;
+      renderActiveTab();
+    });
+    cont.querySelectorAll(".filtro-extra").forEach((sel) => {
+      sel.addEventListener("change", () => {
+        f.extras[sel.dataset.key] = sel.value;
+        renderActiveTab();
+      });
+    });
+    cont.querySelector(".filtro-limpar").addEventListener("click", () => {
+      ADM.filtros[entity] = { texto: "", status: "ativos", extras: {} };
+      cont.querySelector(".filtro-busca").value = "";
+      cont.querySelector(".filtro-status").value = "ativos";
+      renderActiveTab();
+    });
+  }
+
+  /* Opções dos combos vêm dos dados carregados, que mudam a cada save — então são
+     refeitas a cada render. Se a opção escolhida deixou de existir, o filtro cai
+     para "todos" sozinho em vez de esconder a lista inteira. */
+  function atualizarExtras(cont, entity, extras) {
+    const f = filtroDe(entity);
+    extras.forEach((e) => {
+      const sel = cont.querySelector(`.filtro-extra[data-key="${e.key}"]`);
+      if (!sel) return;
+      const escolhido = f.extras[e.key] || "";
+      sel.innerHTML =
+        `<option value="">${escapeHtml(e.todos)}</option>` +
+        e.opcoes()
+          .map(
+            (o) =>
+              `<option value="${attr(o.value)}" ${
+                String(o.value) === escolhido ? "selected" : ""
+              }>${escapeHtml(o.label)}</option>`
+          )
+          .join("");
+      sel.value = escolhido;
+      f.extras[e.key] = sel.value;
+    });
+  }
+
+  function filtrarRows(entity, rows, texto, extras) {
+    const f = filtroDe(entity);
+    const termo = f.texto.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (f.status === "ativos" && !r.ativo) return false;
+      if (f.status === "inativos" && r.ativo) return false;
+      if (termo && texto && String(texto(r)).toLowerCase().indexOf(termo) === -1) return false;
+      return extras.every((e) => {
+        const v = f.extras[e.key];
+        return !v || e.casa(r, v);
+      });
+    });
+  }
+
+  function filtroLigado(entity) {
+    const f = filtroDe(entity);
+    return (
+      !!f.texto.trim() ||
+      f.status !== "ativos" ||
+      Object.keys(f.extras).some((k) => f.extras[k])
+    );
+  }
+
   /* ---------- Render genérico de tabela ----------
-     Monta thead + tbody e religa as ações de linha. Cada aba só descreve
-     suas colunas (headers) e como renderiza uma linha (rowHtml). */
-  function renderTable(tbl, { entity, emptyMsg, headers, rows, rowHtml }) {
-    if (rows.length === 0) {
-      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(emptyMsg)}</td></tr></tbody>`;
+     Monta a barra de filtros, thead + tbody e religa as ações de linha. Cada aba
+     só descreve suas colunas (headers), como renderiza uma linha (rowHtml), o que
+     a busca textual varre (texto) e seus filtros próprios (extras). */
+  function renderTable(tbl, { entity, emptyMsg, headers, rows, rowHtml, texto, extras }) {
+    const filtrosExtras = extras || [];
+    const cont = document.getElementById(`filtros-${entity}`);
+    if (cont) {
+      if (cont.dataset.montado !== "1") {
+        montarBarraFiltros(cont, entity, filtrosExtras);
+        cont.dataset.montado = "1";
+      }
+      atualizarExtras(cont, entity, filtrosExtras);
+    }
+
+    const visiveis = filtrarRows(entity, rows, texto, filtrosExtras);
+
+    if (cont) {
+      cont.querySelector(".filtro-contagem").textContent =
+        visiveis.length === rows.length
+          ? `${rows.length}`
+          : `${visiveis.length} ${t("admin.filtro.de")} ${rows.length}`;
+      cont.querySelector(".filtro-limpar").classList.toggle("hidden", !filtroLigado(entity));
+    }
+
+    if (visiveis.length === 0) {
+      // Distingue "não tem cadastro" de "o filtro escondeu tudo" — sem isso a
+      // tela mente sobre o estado do banco.
+      const msg = rows.length > 0 ? t("admin.filtro.vazio") : emptyMsg;
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(msg)}</td></tr></tbody>`;
       return;
     }
     tbl.innerHTML =
       `<thead><tr>${headers.join("")}</tr></thead>` +
-      `<tbody>${rows.map(rowHtml).join("")}</tbody>`;
+      `<tbody>${visiveis.map(rowHtml).join("")}</tbody>`;
     bindRowActions(tbl, entity);
+  }
+
+  /* Valores distintos de um campo, para alimentar um combo de filtro. */
+  function opcoesDistintas(lista, valor, rotulo) {
+    const vistos = new Map();
+    lista.forEach((item) => {
+      const v = valor(item);
+      if (v !== null && v !== undefined && v !== "" && !vistos.has(String(v))) {
+        vistos.set(String(v), { value: String(v), label: rotulo(item) });
+      }
+    });
+    return [...vistos.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   }
 
   const th = (key) => `<th>${escapeHtml(t(key))}</th>`;
@@ -160,6 +305,7 @@
       entity: "apps",
       emptyMsg: t("admin.empty.apps"),
       rows: ADM.apps,
+      texto: (a) => `${a.nome} ${a.slug} ${a.secao_nome} ${a.url || ""} ${a.tipo_acesso}`,
       headers: [
         `<th style="width:42px"></th>`,
         th("admin.col.app"), th("admin.col.secao"), th("admin.col.tipo"),
@@ -191,6 +337,7 @@
       entity: "secoes",
       emptyMsg: t("admin.empty.secoes"),
       rows: ADM.secoes,
+      texto: (s) => `${s.nome} ${s.slug}`,
       headers: [
         th("admin.col.secao"), th("admin.col.icone"), th("admin.col.apps"),
         th("admin.col.ordem"), th("admin.col.status"), thRight("admin.col.acoes"),
@@ -218,6 +365,7 @@
       entity: "roles",
       emptyMsg: t("admin.empty.roles"),
       rows: ADM.roles,
+      texto: (r) => `${r.nome} ${r.slug} ${(r.apps || []).join(" ")} ${(r.permissoes || []).join(" ")}`,
       headers: [
         th("admin.col.role"), th("admin.col.appsLiberados"), th("admin.col.permissoes"),
         th("admin.col.usuarios"), th("admin.col.status"), thRight("admin.col.acoes"),
@@ -250,29 +398,58 @@
   /* ---------- Acesso efetivo de um usuário ----------
      Soma das roles ATIVAS — role desativada não conta, igual ao backend.
      Calculado aqui porque a lista de roles (com apps e permissões) já está
-     carregada; evita um endpoint por usuário só para montar a coluna. */
+     carregada; evita um endpoint por usuário só para montar a coluna.
+
+     Desde 21/08/2026 esta célula substitui a coluna "Roles": a lista de pílulas
+     com o nome de cada role dizia quase a mesma coisa que esta coluna e deixava a
+     tabela poluída. Os nomes continuam a um passo de distância — no `title` da
+     pílula e na tela de edição do usuário. */
   function acessoEfetivoHtml(u) {
     if (u.is_admin) {
       return `<span class="pill admin-total">${escapeHtml(t("admin.acesso.adminTotal"))}</span>
               <div class="col-meta">${escapeHtml(t("admin.acesso.adminTudo"))}</div>`;
     }
+    const ativas = ADM.roles.filter((r) => r.ativo && u.roles.indexOf(r.slug) !== -1);
+    // Role que o usuário tem mas está desativada: não concede nada (igual ao
+    // backend), e mesmo assim precisa ser visível — senão a pessoa "perdeu acesso"
+    // sem explicação na tela.
+    const inativas = u.roles.filter((slug) => !ativas.some((r) => r.slug === slug));
+
     const apps = new Set();
     const perms = new Set();
-    ADM.roles
-      .filter((r) => r.ativo && u.roles.indexOf(r.slug) !== -1)
-      .forEach((r) => {
-        (r.apps || []).forEach((a) => apps.add(a));
-        (r.permissoes || []).forEach((p) => perms.add(p));
-      });
-    if (!apps.size && !perms.size) {
-      return `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`;
+    ativas.forEach((r) => {
+      (r.apps || []).forEach((a) => apps.add(a));
+      (r.permissoes || []).forEach((p) => perms.add(p));
+    });
+
+    if (!ativas.length && !inativas.length) {
+      return `<span class="col-meta">${escapeHtml(t("admin.acesso.semAcesso"))}</span>`;
     }
-    const partes = [];
+
+    const legenda = [
+      ativas.length ? ativas.map((r) => r.slug).join(", ") : t("admin.acesso.semRoleAtiva"),
+      inativas.length ? `${t("admin.acesso.roleInativa")}: ${inativas.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const partes = [
+      `<span class="pill role" title="${attr(legenda)}">${ativas.length} ${escapeHtml(
+        ativas.length === 1 ? t("admin.acesso.role") : t("admin.acesso.roles")
+      )}</span>`,
+    ];
     if (apps.size) {
       partes.push(`<span class="pill url">${apps.size} ${escapeHtml(t("admin.acesso.apps"))}</span>`);
     }
     if (perms.size) {
       partes.push(`<span class="pill perm">${perms.size} ${escapeHtml(t("admin.acesso.perms"))}</span>`);
+    }
+    if (inativas.length) {
+      partes.push(
+        `<span class="pill off" title="${attr(inativas.join(", "))}">${inativas.length} ${escapeHtml(
+          t("admin.acesso.inativas")
+        )}</span>`
+      );
     }
     return `<div class="pill-stack">${partes.join(" ")}</div>`;
   }
@@ -283,13 +460,41 @@
       entity: "usuarios",
       emptyMsg: t("admin.empty.usuarios"),
       rows: ADM.usuarios,
+      texto: (u) =>
+        `${u.nome || ""} ${u.username} ${u.email || ""} ${u.filial_codigo || ""} ${
+          u.filial_nome || ""
+        } ${u.roles.join(" ")}`,
+      extras: [
+        {
+          key: "filial",
+          todos: t("admin.filtro.todasFiliais"),
+          // Só as filiais que aparecem em algum cadastro — combo de 60 itens em que
+          // 58 não filtram nada é pior que não ter filtro. "-" acha quem está sem
+          // lotação, que hoje é a maioria dos cadastros antigos.
+          opcoes: () =>
+            opcoesDistintas(
+              ADM.usuarios,
+              (u) => (u.filial_id ? String(u.filial_id) : "-"),
+              (u) =>
+                u.filial_id
+                  ? `${u.filial_codigo || ""} · ${u.filial_nome || ""}`.trim()
+                  : t("admin.filtro.semFilial")
+            ),
+          casa: (u, v) => (v === "-" ? !u.filial_id : String(u.filial_id) === v),
+        },
+        {
+          key: "role",
+          todos: t("admin.filtro.todasRoles"),
+          opcoes: () => ADM.roles.map((r) => ({ value: r.slug, label: r.nome })),
+          casa: (u, v) => u.roles.indexOf(v) !== -1,
+        },
+      ],
       headers: [
-        th("admin.col.usuario"), th("admin.col.roles"), th("admin.col.acesso"),
+        th("admin.col.usuario"), th("admin.col.acesso"),
         th("admin.col.tipo"), th("admin.col.status"),
         `<th style="width:220px;text-align:right">${escapeHtml(t("admin.col.acoes"))}</th>`,
       ],
       rowHtml: (u) => {
-        const pills = u.roles.map((s) => `<span class="pill url">${escapeHtml(s)}</span>`).join(" ");
         const meEu = SF.state.user && SF.state.user.username === u.username;
         return `<tr>
         <td>
@@ -300,7 +505,6 @@
             u.filial_codigo ? `${u.filial_codigo} · ${u.filial_nome}` : t("admin.semFilial")
           )}</div>
         </td>
-        <td><div class="pill-stack">${pills || `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</div></td>
         <td>${acessoEfetivoHtml(u)}</td>
         <td>${u.is_admin ? `<span class="pill admin">${escapeHtml(t("admin.type.admin"))}</span>` : `<span class="col-meta">${escapeHtml(t("admin.type.user"))}</span>`}</td>
         <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
@@ -321,16 +525,35 @@
 
   /* ---------- Render: FILIAIS ---------- */
   function renderFiliais() {
-    const termo = ADM.filialBusca.trim().toLowerCase();
-    const rows = termo
-      ? ADM.filiais.filter(
-          (f) => `${f.codigo || ""} ${f.nome} ${f.cidade || ""}`.toLowerCase().indexOf(termo) !== -1
-        )
-      : ADM.filiais;
     renderTable(document.getElementById("table-filiais"), {
       entity: "filiais",
-      emptyMsg: termo ? t("admin.empty.filiaisFiltro") : t("admin.empty.filiais"),
-      rows,
+      emptyMsg: t("admin.empty.filiais"),
+      rows: ADM.filiais,
+      texto: (f) =>
+        `${f.codigo || ""} ${f.nome} ${f.cidade || ""} ${f.uf || ""} ${f.regiao} ${
+          f.responsavel || ""
+        } ${f.unidade_negocio_nome || ""}`,
+      extras: [
+        {
+          key: "regiao",
+          todos: t("admin.filtro.todasRegioes"),
+          opcoes: () => opcoesDistintas(ADM.filiais, (f) => f.regiao, (f) => f.regiao),
+          casa: (f, v) => f.regiao === v,
+        },
+        {
+          key: "bu",
+          todos: t("admin.filtro.todasBu"),
+          opcoes: () =>
+            opcoesDistintas(
+              ADM.filiais,
+              (f) => f.unidade_negocio_nome || "-",
+              (f) => f.unidade_negocio_nome || t("admin.filtro.semBu")
+            ),
+          // "-" é o marcador de "sem B.U": filtrar por ele é um caso de uso real
+          // (achar filial que ninguém vinculou ainda).
+          casa: (f, v) => (v === "-" ? !f.unidade_negocio_nome : f.unidade_negocio_nome === v),
+        },
+      ],
       headers: [
         th("admin.col.codigo"), th("admin.col.filial"), th("admin.col.cidade"),
         th("admin.col.uf"), th("admin.col.regiao"), th("admin.col.bu"),
@@ -358,6 +581,7 @@
       entity: "unidades-negocio",
       emptyMsg: t("admin.empty.un"),
       rows: ADM.unidades_negocio,
+      texto: (u) => `${u.nome} ${u.responsavel || ""}`,
       headers: [
         th("admin.col.bu"), th("admin.col.responsavel"), th("admin.col.filiaisVinculadas"),
         th("admin.col.status"), thRight("admin.col.acoes"),
@@ -1047,12 +1271,6 @@
     document.getElementById("btn-new-usuario").addEventListener("click", () => openModal("usuarios", null));
     document.getElementById("btn-new-filial").addEventListener("click", () => openModal("filiais", null));
     document.getElementById("btn-new-un").addEventListener("click", () => openModal("unidades-negocio", null));
-
-    const buscaFilial = document.getElementById("filiais-busca");
-    buscaFilial.addEventListener("input", () => {
-      ADM.filialBusca = buscaFilial.value;
-      renderFiliais();
-    });
 
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-cancel").addEventListener("click", closeModal);
