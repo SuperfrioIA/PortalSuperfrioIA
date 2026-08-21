@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.0] — 2026-08-21
+### Adicionado
+- Entrar com Microsoft — login com a conta corporativa (Entra ID), sem senha nova para decorar. Em máquina corporativa já autenticada, entra sem pedir senha
+- Filial no cadastro de usuário — cada pessoa passa a ter lotação, e a filial do CSC entrou no catálogo
+- Filtros em toda a Administração — busca por texto e situação em todas as abas, mais filial e role em Usuários e região e unidade de negócio em Filiais
+- Cabeçalho padrão nos apps embutidos — Mapa IA e Governance TI agora têm "Voltar ao hub" à esquerda e a marca à direita, como as outras telas
+### Corrigido
+- App embutido abrindo em branco — acontecia quando a URL era cadastrada sem a barra no fim, caso do Mapa Estatístico
+- Duas barras de rolagem — a página de trás continuava rolando junto com o app aberto em tela cheia
+- "Voltar ao hub" não funcionava — o link estava sendo bloqueado silenciosamente em todo app aberto pelo portal
+- Login de todos podia ser bloqueado por um minuto — as tentativas erradas de uma pessoa contavam para a empresa inteira
+- Tela branca com texto técnico — aparecia ao usar o botão Voltar do navegador depois de entrar pela Microsoft
+- Acesso desativado dava erro de sistema — agora a pessoa lê que o acesso está desativado e a quem pedir
+### Alterado
+- Cadastro sem senha para quem usa a Microsoft — o e-mail passou a ser obrigatório, porque é ele que liga a pessoa à conta corporativa
+- Primeiro acesso exige cadastro prévio — sem cadastro, a pessoa recebe orientação para pedir acesso ao administrador
+- Lista de usuários mais enxuta — as colunas "Roles" e "O que isso dá de acesso" viraram uma só, com os nomes das roles no detalhe
+- Login local virou acesso administrativo — fica recolhido na tela de entrada, para emergência
+
 ## [0.5.0] — 2026-07-26
 ### Adicionado
 - Matriz de acesso na tela de Administração — apps nas linhas, ações nas colunas (Ver, Editar, Exportar, Administrar), com marcação por coluna e por seção
