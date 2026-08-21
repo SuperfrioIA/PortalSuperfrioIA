@@ -38,8 +38,8 @@ async def lifespan(_app: FastAPI):
     # Jobs agendados: registre aqui os próximos, seguindo o mesmo padrão
     # (agendar_diario vem de backend/core/scheduler.py, genérico pra qualquer módulo).
     iniciar_agendador()
-    agendar_diario(executar_as_0805, hora=8, minuto=5, job_id="processos_abertos_ftp_0805")
-    agendar_diario(executar_as_0830_retry, hora=8, minuto=30, job_id="processos_abertos_ftp_0830_retry")
+    agendar_diario(executar_as_0805, hora=9, minuto=20, job_id="processos_abertos_ftp_0805")
+    agendar_diario(executar_as_0830_retry, hora=9, minuto=30, job_id="processos_abertos_ftp_0830_retry")
 
     yield
     parar_agendador()
