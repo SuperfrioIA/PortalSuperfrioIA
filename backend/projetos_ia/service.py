@@ -264,6 +264,16 @@ def listar_filiais(session, apenas_ativas: bool = False) -> list[dict]:
     return [dict(r) for r in session.execute(stmt).mappings().fetchall()]
 
 
+def filial_por_id(session, filial_id: int) -> dict | None:
+    """Uma filial pelo id, ou None. Existe para outros módulos (ex.: Usuários, que
+    vincula pessoa a filial) não lerem a tabela `filiais` direto — regra de ouro do
+    CONTRIBUTING.md."""
+    row = session.execute(
+        _stmt_filiais().where(Filial.id == filial_id)
+    ).mappings().fetchone()
+    return dict(row) if row else None
+
+
 def criar_filial(session, dados: dict) -> dict:
     """`codigo` é a chave de negócio (mesmo do ERP/Conciliador) — daí o 409 nele."""
     dados = _normaliza_filial(dados, criando=True)

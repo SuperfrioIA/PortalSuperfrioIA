@@ -25,6 +25,7 @@ from backend.core import permissoes as catalogo
 from backend.core.database import _now, db
 from backend.core.http import apply_update, ensure_slug, ids_por_slug_or_400, row_or_404, unique_or_409
 from backend.portal import service as portal_service
+from backend.projetos_ia import service as projetos_ia_service
 from backend.usuarios.models import Role, Usuario, role_apps, role_permissoes, usuario_roles
 
 PASSWORD_MIN_LEN = 8
@@ -238,10 +239,15 @@ def matriz(_: dict = Depends(require_admin)):
 
 class UsuarioCreate(BaseModel):
     username: str
-    senha: str
+    # Sem senha = acesso pela Microsoft (`auth_source="ad"`), o caminho padrão desde
+    # 21/08/2026: a pessoa nunca tem senha local, entra pelo botão do Entra. Com
+    # senha = usuário local, mantido para o acesso de emergência do admin — se o SSO
+    # cair (segredo expirado, Entra fora do ar), alguém precisa conseguir entrar.
+    senha: Optional[str] = None
     nome: Optional[str] = None
     email: Optional[str] = None
     is_admin: bool = False
+    filial_id: Optional[int] = None
     roles: list[str] = Field(default_factory=list)  # slugs
 
 
@@ -249,6 +255,7 @@ class UsuarioUpdate(BaseModel):
     nome: Optional[str] = None
     email: Optional[str] = None
     is_admin: Optional[bool] = None
+    filial_id: Optional[int] = None
     roles: Optional[list[str]] = None
 
 
@@ -259,8 +266,59 @@ class PasswordReset(BaseModel):
 # nunca devolve password_hash
 _USUARIO_PUBLICO = select(
     Usuario.id, Usuario.username, Usuario.nome, Usuario.email, Usuario.auth_source,
-    Usuario.ativo, Usuario.is_admin, Usuario.criado_em, Usuario.atualizado_em,
+    Usuario.ativo, Usuario.is_admin, Usuario.filial_id, Usuario.criado_em,
+    Usuario.atualizado_em,
 )
+
+
+def _email_normalizado(email: Optional[str]) -> Optional[str]:
+    """Minúsculas e sem espaço — a mesma forma que `provisioning.py` usa para casar
+    o claim do Entra, e a que o índice único da migration 0005 indexa."""
+    return (email or "").strip().lower() or None
+
+
+def _checa_email_livre(session, email: Optional[str], ignorar_id: Optional[int] = None) -> None:
+    """409 antes de bater no índice único, com mensagem que diz de quem é o e-mail.
+
+    Sem isto, um e-mail repetido viraria IntegrityError não tratado (500) — e o
+    `unique_or_409` do arquivo tem o nome do campo fixo, então não serve aqui.
+    """
+    if email is None:
+        return
+    stmt = select(Usuario.username).where(func.lower(Usuario.email) == email)
+    if ignorar_id is not None:
+        stmt = stmt.where(Usuario.id != ignorar_id)
+    dono = session.execute(stmt).scalars().first()
+    if dono:
+        raise HTTPException(409, f"e-mail '{email}' já está no cadastro de '{dono}'")
+
+
+def _valida_filial(session, filial_id) -> None:
+    """Filial inexistente é erro do chamador (400). Consulta pelo serviço do módulo
+    dono — Usuários não lê a tabela `filiais` direto."""
+    if filial_id is None:
+        return
+    if projetos_ia_service.filial_por_id(session, filial_id) is None:
+        raise HTTPException(400, f"filial {filial_id} não existe")
+
+
+def _com_filial(session, usuarios: list[dict]) -> list[dict]:
+    """Enriquecimento on-read: acrescenta `filial_codigo`/`filial_nome`, para a tela
+    não precisar cruzar duas listas no navegador."""
+    ids = {u["filial_id"] for u in usuarios if u.get("filial_id")}
+    mapa = (
+        {f["id"]: f for f in projetos_ia_service.listar_filiais(session) if f["id"] in ids}
+        if ids
+        else {}
+    )
+    return [
+        {
+            **u,
+            "filial_codigo": (mapa.get(u["filial_id"]) or {}).get("codigo"),
+            "filial_nome": (mapa.get(u["filial_id"]) or {}).get("nome"),
+        }
+        for u in usuarios
+    ]
 
 
 def _set_user_roles(session, user_id: int, role_ids: list[int]) -> None:
@@ -281,7 +339,7 @@ def _select_usuario(session, user_id: int) -> dict:
         .where(usuario_roles.c.usuario_id == user_id)
         .order_by(Role.slug)
     ).scalars().all()
-    return {**dict(row), "roles": list(roles)}
+    return _com_filial(session, [{**dict(row), "roles": list(roles)}])[0]
 
 
 @router_admin.get("/usuarios")
@@ -297,26 +355,41 @@ def listar_usuarios(_: dict = Depends(require_admin)):
             .order_by(Role.slug)
         ):
             roles_por_user.setdefault(usuario_id, []).append(slug)
-    return [{**dict(r), "roles": roles_por_user.get(r["id"], [])} for r in rows]
+        usuarios = [{**dict(r), "roles": roles_por_user.get(r["id"], [])} for r in rows]
+        return _com_filial(session, usuarios)
 
 
 @router_admin.post("/usuarios", status_code=201)
 def criar_usuario(body: UsuarioCreate, _: dict = Depends(require_admin)):
     if not body.username or not body.username.strip():
         raise HTTPException(400, "username obrigatório")
-    if len(body.senha) < PASSWORD_MIN_LEN:
+
+    email = _email_normalizado(body.email)
+    if body.senha is None:
+        # Acesso pela Microsoft: o e-mail é a única coisa que casa a pessoa com o
+        # token do Entra. Sem ele o cadastro nasce impossível de logar.
+        if email is None:
+            raise HTTPException(
+                400,
+                "e-mail obrigatório para acesso com Microsoft — é o que casa com a conta do Entra",
+            )
+    elif len(body.senha) < PASSWORD_MIN_LEN:
         raise HTTPException(400, f"senha deve ter ao menos {PASSWORD_MIN_LEN} caracteres")
+
     with db() as session:
         role_ids = ids_por_slug_or_400(session, Role, body.roles, "role")
+        _valida_filial(session, body.filial_id)
+        _checa_email_livre(session, email)
         with unique_or_409("username", body.username):
             cur = session.execute(
                 insert(Usuario).values(
                     username=body.username.strip(),
                     nome=body.nome,
-                    email=body.email,
-                    password_hash=hash_password(body.senha),
-                    auth_source="local",
+                    email=email,
+                    password_hash=hash_password(body.senha) if body.senha else None,
+                    auth_source="local" if body.senha else "ad",
                     is_admin=1 if body.is_admin else 0,
+                    filial_id=body.filial_id,
                 )
             )
         user_id = cur.inserted_primary_key[0]
@@ -334,6 +407,14 @@ def atualizar_usuario(
         row_or_404(session, Usuario, user_id, "usuarios")
         fields = body.model_dump(exclude_unset=True)
         roles = fields.pop("roles", None)
+
+        if "filial_id" in fields:
+            _valida_filial(session, fields["filial_id"])
+        if "email" in fields:
+            # Normaliza e checa antes de gravar: sem isto, e-mail repetido bateria
+            # no índice único da migration 0005 e viraria 500.
+            fields["email"] = _email_normalizado(fields["email"])
+            _checa_email_livre(session, fields["email"], ignorar_id=user_id)
 
         # Não permite admin tirar o próprio bit de admin (evita lockout)
         if "is_admin" in fields and user_id == me["id"] and not fields["is_admin"]:

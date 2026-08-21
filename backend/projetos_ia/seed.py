@@ -1,7 +1,12 @@
 """Seed do catálogo de filiais — as 59 filiais de produção (23 ativas).
 
 Origem: `docs/exemplos/filiais_prod.csv` do Conciliador de Estoque, que é o
-cadastro mestre. A lista está em código (e não como CSV lido em runtime) para a
+cadastro mestre dos ARMAZÉNS — e por isso não traz filial administrativa. O CSC
+(1011) foi acrescentado a partir de `docs/Empresas Grupo Superfrio 5.xlsx`, o
+mapeamento do Protheus, porque é onde estão lotados os usuários do próprio CSC.
+Ainda faltam, do mesmo Excel: 1034 CWBIV, 1035 CVDII, 8008 CSCII e 8009 RMSPV —
+não entraram porque acrescentar filial também as faz aparecer na tela de rollout
+do Projetos IA, e isso é decisão de produto. A lista está em código (e não como CSV lido em runtime) para a
 imagem Docker não depender de um arquivo de dados no `COPY`.
 
 Duas coisas derivadas na geração, porque o Conciliador não tem esses campos:
@@ -32,6 +37,7 @@ FILIAIS = [
     {"codigo": "1008", "nome": "EJAC", "cidade": "Jacarei", "uf": "SP", "regiao": "Sudeste", "ativo": 0},
     {"codigo": "1009", "nome": "EVGS", "cidade": "Vargem Grande do Sul", "uf": "SP", "regiao": "Sudeste", "ativo": 0},
     {"codigo": "1010", "nome": "ARP", "cidade": "Arapongas", "uf": "PR", "regiao": "Sul", "ativo": 1},
+    {"codigo": "1011", "nome": "CSC", "cidade": "Ribeirão Preto", "uf": "SP", "regiao": "Sudeste", "ativo": 1},
     {"codigo": "1012", "nome": "MLA", "cidade": "Vera Cruz", "uf": "SP", "regiao": "Sudeste", "ativo": 1},
     {"codigo": "1013", "nome": "LDN", "cidade": "Cambe", "uf": "PR", "regiao": "Sul", "ativo": 0},
     {"codigo": "1014", "nome": "MIR", "cidade": "Mirassol", "uf": "SP", "regiao": "Sudeste", "ativo": 0},

@@ -120,6 +120,11 @@ async function checkSsoConfig() {
   }
   document.getElementById("btn-sso-entra").classList.toggle("hidden", !ssoEnabled);
   document.getElementById("login-sso-divider").classList.toggle("hidden", !ssoEnabled);
+  document.getElementById("login-local-toggle").classList.toggle("hidden", !ssoEnabled);
+  // Com SSO ligado o formulário local começa recolhido: é acesso de emergência do
+  // admin, não o caminho de todo dia. Com SSO desligado (dev, ou ENTRA_* vazio) ele
+  // é o ÚNICO caminho e aparece direto — senão ninguém entra.
+  document.getElementById("form-login").classList.toggle("hidden", ssoEnabled);
 }
 
 /* Exibe a recusa do SSO na tela de login. Consome a mensagem depois de mostrar:
@@ -586,6 +591,15 @@ document.addEventListener("DOMContentLoaded", () => {
       state.query = search.value;
       renderContent();
     }, 120);
+  });
+
+  /* Revela o formulário de acesso local (emergência) */
+  document.getElementById("login-local-toggle").addEventListener("click", () => {
+    const form = document.getElementById("form-login");
+    form.classList.toggle("hidden");
+    if (!form.classList.contains("hidden")) {
+      document.getElementById("login-username").focus();
+    }
   });
 
   /* Logout */

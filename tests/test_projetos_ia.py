@@ -370,8 +370,10 @@ def test_filial_vinculada_a_bu_e_bu_inexistente(client, admin_headers):
 def test_seed_carregou_as_filiais_de_producao(client, admin_headers):
     from backend.projetos_ia.seed import FILIAIS
 
-    assert len(FILIAIS) == 59
-    assert sum(f["ativo"] for f in FILIAIS) == 23
+    # 59 do CSV do Conciliador + o CSC (1011), que é filial administrativa e por
+    # isso não existe no cadastro de armazéns.
+    assert len(FILIAIS) == 60
+    assert sum(f["ativo"] for f in FILIAIS) == 24
 
     por_codigo = {
         f["codigo"]: f
@@ -385,6 +387,13 @@ def test_seed_carregou_as_filiais_de_producao(client, admin_headers):
         "RMSPI", "São Paulo", "SP", "Sudeste", 1,
     )
     assert por_codigo["1032"]["ativo"] == 0  # ARPI é inativa no Conciliador
+
+    # CSC: onde os usuários do próprio CSC são lotados (docs/Empresas Grupo
+    # Superfrio 5.xlsx, código 1011). Não vem do Conciliador.
+    csc = por_codigo["1011"]
+    assert (csc["nome"], csc["cidade"], csc["uf"], csc["ativo"]) == (
+        "CSC", "Ribeirão Preto", "SP", 1,
+    )
     # Nome repetido em duas filiais: só passa porque a chave é o código.
     assert por_codigo["1030"]["nome"] == por_codigo["5001"]["nome"] == "ITA"
 
