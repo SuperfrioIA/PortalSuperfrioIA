@@ -296,6 +296,9 @@
           <div class="col-nome">${escapeHtml(u.nome || u.username)}</div>
           <div class="col-slug">${escapeHtml(u.username)}</div>
           <div class="col-meta">${escapeHtml(u.email || t("admin.dash"))}</div>
+          <div class="col-meta">${escapeHtml(
+            u.filial_codigo ? `${u.filial_codigo} · ${u.filial_nome}` : t("admin.semFilial")
+          )}</div>
         </td>
         <td><div class="pill-stack">${pills || `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</div></td>
         <td>${acessoEfetivoHtml(u)}</td>
@@ -303,7 +306,12 @@
         <td><span class="pill ${u.ativo ? "on" : "off"}">${escapeHtml(u.ativo ? t("admin.status.active.m") : t("admin.status.inactive.m"))}</span></td>
         <td class="actions"><div class="actions-row">
           <button data-act="edit" data-id="${u.id}">${escapeHtml(t("admin.act.edit"))}</button>
-          <button data-act="passwd" data-id="${u.id}">${escapeHtml(t("admin.act.password"))}</button>
+          ${
+            // Quem entra pela Microsoft não tem senha local pra redefinir.
+            u.auth_source === "ad"
+              ? ""
+              : `<button data-act="passwd" data-id="${u.id}">${escapeHtml(t("admin.act.password"))}</button>`
+          }
           <button class="danger" data-act="toggle" data-id="${u.id}" ${meEu ? `disabled title="${escapeHtml(t("admin.cantDeactivateSelf"))}"` : ""}>${escapeHtml(u.ativo ? t("admin.act.deactivate") : t("admin.act.reactivate"))}</button>
         </div></td>
       </tr>`;
@@ -861,6 +869,20 @@
       .join("");
 
     const meEu = r && SF.state.user && SF.state.user.username === r.username;
+    // Filial ativa + a que já está gravada (mesmo inativa) — trocar a lotação de
+    // alguém não pode depender de a filial dele continuar ativa.
+    const filiais = ADM.filiais
+      .filter((f) => f.ativo || (r && r.filial_id === f.id))
+      .map(
+        (f) => `<option value="${f.id}" ${r && r.filial_id === f.id ? "selected" : ""}>
+                  ${escapeHtml(f.codigo ? `${f.codigo} · ${f.nome}` : f.nome)}
+                </option>`
+      )
+      .join("");
+    // Cadastro novo é sempre acesso Microsoft (decisão 21/08/2026): a pessoa não
+    // tem senha local, entra pelo botão do Entra e o e-mail é o que casa com o
+    // token. Usuário local sobrevive apenas como acesso de emergência já criado —
+    // a API ainda aceita criar um, esta tela é que não oferece.
     return `
       <div class="row-2">
         <div class="form-field">
@@ -868,20 +890,26 @@
           <input name="username" required value="${attr(r && r.username)}" ${r ? "disabled" : ""} placeholder="ex: jose.silva">
         </div>
         <div class="form-field">
-          <label>${escapeHtml(t("admin.f.email"))}</label>
-          <input name="email" type="email" value="${attr(r && r.email)}">
+          <label>${escapeHtml(t("admin.f.email"))} ${escapeHtml(t("admin.f.obrigatorio"))}</label>
+          <input name="email" type="email" required value="${attr(r && r.email)}" placeholder="jose.silva@superfrio.com.br">
+          <div class="field-hint">${escapeHtml(t("admin.f.emailHint"))}</div>
         </div>
       </div>
-      <div class="form-field">
-        <label>${escapeHtml(t("admin.f.nomeCompleto"))}</label>
-        <input name="nome" value="${attr(r && r.nome)}">
+      <div class="row-2">
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.nomeCompleto"))}</label>
+          <input name="nome" value="${attr(r && r.nome)}">
+        </div>
+        <div class="form-field">
+          <label>${escapeHtml(t("admin.f.filial"))}</label>
+          <select name="filial_id">
+            <option value="">${escapeHtml(t("admin.f.semFilial"))}</option>
+            ${filiais}
+          </select>
+        </div>
       </div>
       ${r ? "" : `
-      <div class="form-field">
-        <label>${escapeHtml(t("admin.f.senhaInicial"))}</label>
-        <input name="senha" type="password" required minlength="${PASSWORD_MIN_LEN}">
-        <div class="field-hint">${escapeHtml(t("admin.f.senhaHint"))}</div>
-      </div>`}
+      <div class="field-hint acesso-hint">${escapeHtml(t("admin.f.acessoMicrosoft"))}</div>`}
       <div class="form-field">
         <label class="check-row" style="margin:0">
           <input type="checkbox" name="is_admin" ${r && r.is_admin ? "checked" : ""} ${meEu ? "disabled" : ""}>
@@ -979,12 +1007,12 @@
       out.apps = apps;
       out.permissoes = permissoes;
     } else if (entity === "usuarios") {
-      if (isNew) {
-        out.username = (fd.get("username") || "").trim();
-        out.senha = fd.get("senha") || "";
-      }
+      // Sem `senha`: a API interpreta a ausência como acesso Microsoft e grava
+      // auth_source='ad' sem senha local nenhuma.
+      if (isNew) out.username = (fd.get("username") || "").trim();
       out.nome = (fd.get("nome") || "").trim() || null;
       out.email = (fd.get("email") || "").trim() || null;
+      out.filial_id = parseInt(fd.get("filial_id"), 10) || null;
       out.is_admin = !!fd.get("is_admin");
       out.roles = fd.getAll("roles");
     } else if (entity === "filiais") {

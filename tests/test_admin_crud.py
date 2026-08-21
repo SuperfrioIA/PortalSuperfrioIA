@@ -306,6 +306,151 @@ def test_reset_senha_invalida_tokens_antigos(client, admin_headers):
     ).status_code == 200
 
 
+# ---------- Cadastro de usuário: acesso Microsoft e filial (lote de 21/08/2026) ----------
+
+def _id_filial(client, admin_headers, codigo):
+    filiais = client.get("/api/admin/filiais", headers=admin_headers).json()
+    return next(f["id"] for f in filiais if f["codigo"] == codigo)
+
+
+def test_criar_usuario_sem_senha_e_acesso_microsoft(client, admin_headers):
+    """Cadastro prévio para quem vai entrar pelo Entra: sem senha nenhuma, e-mail
+    obrigatório porque é o que casa com o claim do token."""
+    r = client.post(
+        "/api/admin/usuarios",
+        json={"username": "novo.ad", "email": "Novo.AD@SuperFrio.com.br", "nome": "Novo AD"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["auth_source"] == "ad"
+    assert body["email"] == "novo.ad@superfrio.com.br"  # normalizado
+
+
+def test_usuario_microsoft_nao_loga_com_senha_local(client, admin_headers):
+    """Sem password_hash, nenhuma senha pode funcionar — o caminho dele é o SSO."""
+    client.post(
+        "/api/admin/usuarios",
+        json={"username": "so.ad", "email": "so.ad@superfrio.com.br"},
+        headers=admin_headers,
+    )
+    r = client.post("/api/auth/login", data={"username": "so.ad", "password": "qualquer-coisa"})
+    assert r.status_code == 401
+
+
+def test_criar_usuario_sem_senha_exige_email(client, admin_headers):
+    r = client.post(
+        "/api/admin/usuarios", json={"username": "sem.email.ad"}, headers=admin_headers
+    )
+    assert r.status_code == 400
+    assert "e-mail" in r.json()["detail"].lower()
+
+
+def test_criar_usuario_email_duplicado_409(client, admin_headers):
+    """E-mail é a chave do login SSO: dois cadastros com o mesmo e-mail deixariam o
+    login escolher um deles de forma arbitrária (índice único da migration 0005)."""
+    client.post(
+        "/api/admin/usuarios",
+        json={"username": "primeiro.dono", "email": "disputado@superfrio.com.br"},
+        headers=admin_headers,
+    )
+    r = client.post(
+        "/api/admin/usuarios",
+        json={"username": "segundo.dono", "email": "DISPUTADO@superfrio.com.br"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 409
+    assert "primeiro.dono" in r.json()["detail"]  # diz de quem é o e-mail
+
+
+def test_criar_usuario_com_senha_ainda_e_local(client, admin_headers):
+    """A tela não oferece mais, mas a API continua criando usuário local — é o
+    acesso de emergência se o SSO cair."""
+    r = client.post(
+        "/api/admin/usuarios",
+        json={"username": "emergencia.local", "senha": "senha12345"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201
+    assert r.json()["auth_source"] == "local"
+
+
+def test_criar_usuario_com_filial(client, admin_headers):
+    fid = _id_filial(client, admin_headers, "1011")  # CSC
+    r = client.post(
+        "/api/admin/usuarios",
+        json={
+            "username": "lotado.csc",
+            "email": "lotado.csc@superfrio.com.br",
+            "filial_id": fid,
+        },
+        headers=admin_headers,
+    )
+    assert r.status_code == 201
+    assert r.json()["filial_id"] == fid
+    # Enriquecimento on-read: a tela não precisa cruzar as duas listas.
+    assert r.json()["filial_codigo"] == "1011"
+    assert r.json()["filial_nome"] == "CSC"
+
+
+def test_criar_usuario_filial_inexistente_400(client, admin_headers):
+    r = client.post(
+        "/api/admin/usuarios",
+        json={"username": "filial.ruim", "email": "filial.ruim@superfrio.com.br", "filial_id": 999999},
+        headers=admin_headers,
+    )
+    assert r.status_code == 400
+
+
+def test_patch_usuario_troca_e_limpa_filial(client, admin_headers):
+    fid = _id_filial(client, admin_headers, "1011")
+    uid = client.post(
+        "/api/admin/usuarios",
+        json={"username": "troca.filial", "email": "troca.filial@superfrio.com.br"},
+        headers=admin_headers,
+    ).json()["id"]
+
+    r = client.patch(f"/api/admin/usuarios/{uid}", json={"filial_id": fid}, headers=admin_headers)
+    assert r.json()["filial_codigo"] == "1011"
+
+    r = client.patch(f"/api/admin/usuarios/{uid}", json={"filial_id": None}, headers=admin_headers)
+    assert r.json()["filial_id"] is None
+    assert r.json()["filial_codigo"] is None
+
+
+def test_patch_usuario_email_duplicado_409(client, admin_headers):
+    """Sem esta checagem o e-mail repetido bateria no índice único e viraria 500."""
+    client.post(
+        "/api/admin/usuarios",
+        json={"username": "dono.original", "email": "unico@superfrio.com.br"},
+        headers=admin_headers,
+    )
+    outro = client.post(
+        "/api/admin/usuarios",
+        json={"username": "outro.qualquer", "email": "outro@superfrio.com.br"},
+        headers=admin_headers,
+    ).json()["id"]
+    r = client.patch(
+        f"/api/admin/usuarios/{outro}",
+        json={"email": "unico@superfrio.com.br"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 409
+
+
+def test_patch_usuario_mantendo_o_proprio_email_nao_conflita(client, admin_headers):
+    uid = client.post(
+        "/api/admin/usuarios",
+        json={"username": "mesmo.email", "email": "mesmo@superfrio.com.br"},
+        headers=admin_headers,
+    ).json()["id"]
+    r = client.patch(
+        f"/api/admin/usuarios/{uid}",
+        json={"email": "mesmo@superfrio.com.br", "nome": "Mesmo Email"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["nome"] == "Mesmo Email"
 # ---------- URL de app embutido: barra no fim (bug do mapa-estatistico) ----------
 
 def test_criar_app_iframe_ganha_barra_no_fim(client, admin_headers):

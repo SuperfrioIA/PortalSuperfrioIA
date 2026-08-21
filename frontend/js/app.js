@@ -21,6 +21,19 @@ if (ssoMatch) {
   history.replaceState(null, "", location.pathname + location.search);
 }
 
+// Recusa do SSO: o backend manda "#sso_erro=<motivo>" em vez de pintar uma tela
+// branca de JSON (ver _voltar_para_login em backend/auth/router.py). Só vira
+// mensagem se a pessoa realmente cair na tela de login — quem já tinha sessão
+// (o caso do Voltar do navegador) volta pro portal sem ver nada.
+// O regex limita o motivo a [a-z_]: ele só escolhe uma chave de i18n, nunca
+// entra no DOM como texto vindo da URL.
+let ssoErro = null;
+const ssoErroMatch = location.hash.match(/sso_erro=([a-z_]+)/);
+if (ssoErroMatch) {
+  ssoErro = ssoErroMatch[1];
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
 // Exposto pro admin.js
 window.SF = window.SF || {};
 window.SF.state = state;
@@ -107,6 +120,24 @@ async function checkSsoConfig() {
   }
   document.getElementById("btn-sso-entra").classList.toggle("hidden", !ssoEnabled);
   document.getElementById("login-sso-divider").classList.toggle("hidden", !ssoEnabled);
+  document.getElementById("login-local-toggle").classList.toggle("hidden", !ssoEnabled);
+  // Com SSO ligado o formulário local começa recolhido: é acesso de emergência do
+  // admin, não o caminho de todo dia. Com SSO desligado (dev, ou ENTRA_* vazio) ele
+  // é o ÚNICO caminho e aparece direto — senão ninguém entra.
+  document.getElementById("form-login").classList.toggle("hidden", ssoEnabled);
+}
+
+/* Exibe a recusa do SSO na tela de login. Consome a mensagem depois de mostrar:
+   um logout posterior não deve ressuscitar o aviso. */
+function showSsoErro() {
+  if (!ssoErro) return;
+  const chave = `sso.err.${ssoErro}`;
+  const msg = t(chave);
+  const err = document.getElementById("login-error");
+  // t() devolve a própria chave quando não conhece o motivo — cai no genérico.
+  err.textContent = msg === chave ? t("sso.err.generico") : msg;
+  err.classList.add("visible");
+  ssoErro = null;
 }
 
 function showLogin() {
@@ -116,6 +147,7 @@ function showLogin() {
   document.getElementById("screen-portal").classList.add("hidden");
   document.getElementById("login-error").classList.remove("visible");
   document.getElementById("form-login").reset();
+  showSsoErro();
   setTimeout(() => document.getElementById("login-username").focus(), 50);
   checkSsoConfig();
 }
@@ -559,6 +591,15 @@ document.addEventListener("DOMContentLoaded", () => {
       state.query = search.value;
       renderContent();
     }, 120);
+  });
+
+  /* Revela o formulário de acesso local (emergência) */
+  document.getElementById("login-local-toggle").addEventListener("click", () => {
+    const form = document.getElementById("form-login");
+    form.classList.toggle("hidden");
+    if (!form.classList.contains("hidden")) {
+      document.getElementById("login-username").focus();
+    }
   });
 
   /* Logout */

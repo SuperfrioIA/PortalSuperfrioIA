@@ -29,6 +29,18 @@ ENTRA_REDIRECT_URI = os.environ.get("ENTRA_REDIRECT_URI", "").strip()
 # (o registro do app já restringe a "somente locatário único").
 ENTRA_ALLOWED_GROUP_ID = os.environ.get("ENTRA_ALLOWED_GROUP_ID", "").strip()
 
+# Criação automática de cadastro no primeiro login (JIT). **Desligada por
+# padrão** (decisão de 2026-08-21, depois do primeiro teste com gente real):
+# quem não tem cadastro no Hub recebe recusa explícita em vez de virar uma
+# linha nova na tabela `usuarios`. `ENTRA_AUTO_PROVISION=1` volta ao
+# comportamento anterior — qualquer conta do tenant entra sozinha, sem nenhuma
+# role, e o admin concede acesso depois na tela de Administração.
+ENTRA_AUTO_PROVISION = os.environ.get("ENTRA_AUTO_PROVISION", "").strip().lower() in (
+    "1",
+    "true",
+    "sim",
+)
+
 _AUTHORITY = "https://login.microsoftonline.com/{tenant}"
 
 # Escopo OIDC mínimo, sem tocar no Microsoft Graph. openid/profile/offline_access

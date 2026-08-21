@@ -276,6 +276,23 @@ body {
 }
 .btn-sso:hover { background: var(--bg3); border-color: var(--text3); }
 
+/* Acesso local = emergência. Discreto de propósito: não compete com o botão da
+   Microsoft, que é o caminho de todo dia. */
+.login-local-toggle {
+  width: 100%;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.login-local-toggle:hover { color: var(--text2); }
+#form-login.hidden { display: none; }
+
 .login-hint {
   margin-top: 24px;
   padding-top: 18px;
@@ -1360,6 +1377,7 @@ body {
 }
 .modal-body textarea { resize: vertical; min-height: 64px; font-family: inherit; }
 .modal-body .field-hint { font-size: 11px; color: var(--text3); margin-top: 4px; }
+.modal-body .acesso-hint { margin: 4px 0 12px; }
 /* O margin-bottom é o mesmo respiro de .form-field: sem ele, dois row-2 seguidos
    (ou um row-2 com field-hint) encostam o hint no rótulo de baixo. */
 .modal-body .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }

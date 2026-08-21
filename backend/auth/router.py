@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 
@@ -12,6 +13,8 @@ from backend.auth.service import authenticate_user, create_access_token
 from backend.core.database import db
 from backend.core.limiter import limiter
 from backend.usuarios import service as usuarios_service
+
+logger = logging.getLogger("backend.auth.router")
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -111,6 +114,26 @@ def _require_sso() -> None:
         )
 
 
+def _voltar_para_login(motivo: str) -> RedirectResponse:
+    """Recusa de SSO devolvida como REDIRECT, não como JSON de erro.
+
+    Antes cada recusa era um `raise HTTPException(...)`, o que pintava uma tela
+    branca de JSON no meio de uma navegação de topo. E o caso mais comum não era
+    nem erro de verdade: bastava a pessoa apertar **Voltar** no navegador para o
+    browser reexecutar esta URL com um `code` já usado e sem o cookie de state
+    (400 em produção em 2026-08-21, com a sessão dela intacta).
+
+    Agora o front recebe `/#sso_erro=<motivo>`, mostra a mensagem certa na tela
+    de login — e quem já tinha sessão volta pro portal sem ver nada. O motivo
+    também vai pro log do servidor, para uma recusa real não ficar silenciosa.
+    """
+    resp = RedirectResponse(
+        f"/#sso_erro={motivo}", status_code=status.HTTP_307_TEMPORARY_REDIRECT
+    )
+    resp.delete_cookie(_STATE_COOKIE)
+    return resp
+
+
 @router.get("/login/entra")
 def login_entra():
     """Inicia o SSO: gera o `state` anti-CSRF e redireciona o usuário ao Microsoft."""
@@ -137,35 +160,43 @@ def auth_callback(
     error: str | None = None,
 ):
     """Volta do Microsoft: confere o `state`, troca o `code` pelos claims,
-    resolve/cria o usuário e emite o NOSSO JWT — daqui pra frente o sistema
-    é idêntico ao login local."""
+    resolve o usuário e emite o NOSSO JWT — daqui pra frente o sistema é
+    idêntico ao login local.
+
+    Nenhuma recusa aqui vira 4xx: todas voltam pro front por
+    `_voltar_para_login()`, porque esta rota é sempre uma navegação de topo do
+    navegador (ver a docstring de lá)."""
     _require_sso()
     if error:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Login Microsoft recusado: {error}.",
-        )
+        logger.warning("SSO: Microsoft recusou o login (%s)", error)
+        return _voltar_para_login("microsoft")
+
     expected = request.cookies.get(_STATE_COOKIE)
     if not (code and state and expected and secrets.compare_digest(state, expected)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Requisição de login inválida (state).",
+        # Quase sempre é o Voltar do navegador reexecutando o callback; pode ser
+        # também cookie bloqueado ou um CSRF de verdade. O log distingue: sem
+        # cookie e sem state = navegação repetida; state adulterado = suspeito.
+        logger.warning(
+            "SSO: callback sem state válido (code=%s, state=%s, cookie=%s)",
+            bool(code), bool(state), bool(expected),
         )
+        return _voltar_para_login("sessao")
 
     claims = entra_module.EntraAuthProvider().exchange_code(code)
     if claims is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Não foi possível validar o login Microsoft.",
-        )
+        logger.warning("SSO: o Microsoft não validou a troca do code")
+        return _voltar_para_login("microsoft")
 
     with db() as session:
-        user = resolve_user_entra(session, claims, entra_module.ENTRA_ALLOWED_GROUP_ID)
+        user, motivo = resolve_user_entra(
+            session,
+            claims,
+            entra_module.ENTRA_ALLOWED_GROUP_ID,
+            auto_provision=entra_module.ENTRA_AUTO_PROVISION,
+        )
         if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Seu acesso não está autorizado neste sistema.",
-            )
+            logger.warning("SSO: acesso recusado (%s)", motivo)
+            return _voltar_para_login(motivo)
         token = create_access_token(
             subject=user["username"],
             extra={

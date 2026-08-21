@@ -20,6 +20,11 @@ class Usuario(Base):
     ativo: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=sa_text("1"))
     is_admin: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=sa_text("0"))
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=sa_text("1"))
+    # Lotação da pessoa. Nullable porque cadastro anterior à migration 0005 não tem
+    # filial — a obrigatoriedade vive no cadastro, não no schema.
+    filial_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("filiais.id", ondelete="SET NULL")
+    )
     criado_em: Mapped[str] = mapped_column(Text, nullable=False, default=_now)
     atualizado_em: Mapped[str | None] = mapped_column(Text)
 

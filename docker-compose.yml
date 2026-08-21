@@ -21,6 +21,9 @@ services:
       ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
       ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-}
       ENTRA_ALLOWED_GROUP_ID: ${ENTRA_ALLOWED_GROUP_ID:-}
+      # Vazio = criacao automatica de cadastro DESLIGADA (cadastro previo
+      # obrigatorio). ENTRA_AUTO_PROVISION=1 religa o JIT do primeiro login.
+      ENTRA_AUTO_PROVISION: ${ENTRA_AUTO_PROVISION:-}
       # FTP de Processos Abertos (job diário) — sem usuário/senha no .env, o job
       # falha com KeyError ao tentar rodar (não impede o resto do Hub de subir).
       FTP_HOST: ${FTP_HOST:-ftp-sf.superfrio.com.br}
