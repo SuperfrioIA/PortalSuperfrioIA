@@ -304,3 +304,63 @@ def test_reset_senha_invalida_tokens_antigos(client, admin_headers):
     assert client.post(
         "/api/auth/login", data={"username": "user.reset", "password": "novasenha123"}
     ).status_code == 200
+
+
+# ---------- URL de app embutido: barra no fim (bug do mapa-estatistico) ----------
+
+def test_criar_app_iframe_ganha_barra_no_fim(client, admin_headers):
+    """App embutido cadastrado sem a barra fazia o StaticFiles redirecionar, e o
+    redirect (http:// atrás do ALB) era barrado pelo frame-src do CSP — o app
+    abria em branco. Cadastro passa a normalizar."""
+    sid = _id_por_slug(client, admin_headers, "secoes", "armazem")
+    r = client.post(
+        "/api/admin/apps",
+        json=_payload_app("app-sem-barra", sid, url="/app-sem-barra", tipo_acesso="iframe"),
+        headers=admin_headers,
+    )
+    assert r.status_code == 201
+    assert r.json()["url"] == "/app-sem-barra/"
+
+
+def test_criar_app_url_externa_e_interno_nao_sao_alterados(client, admin_headers):
+    """Normalizar só vale pra iframe: em `url` a barra é indiferente e em `interno`
+    o campo é identificador de tela do SPA, não caminho."""
+    sid = _id_por_slug(client, admin_headers, "secoes", "armazem")
+    externo = client.post(
+        "/api/admin/apps",
+        json=_payload_app("app-externo", sid, url="https://exemplo.interno/x", tipo_acesso="url"),
+        headers=admin_headers,
+    )
+    assert externo.json()["url"] == "https://exemplo.interno/x"
+    interno = client.post(
+        "/api/admin/apps",
+        json=_payload_app("app-interno-spa", sid, url="/tela-nativa", tipo_acesso="interno"),
+        headers=admin_headers,
+    )
+    assert interno.json()["url"] == "/tela-nativa"
+
+
+def test_criar_app_iframe_apontando_arquivo_nao_ganha_barra(client, admin_headers):
+    sid = _id_por_slug(client, admin_headers, "secoes", "armazem")
+    r = client.post(
+        "/api/admin/apps",
+        json=_payload_app("app-arquivo", sid, url="/pasta/index.html", tipo_acesso="iframe"),
+        headers=admin_headers,
+    )
+    assert r.json()["url"] == "/pasta/index.html"
+
+
+def test_patch_app_url_ganha_barra_usando_tipo_ja_gravado(client, admin_headers):
+    """No PATCH o tipo_acesso costuma não vir no corpo — a normalização tem que
+    usar o que já está gravado, senão a barra não é aplicada."""
+    sid = _id_por_slug(client, admin_headers, "secoes", "armazem")
+    criado = client.post(
+        "/api/admin/apps",
+        json=_payload_app("app-patch-barra", sid, url="/x/", tipo_acesso="iframe"),
+        headers=admin_headers,
+    ).json()
+    r = client.patch(
+        f"/api/admin/apps/{criado['id']}", json={"url": "/mapa-qualquer"}, headers=admin_headers
+    )
+    assert r.status_code == 200
+    assert r.json()["url"] == "/mapa-qualquer/"

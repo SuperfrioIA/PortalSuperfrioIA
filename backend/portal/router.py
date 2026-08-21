@@ -210,6 +210,30 @@ def _check_url(url: Optional[str]) -> None:
         )
 
 
+def _normalizar_url_interna(url: Optional[str], tipo_acesso: Optional[str]) -> Optional[str]:
+    """Garante a barra no fim de app embutido que aponta pra uma pasta do portal.
+
+    Sem a barra, o StaticFiles responde um redirect pra versão com barra — e o
+    navegador se recusa a emoldurar o destino, porque atrás do ALB aquele redirect
+    saía como `http://` e batia no `frame-src` do CSP. Foi o que derrubou o
+    mapa-estatistico em 21/08/2026. O `--forwarded-allow-ips` do Dockerfile
+    conserta o esquema; isto evita o redirect inútil e o cadastro que convida ao
+    erro de novo.
+
+    Só toca em `iframe`: em `url` a barra é indiferente e em `interno` o campo é
+    só um identificador de tela do SPA, não um caminho.
+    """
+    if tipo_acesso != "iframe" or not url:
+        return url
+    if not url.startswith("/") or url.endswith("/"):
+        return url
+    if "?" in url or "#" in url:  # tem query/fragmento: não é caminho de pasta
+        return url
+    if "." in url.rsplit("/", 1)[-1]:  # aponta pra um arquivo, não pra pasta
+        return url
+    return url + "/"
+
+
 _APP_COM_SECAO = (
     select(
         *App.__table__.c,
@@ -243,6 +267,7 @@ def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
     ensure_slug(body.slug)
     _check_tipo_acesso(body.tipo_acesso)
     _check_url(body.url)
+    url = _normalizar_url_interna(body.url, body.tipo_acesso)
     with db() as session:
         row_or_404(session, Secao, body.secao_id, "secoes")
         with unique_or_409("slug", body.slug):
@@ -250,7 +275,7 @@ def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
                 insert(App).values(
                     slug=body.slug, nome=body.nome, nome_es=body.nome_es,
                     descricao=body.descricao, descricao_es=body.descricao_es,
-                    icone=body.icone, secao_id=body.secao_id, url=body.url,
+                    icone=body.icone, secao_id=body.secao_id, url=url,
                     tipo_acesso=body.tipo_acesso, badge=body.badge, ordem=body.ordem,
                 )
             )
@@ -262,12 +287,17 @@ def atualizar_app(app_id: int, body: AppUpdate, _: dict = Depends(require_admin)
     _check_tipo_acesso(body.tipo_acesso)
     _check_url(body.url)
     with db() as session:
-        row_or_404(session, App, app_id, "apps")
+        atual = row_or_404(session, App, app_id, "apps")
         if body.secao_id is not None:
             row_or_404(session, Secao, body.secao_id, "secoes")
         fields = body.model_dump(exclude_unset=True)
         if not fields:
             return _select_app(session, app_id)
+        if "url" in fields:
+            # tipo_acesso pode não vir no PATCH — vale o que já está gravado.
+            fields["url"] = _normalizar_url_interna(
+                fields["url"], fields.get("tipo_acesso") or atual["tipo_acesso"]
+            )
         apply_update(session, App, app_id, fields, touch_updated=True)
         return _select_app(session, app_id)
 

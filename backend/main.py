@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from backend.auth.router import router as auth_router
+from backend.auth.service import decode_token
 from backend.core.database import init_db
 from backend.core.limiter import limiter
 from backend.core.scheduler import agendar_diario
@@ -25,6 +27,16 @@ from backend.projetos_ia.router import router as projetos_ia_router
 from backend.projetos_ia.router import router_admin as projetos_ia_admin_router
 from backend.seed import seed_initial
 from backend.usuarios.router import router_admin as usuarios_admin_router
+
+
+# Sem isto, `logger.info` de qualquer modulo nosso e DESCARTADO: o dictConfig do
+# uvicorn configura so os loggers dele, e o handler de ultimo recurso do Python
+# imprime a partir de WARNING. Formato igual ao usado em processos_abertos/jobs.py.
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
+
+acesso_logger = logging.getLogger("backend.acesso")
 
 
 @asynccontextmanager
@@ -99,6 +111,40 @@ _CSP_GOVERNANCA = (
 # pode embutir esse app dentro do portal. Não libera terceiros nem afrouxa script-src
 # (inline continua bloqueado — quem tiver <script> inline extrai pra .js externo).
 _CSP_EMBED = _CSP.replace("frame-ancestors 'none'", "frame-ancestors 'self'")
+
+
+def _usuario_do_token(request: Request) -> str:
+    """Username do JWT do request, só para o log — não valida sessão nem toca no
+    banco (quem faz isso é o Depends de cada rota)."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return "-"
+    try:
+        return decode_token(auth[7:]).get("sub") or "-"
+    except Exception:
+        return "token-invalido"
+
+
+@app.middleware("http")
+async def log_de_acesso(request: Request, call_next) -> Response:
+    """Uma linha por chamada de API dizendo QUEM fez, não só de onde.
+
+    O log do uvicorn sozinho não identifica ninguém — e, atrás do ALB, mostrava o
+    IP do balanceador em toda requisição, o que já custou um diagnóstico inteiro.
+    Só `/api` entra: estático viraria ruído. **Nunca** registra a query string,
+    para não gravar em log o `code=` do SSO nem token.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api"):
+        acesso_logger.info(
+            '%s %s "%s %s" %s',
+            request.client.host if request.client else "-",
+            _usuario_do_token(request),
+            request.method,
+            request.url.path,
+            response.status_code,
+        )
+    return response
 
 
 @app.middleware("http")
