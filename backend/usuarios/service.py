@@ -9,6 +9,7 @@ app × ação. A coluna `ver` mora em `role_apps`; as demais ações moram em
 `role_permissoes`. Nos dois casos, **role inativa não concede nada**.
 """
 from sqlalchemy import func, insert, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.core.permissoes import ACAO_VER, listar as listar_catalogo
 from backend.portal import service as portal_service
@@ -36,17 +37,32 @@ def por_email(session, email: str, apenas_ativos: bool = True) -> dict | None:
     return dict(row) if row else None
 
 
-def provisionar_usuario_ad(session, email: str, nome: str | None) -> dict:
+def provisionar_usuario_ad(session, email: str, nome: str | None) -> dict | None:
     """Cria um usuário novo vindo do primeiro login via SSO (Entra) — sem senha
     e sem nenhuma role, igual a um usuário local recém-criado: o admin concede
     acesso depois na tela de Administração. `username` = o próprio e-mail (o
-    Entra não dá um identificador curto, e `username` já é UNIQUE)."""
-    cur = session.execute(
-        insert(Usuario).values(
-            username=email, nome=nome or email, email=email,
-            password_hash=None, auth_source="ad", is_admin=0,
-        )
-    )
+    Entra não dá um identificador curto, e `username` já é UNIQUE).
+
+    Devolve `None` quando o cadastro já existe e ainda não está visível para
+    esta transação — ver o comentário do `except` abaixo.
+    """
+    try:
+        # SAVEPOINT: sem ele, uma violação de UNIQUE aborta a transação inteira
+        # e o callback do SSO devolve 500 (foi o que aconteceu em produção em
+        # 2026-08-21). Com o savepoint, só o insert é desfeito.
+        with session.begin_nested():
+            cur = session.execute(
+                insert(Usuario).values(
+                    username=email, nome=nome or email, email=email,
+                    password_hash=None, auth_source="ad", is_admin=0,
+                )
+            )
+    except IntegrityError:
+        # Corrida de dois primeiros logins simultâneos (duas abas, dois cliques):
+        # o UNIQUE de `username` recusa o segundo. Reaproveita o cadastro que
+        # venceu; se ele ainda não commitou, devolve None e a pessoa entra na
+        # próxima tentativa.
+        return por_username(session, email, apenas_ativos=False)
     user_id = cur.inserted_primary_key[0]
     row = session.execute(
         select(Usuario.__table__).where(Usuario.id == user_id)
