@@ -32,6 +32,15 @@
 
   /* ---------- Sidebar ---------- */
   .sidebar{width:256px;flex:0 0 256px;background:linear-gradient(180deg,#0A2A5E 0%,#10468F 100%);color:#fff;display:flex;flex-direction:column;padding:24px 18px}
+  /* Cabecalho padrao do Hub: "Voltar ao hub" no topo da sidebar, abaixo da marca.
+     Variante escura, a mesma dos heros institucionais. O target="_top" e o que faz o
+     link sair do iframe quando o app esta embutido no portal. */
+  .back-link{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;margin-bottom:18px;
+     border:1px solid rgba(255,255,255,.28);border-radius:6px;background:transparent;
+     color:rgba(255,255,255,.82);font-family:inherit;font-size:12px;font-weight:600;
+     text-decoration:none;white-space:nowrap;transition:all .12s}
+  .back-link:hover{background:rgba(255,255,255,.10);color:#fff}
+  .back-link svg{stroke:currentColor}
   .brand img{width:100%;height:auto;display:block}
   .brand .rule{height:1px;background:rgba(255,255,255,.20);margin:18px 0}
   .brand .appname{font-size:16px;font-weight:700;line-height:1.25}
@@ -231,6 +240,7 @@
       <div class="appname">Análise de Mapa Estatísticos</div>
       <div class="appsub">(NF × WMS)</div>
     </div>
+    <a class="back-link" href="/" target="_top" title="Voltar ao hub"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg><span>Voltar ao hub</span></a>
     <nav>
       <div class="navlabel">Etapas</div>
       <div class="step active" id="st1"><span class="dot">1</span> Notas a conferir</div>
