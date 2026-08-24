@@ -346,10 +346,19 @@ function openApp(app) {
     // um clique real da pessoa, e os apps embutidos são todos nossos, da mesma
     // origem.
     iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-downloads allow-modals");
-    document.getElementById("iframe-title").textContent = app.nome;
-    document.getElementById("iframe-url").textContent = app.url;
+    // App NOSSO (caminho relativo) abre em tela cheia e sem a barra do overlay: ele
+    // já traz o cabeçalho padrão do Hub, com "Voltar ao hub" e a marca — a barra por
+    // cima dava dois cabeçalhos empilhados na mesma tela.
+    // App EXTERNO fica na moldura com a barra, porque nele não existe um "Voltar ao
+    // hub" nosso: sem a barra, a pessoa ficaria sem saída visível (só Esc).
+    const interno = app.url.startsWith("/");
+    if (!interno) {
+      document.getElementById("iframe-title").textContent = app.nome;
+      document.getElementById("iframe-url").textContent = app.url;
+    }
     iframe.src = app.url;
     document.getElementById("iframe-overlay").classList.add("visible");
+    document.getElementById("iframe-overlay").classList.toggle("cheio", interno);
     document.body.classList.add("overlay-aberto");
   } else {
     window.open(app.url, "_blank", "noopener");
@@ -357,7 +366,7 @@ function openApp(app) {
 }
 
 function closeIframe() {
-  document.getElementById("iframe-overlay").classList.remove("visible", "gov");
+  document.getElementById("iframe-overlay").classList.remove("visible", "cheio");
   document.getElementById("iframe-content").src = "about:blank";
   document.body.classList.remove("overlay-aberto");
 }
@@ -368,10 +377,8 @@ function closeIframe() {
 function openGovernanca() {
   const iframe = document.getElementById("iframe-content");
   iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
-  document.getElementById("iframe-title").textContent = t("portal.nav.governanca");
-  document.getElementById("iframe-url").textContent = "";
   iframe.src = "/governanca/";
-  document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
+  document.getElementById("iframe-overlay").classList.add("visible", "cheio"); // sem a barra do overlay: o app traz o header
   document.body.classList.add("overlay-aberto");
 }
 
@@ -380,10 +387,8 @@ function openGovernanca() {
 function openMapaIa() {
   const iframe = document.getElementById("iframe-content");
   iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
-  document.getElementById("iframe-title").textContent = "Mapa IA";
-  document.getElementById("iframe-url").textContent = "";
   iframe.src = "/mapa-ia/";
-  document.getElementById("iframe-overlay").classList.add("visible", "gov"); // .gov = tela cheia
+  document.getElementById("iframe-overlay").classList.add("visible", "cheio"); // sem a barra do overlay: o app traz o header
   document.body.classList.add("overlay-aberto");
 }
 
