@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.10.0] — 2026-08-21
+### Adicionado
+- Entrar com Microsoft — login com a conta corporativa (Entra ID), sem senha nova para decorar. Em máquina corporativa já autenticada, entra sem pedir senha
+- Filial no cadastro de usuário — cada pessoa passa a ter lotação, e a filial do CSC entrou no catálogo
+- Filtros em toda a Administração — busca por texto e situação em todas as abas, mais filial e role em Usuários e região e unidade de negócio em Filiais
+- Cabeçalho padrão nos apps embutidos — Mapa IA e Governance TI agora têm "Voltar ao hub" à esquerda e a marca à direita, como as outras telas
+### Corrigido
+- App embutido abrindo em branco — acontecia quando a URL era cadastrada sem a barra no fim, caso do Mapa Estatístico
+- Duas barras de rolagem — a página de trás continuava rolando junto com o app aberto em tela cheia
+- "Voltar ao hub" não funcionava — o link estava sendo bloqueado silenciosamente em todo app aberto pelo portal
+- Login de todos podia ser bloqueado por um minuto — as tentativas erradas de uma pessoa contavam para a empresa inteira
+- Tela branca com texto técnico — aparecia ao usar o botão Voltar do navegador depois de entrar pela Microsoft
+- Acesso desativado dava erro de sistema — agora a pessoa lê que o acesso está desativado e a quem pedir
+### Alterado
+- Cadastro sem senha para quem usa a Microsoft — o e-mail passou a ser obrigatório, porque é ele que liga a pessoa à conta corporativa
+- Primeiro acesso exige cadastro prévio — sem cadastro, a pessoa recebe orientação para pedir acesso ao administrador
+- Lista de usuários mais enxuta — as colunas "Roles" e "O que isso dá de acesso" viraram uma só, com os nomes das roles no detalhe
+- Login local virou acesso administrativo — fica recolhido na tela de entrada, para emergência
+
+## [0.9.0] — 2026-08-20
+### Adicionado
+- Processos Abertos busca os relatórios sozinho — os arquivos do SLIN e do BY/JDA passam a ser lidos direto do FTP, no lugar do upload manual. Roda todo dia às 08:05, com uma segunda tentativa às 08:30 se o arquivo ainda não estiver lá
+### Corrigido
+- Selo de situação da carga — não aparecia na tela de Processos Abertos
+
+## [0.8.0] — 2026-08-19
+### Adicionado
+- Gerador de QR Code (Bipagem) — novo app que gera e imprime a etiqueta de QR Code usada na bipagem
+### Corrigido
+- Salvar a imagem do QR Code — não funcionava com o app aberto dentro do portal
+- Cabeçalho do Gerador de QR Code — estava fora do padrão das outras telas
+
+## [0.7.0] — 2026-08-11
+### Adicionado
+- Integração In/Out — novo painel com pedidos integrados x manuais por unidade, mês a mês
+
+## [0.6.2] — 2026-08-03
+### Corrigido
+- Processos Abertos contava só os processos do BY/JDA — os do SLIN ficavam de fora do painel
+- Unidade partida em dois nomes na origem — MAQ com Mairinque e BSB com TAC BSB passaram a somar num número só
+- App embutido mostrando versão antiga — continuava assim depois de uma atualização da plataforma
+
+## [0.6.1] — 2026-07-30
+### Corrigido
+- Menu lateral cortado — aparecia truncado em telas de pouca altura
+- Coluna de ações desalinhada — nas tabelas da Administração
+- Rótulo "POC v0.1" no rodapé — removido da tela de entrada
+
+## [0.6.0] — 2026-07-27
+### Adicionado
+- Projetos IA — nova tela com o radar dos projetos de IA da empresa: macrofases, cronograma e acompanhamento do rollout por filial
+- Cadastro de Filiais na Administração — as 59 filiais de produção, espelhando o cadastro do Conciliador de Estoque, com código, cidade, UF, região e responsável
+- Cadastro de Unidades de negócio — nova aba na Administração, para agrupar as filiais
+
 ## [0.5.0] — 2026-07-26
 ### Adicionado
 - Matriz de acesso na tela de Administração — apps nas linhas, ações nas colunas (Ver, Editar, Exportar, Administrar), com marcação por coluna e por seção

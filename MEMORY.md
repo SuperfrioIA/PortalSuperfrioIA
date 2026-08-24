@@ -316,6 +316,83 @@ no `main.py`, migration Alembic pro schema. Nasce dentro da plataforma — custo
 
 ---
 
+## Domínio + SSO + Administração — CONCLUÍDO (2026-08-21)
+
+Sessão que ligou o Hub no domínio definitivo e o login corporativo, e arrumou o que o
+uso real revelou. Quatro entregas, quatro PRs (#33 a #36).
+
+### Domínio e proxy
+
+- **`https://hub.superfrio.com.br` pelo ALB da Valcann** (regra no `SUPFRI-LB-PORTAL` +
+  DNS alias; nunca registro A pro IP da VM). O Caddy planejado no Degrau 1 não foi usado.
+- **`--proxy-headers --forwarded-allow-ips=*` no Dockerfile.** O `ProxyHeadersMiddleware`
+  do uvicorn já vinha ligado, mas só confiava em `127.0.0.1` — atrás do ALB o peer é o
+  balanceador, então todo `X-Forwarded-*` era descartado. Três efeitos que isso causava:
+  redirect do StaticFiles saindo como `http://` (barrado pelo CSP `frame-src` ao abrir app
+  embutido — foi o que derrubou o mapa-estatistico), IP do ALB no lugar do IP real em todo
+  log, e **rate limit de login coletivo**, porque a chave do limiter é o IP.
+- Contrapartida assumida: quem alcançar a porta do container direto pode forjar
+  `X-Forwarded-For`. Mitigação correta = restringir a 8001 ao security group do ALB (pedido
+  de infra, não feito ainda).
+
+### SSO Entra ID — ativo
+
+Runbook em `docs/ATIVACAO_SSO_ENTRA.md`. Decisões:
+
+- **cadastro prévio obrigatório** (`ENTRA_AUTO_PROVISION` desligado por padrão). O JIT
+  criava uma linha por curioso que clicasse no botão;
+- **cadastro só oferece acesso Microsoft** — sem senha local, e-mail obrigatório e único
+  (índice em `lower(email)`, migration 0005);
+- **login local sobrevive como emergência**, recolhido atrás de "Acesso administrativo".
+  Não apagar a conta admin local: é o caminho de volta se o SSO cair.
+
+Dois defeitos achados em produção no primeiro dia, os dois com teste de regressão:
+
+- **500 no callback** (`UniqueViolation` em `usuarios_username_key`): `por_email` filtrava
+  `ativo = 1`, então usuário desativado ficava invisível e o código tentava recriá-lo. O
+  bloqueio dependia da constraint do banco, não da nossa regra — com `username` diferente
+  o acesso voltaria sozinho;
+- **tela branca de JSON** ao apertar Voltar no navegador: o browser reexecutava
+  `/api/auth/callback` com `code` já usado e sem cookie de `state`, com a sessão intacta.
+  Recusa do callback virou redirect com `#sso_erro=<motivo>`.
+
+### Administração
+
+- filtros nas 6 abas (componente único, client-side, padrão "Ativos" com contagem
+  "N de M" visível pra cadastro desativado não parecer apagado);
+- colunas "Roles" + "O que isso dá de acesso" fundidas;
+- `usuarios.filial_id` (nullable, FK → `filiais`), lido pelo serviço do módulo dono;
+- **CSC (1011) entrou no seed de filiais**, de `docs/Empresas Grupo Superfrio 5.xlsx`. O
+  seed vinha do CSV do Conciliador, que só tem armazéns — os usuários do CSC não tinham
+  lotação possível.
+
+### Apps embutidos
+
+- Mapa IA e Governança no cabeçalho padrão (back-link + marca); X flutuante removido;
+- `body.overlay-aberto { overflow: hidden }` mata a segunda barra de rolagem;
+- **`allow-top-navigation-by-user-activation` no sandbox**: o padrão da casa
+  (`href="/" target="_top"`) era barrado pelo sandbox, então o "Voltar ao hub" não
+  funcionava em **nenhum** app aberto pelo portal — nem nos que já seguiam o padrão.
+
+### Pendências desta sessão (decisão da Maria)
+
+1. **4 filiais ativas do Excel ainda fora do catálogo**: 1034 CWBIV, 1035 CVDII, 8008
+   CSCII, 8009 RMSPV. Não entraram porque acrescentar filial também as faz aparecer na
+   tela de rollout do Projetos IA.
+2. **20 códigos com sigla divergente** entre `docs/Empresas Grupo Superfrio 5.xlsx`
+   (Protheus) e o nosso catálogo (CSV do Conciliador). Em 6 deles a sigla que o Excel dá
+   a um código é a que o nosso cadastro dá a **outro** — ex.: 1007 é JACI no Excel e JAC
+   aqui; 1008 é JAC no Excel e EJAC aqui; 4001 é MAQI lá e MAQ aqui. Mexer nisso afeta
+   leitura humana e o agrupamento por unidade do Processos Abertos: precisa de conferência
+   na fonte, não de `UPDATE`. Há também uma filial com código não numérico (`MAQ`).
+3. **Apps embutidos em modo janela ainda mostram dois cabeçalhos** (barra do overlay +
+   hero do app). Unificar exige dar header próprio ao `mapa-estatistico`, que hoje não tem.
+4. **CHANGELOG.md tem lacuna entre 0.5.0 (26/07) e 0.6.0 (21/08)** — FTP de Processos
+   Abertos, Projetos IA, abas Filiais/Unidades de negócio e matriz de permissões não
+   ganharam entrada. A tela Novidades reflete essa lacuna.
+
+---
+
 ## Documentos de apoio (em docs/, fora do git)
 
 - [AUDITORIA_SEGURANCA.md](docs/AUDITORIA_SEGURANCA.md) — auditoria completa (achados, correções, smoke test).
