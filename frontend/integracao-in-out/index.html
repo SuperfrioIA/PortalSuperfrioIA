@@ -114,6 +114,7 @@ table.heat tbody tr:hover td.hcell{outline:1.5px solid rgba(15,33,68,.18);outlin
 .heatscale{display:flex;align-items:center;gap:0;margin-top:12px;font-size:11px;color:var(--muted);font-weight:700}
 .heatscale .sw{width:26px;height:12px;display:inline-block}
 table.matrix .mdash{color:var(--muted);text-align:right;display:block}
+.snapshot-banner{background:#FFF6DE;color:#7A5B00;border-bottom:2px solid var(--brand-amarelo);padding:9px 32px;font-size:12.5px;font-weight:700;text-align:center}
 </style>
 </head>
 <body>
@@ -146,6 +147,7 @@ table.matrix .mdash{color:var(--muted);text-align:right;display:block}
   <div class="toolbar">
     <button class="btn hidden" id="btnUpload">⭱ Atualizar base</button>
     <input type="file" id="file" accept=".xlsx,.xls" class="hidden">
+    <button class="btn ghost" id="btnDownload">⬇ Baixar página</button>
     <span class="filepill" id="filepill">Carregando base…</span>
       <div class="chip-row hidden" id="yearchips" style="margin:0"></div>
     <div class="metricsel">
@@ -291,6 +293,6 @@ table.matrix .mdash{color:var(--muted);text-align:right;display:block}
   <div class="foot">Portal SuperFrio &amp; IceStar · Dados: base JDA In/Out · Métrica configurável (Pedidos / Linhas / Ondas)</div>
 </div>
 
-<script src="app.js?v=1"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
