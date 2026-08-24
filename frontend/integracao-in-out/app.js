@@ -98,7 +98,13 @@ const BASE_VAZIA={anos:{},atualizado_em:null,arquivo:null};
 let BASE=BASE_VAZIA;
 let anoAtivo=null;
 
+// Presente só no .html gerado por "Baixar página" (ver baixarPagina() mais
+// abaixo) — o script injetado na exportação define isso antes deste arquivo
+// rodar, pra ele nascer com os dados gravados em vez de ir buscar na API.
+const SNAPSHOT=window.__SNAPSHOT__||null;
+
 async function fetchBase(){
+  if(SNAPSHOT)return SNAPSHOT.base;
   try{
     const r=await fetch(API+'/base');
     if(!r.ok)throw new Error('status '+r.status);
@@ -386,6 +392,56 @@ document.getElementById('unitSel').onchange=e=>{state.unitEvo=e.target.value;uni
 chipGroup('#matrixdir',c=>{state.mdir=c.dataset.mdir;renderMatrix();});
 chipGroup('#matrixval',c=>{state.mval=c.dataset.mval;renderMatrix();});
 
+// ── baixar página (instantâneo autônomo) ────────────────────────────────────
+// Gera um .html que abre sozinho fora do Hub — mesmo CSS e mesmo app.js deste
+// arquivo, com as bibliotecas de gráfico embutidas inline (sem depender da
+// pasta vendor/) e os dados atuais (BASE) gravados no arquivo em vez de
+// buscados da API. xlsx.min.js fica de fora: o instantâneo é só leitura, não
+// tem upload. Sem biblioteca nova — o próprio navegador monta o arquivo.
+function baixarArquivo(blob,nome){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=nome;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+async function baixarPagina(){
+  const btn=document.getElementById('btnDownload');
+  const rotulo=btn.textContent;
+  btn.disabled=true;btn.textContent='Gerando…';
+  try{
+    // Lido do próprio <script> da página em vez de escrito à mão aqui: o
+    // ?v= deste arquivo muda toda vez que o app.js é editado (cache-bust), e
+    // um valor fixo neste texto ficaria desatualizado no primeiro bump.
+    const scriptSrc=document.querySelector('script[src^="app.js"]').getAttribute('src');
+    const [tpl,chartJs,dataLabelsJs,appJs]=await Promise.all([
+      fetch(location.pathname).then(r=>r.text()),
+      fetch('vendor/chart.umd.js').then(r=>r.text()),
+      fetch('vendor/chartjs-plugin-datalabels.min.js').then(r=>r.text()),
+      fetch(scriptSrc).then(r=>r.text()),
+    ]);
+    // BASE pode ter nome de unidade/cliente vindo de um Excel externo (JDA) —
+    // sem isso, um valor com "</script>" no meio escaparia da tag e injetaria
+    // HTML/JS arbitrário no arquivo baixado.
+    const safe=s=>s.replace(/<\/(script)/gi,'<\\/$1');
+    const snapshot=JSON.stringify({em:new Date().toISOString(),base:BASE});
+    const html=tpl
+      .replace('<script src="vendor/chart.umd.js"></script>','<script>'+safe(chartJs)+'</script>')
+      .replace('<script src="vendor/chartjs-plugin-datalabels.min.js"></script>','<script>'+safe(dataLabelsJs)+'</script>')
+      .replace('<script src="vendor/xlsx.min.js"></script>','')
+      .replace('<script src="'+scriptSrc+'"></script>','<script>window.__SNAPSHOT__='+safe(snapshot)+';</script>\n<script>'+safe(appJs)+'</script>');
+    const c=new Date();
+    const carimbo=c.toISOString().slice(0,16).replace('T','_').replace(/:/g,'');
+    baixarArquivo(new Blob([html],{type:'text/html;charset=utf-8'}),'integracao-in-out_'+carimbo+'.html');
+  }catch(err){
+    console.error(err);
+    alert('Não consegui gerar o arquivo: '+err.message);
+  }finally{
+    btn.disabled=false;btn.textContent=rotulo;
+  }
+}
+document.getElementById('btnDownload').onclick=baixarPagina;
+
 // ── upload do relatório ─────────────────────────────────────────────────────
 document.getElementById('btnUpload').onclick=()=>document.getElementById('file').click();
 document.getElementById('file').onchange=e=>{
@@ -422,10 +478,25 @@ document.getElementById('file').onchange=e=>{
   fr.readAsArrayBuffer(f);
 };
 
+function renderSnapshotBanner(){
+  const d=new Date(SNAPSHOT.em);
+  const quando=d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  document.body.insertAdjacentHTML('afterbegin','<div class="snapshot-banner">Instantâneo baixado em '+quando+' — arquivo estático, sem conexão com o servidor. Os dados não se atualizam sozinhos.</div>');
+}
+
 (async function init(){
-  const [base,podeEditar]=await Promise.all([fetchBase(),fetchPodeEditar()]);
+  // No instantâneo autônomo não existe backend pra perguntar permissão nem
+  // pra receber upload — os dois controles somem e a base já vem embutida.
+  const [base,podeEditar]=await Promise.all([fetchBase(),SNAPSHOT?Promise.resolve(false):fetchPodeEditar()]);
   BASE=base;
-  if(podeEditar)document.getElementById('btnUpload').classList.remove('hidden');
+  if(SNAPSHOT){
+    document.getElementById('btnUpload').remove();
+    document.getElementById('file').remove();
+    document.getElementById('btnDownload').remove();
+    renderSnapshotBanner();
+  }else if(podeEditar){
+    document.getElementById('btnUpload').classList.remove('hidden');
+  }
   const anos=anosDisponiveis();
   aplicarAno(anos[anos.length-1]||null);
   renderYearChips();
