@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0] — 2026-08-25
+### Adicionado
+- Menu lateral separando Indicadores de Sistemas — os painéis de acompanhamento (Processos Abertos e Integração In/Out) ganharam um grupo próprio, e as áreas do catálogo viraram subitens de Sistemas. Clicar num painel no menu já abre o painel
+- Governance TI e Mapa IA entraram no catálogo de apps — deixaram de ser botão fixo do menu e agora têm linha na matriz de acesso, como qualquer outro app. O card do Mapa IA passou a aparecer só para administradores (quem tiver o endereço direto continua abrindo, como nos outros apps embutidos)
+- Campo "O que este app é" no cadastro de app — escolhe se ele aparece em Indicadores ou em Sistemas, sem depender de alteração no sistema
+- Selo "Fora do Hub" nos cards — mostra de relance qual sistema abre em nova aba, com login próprio (o caso do Conciliador de Estoque), e qual roda aqui dentro
+### Alterado
+- Menu lateral mais enxuto — saíram "Todos os apps" e o rótulo "Seções"; clicar na marca no topo volta para a visão completa
+- "Sistemas" no menu virou "Linha do tempo" — o nome passou a ser do grupo novo; a tela continua a mesma
+- Novidades e Linha do tempo desceram para o bloco Governança, logo acima do idioma
+- Contagem de cada área conta só sistemas — os painéis agora são contados no grupo Indicadores
+
 ## [0.10.0] — 2026-08-21
 ### Adicionado
 - Entrar com Microsoft — login com a conta corporativa (Entra ID), sem senha nova para decorar. Em máquina corporativa já autenticada, entra sem pedir senha

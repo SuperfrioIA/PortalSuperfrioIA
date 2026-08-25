@@ -43,6 +43,12 @@ class App(Base):
     tipo_acesso: Mapped[str] = mapped_column(
         Text, nullable=False, default="url", server_default=sa_text("'url'")
     )
+    # O QUE o app é, não como ele abre (isso é `tipo_acesso`): 'indicador' são os
+    # painéis de acompanhamento, 'sistema' é aplicação/ferramenta. O menu do
+    # portal usa isso para separar os dois grupos.
+    tipo_conteudo: Mapped[str] = mapped_column(
+        Text, nullable=False, default="sistema", server_default=sa_text("'sistema'")
+    )
     badge: Mapped[str | None] = mapped_column(Text)
     ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=sa_text("0"))
     ativo: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=sa_text("1"))

@@ -57,7 +57,39 @@ USUARIOS = [
 ]
 
 
-def seed(session) -> None:
+# Apps que, ao serem criados, precisam nascer visíveis para TODAS as roles.
+#
+# Só entra aqui o app que já era visível a qualquer pessoa logada ANTES de existir
+# no catálogo — hoje, o Governance TI, que era um botão fixo da sidebar. Sem esse
+# grant, quem não é admin perderia o acesso por causa da reorganização do menu:
+# regressão silenciosa.
+#
+# LIMITE conhecido: o grant é por ROLE. Quem não é admin e está sem role (ou com
+# todas as roles inativas — `usuarios/service.py` filtra `Role.ativo == 1`)
+# continua sem ver o Governance TI. Essa pessoa já abria o hub praticamente vazio
+# antes; o que ela perde na virada são os dois botões fixos. Resolver de vez seria
+# dar `ver` fora da matriz, que é exatamente o problema que este lote desfez —
+# então a saída certa é cadastrar a role, não furar o modelo.
+#
+# O grant roda uma única vez, na criação do app. Se o administrador revogar depois
+# na matriz, o seed não devolve.
+_VER_PARA_TODAS_AS_ROLES = ("governanca-ti",)
+
+
+def _grant_ver_todas_as_roles(session, app_slug: str) -> None:
+    app_id = portal_service.app_ids_por_slug(session, [app_slug])[0]
+    for (role_id,) in session.execute(select(Role.id)).all():
+        vinculo = session.execute(
+            select(role_apps.c.role_id).where(
+                role_apps.c.role_id == role_id,
+                role_apps.c.app_id == app_id,
+            )
+        ).fetchone()
+        if vinculo is None:
+            session.execute(insert(role_apps).values(role_id=role_id, app_id=app_id))
+
+
+def seed(session, apps_criados: set[str] | None = None) -> None:
     for r in ROLES:
         role_id = session.execute(
             select(Role.id).where(Role.slug == r["slug"])
@@ -109,3 +141,7 @@ def seed(session) -> None:
                         usuario_id=user_id, role_id=role_id_map[role_slug]
                     )
                 )
+
+    for slug in _VER_PARA_TODAS_AS_ROLES:
+        if apps_criados and slug in apps_criados:
+            _grant_ver_todas_as_roles(session, slug)

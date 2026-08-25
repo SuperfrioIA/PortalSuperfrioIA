@@ -402,6 +402,81 @@ body {
 }
 .sidebar-link.active .count { background: rgba(30, 111, 217, 0.18); color: var(--brand-azul-principal); }
 
+/* ---- Grupos do menu (Indicadores / Sistemas) ---- */
+/* O cabeçalho é botão de duas funções: abre/fecha o grupo e escolhe o que a
+   grade mostra. O chevron gira em vez de trocar de ícone. */
+.nav-group-head .chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text3);
+  transition: transform 0.15s;
+  transform: rotate(90deg);
+}
+.nav-group.fechado .nav-group-head .chevron { transform: rotate(0deg); }
+/* Grupo que contém a seção ativa: some o cinza do rótulo sem roubar o destaque
+   de quem está realmente selecionado. */
+.nav-group.tem-ativo > .nav-group-head { color: var(--text); }
+
+/* O trilho vertical é o que amarra os sub-itens ao grupo — sem ele a indentação
+   sozinha lê como lista solta. */
+.nav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 2px 19px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.nav-group.fechado .nav-sub { display: none; }
+
+.sidebar-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-sub .icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--text3); }
+.sidebar-sub.active .icon { color: var(--brand-azul-principal); }
+.sidebar-sub .rotulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-sub:hover { background: var(--bg3); color: var(--text); }
+.sidebar-sub.active {
+  background: rgba(30, 111, 217, 0.10);
+  color: var(--brand-azul-principal);
+  box-shadow: inset 3px 0 0 var(--brand-amarelo);
+}
+.sidebar-sub .count {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text3);
+  background: var(--bg3);
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+.sidebar-sub.active .count { background: rgba(30, 111, 217, 0.18); color: var(--brand-azul-principal); }
+
+/* A marca virou o caminho de volta pra visão completa. */
+.sidebar-brand { cursor: pointer; }
+.sidebar-brand:focus-visible {
+  outline: 2px solid var(--brand-azul-conexao);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 .sidebar-foot {
   margin-top: auto;
   padding: 12px 8px 4px;
@@ -578,7 +653,41 @@ body {
 }
 .app-card-badge.new { color: var(--ok); background: var(--ok-bg); border-color: rgba(26, 140, 78, 0.25); }
 .app-card-badge.beta { color: var(--warn); background: var(--warn-bg); border-color: rgba(180, 83, 9, 0.25); }
-.app-card-badge.iframe { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
+.app-card-badge.externo { color: var(--text2); background: transparent; border-color: var(--border2); border-style: dashed; }
+
+/* NEW/BETA e a origem (No Hub / Fora do Hub) convivem: NEW é temporário, a
+   origem é permanente. Empilhadas à direita para não empurrar o título. */
+.app-card-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* Sistema de fora do Hub (deploy e login próprios — o Conciliador de Estoque é o
+   caso): borda tracejada + acento azul na lateral. Ele lê como "outro bicho" no
+   meio dos apps embutidos, sem bloco separado no fim da seção e sem mexer no
+   tamanho: a primeira versão ocupava duas colunas, mas boa parte do catálogo é
+   link externo — com vários cards largos a grade abre buraco e o destaque deixa
+   de destacar. Quem é o principal da seção continua sendo o campo `ordem`. */
+.app-card--externo {
+  border-style: dashed;
+  border-color: var(--border2);
+  background:
+    linear-gradient(90deg, rgba(63, 169, 245, 0.05), transparent 40%),
+    var(--surface);
+}
+.app-card--externo::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand-azul-conexao);
+}
+.app-card--externo:hover { border-style: solid; }
 
 .app-card-title {
   font-size: 14px;
@@ -704,6 +813,9 @@ body.overlay-aberto { overflow: hidden; }
   .sidebar { position: static; height: auto; flex-direction: row; align-items: center; padding: 12px 16px; flex-wrap: wrap; }
   .sidebar-brand { border-bottom: none; padding: 0; margin: 0 12px 0 0; }
   .sidebar-section-label { display: none; }
+  /* Faixa horizontal: cada grupo ocupa a largura toda, senão o trilho e os
+     sub-itens ficam esmagados entre os atalhos. */
+  .nav-group { flex: 1 0 100%; }
   .sidebar-foot { margin: 0 0 0 auto; padding: 0; border: none; }
   .main { padding: 22px 18px 36px; }
   .login-shell { grid-template-columns: 1fr; }
@@ -721,6 +833,8 @@ body.overlay-aberto { overflow: hidden; }
   .sidebar-brand img { max-width: 150px; }
   .sidebar-section-label { margin: 12px 10px 5px; }
   .sidebar-link { padding: 7px 10px; }
+  .sidebar-sub { padding: 5px 9px; }
+  .nav-sub { margin-top: 1px; margin-bottom: 1px; }
   .sidebar-foot { padding: 10px 8px 2px; }
   .sidebar-foot .avatar { width: 30px; height: 30px; font-size: 12px; }
 }
@@ -1249,6 +1363,8 @@ body.overlay-aberto { overflow: hidden; }
 .pill.admin { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
 .pill.iframe { color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border-color: rgba(30, 111, 217, 0.22); }
 .pill.url { color: var(--text2); background: var(--bg3); border-color: var(--border); }
+.pill.indicador { color: #7A4E00; background: rgba(255, 196, 0, 0.18); border-color: rgba(255, 196, 0, 0.55); }
+.pill.sistema { color: var(--brand-azul-institucional); background: rgba(11, 61, 145, 0.07); border-color: rgba(11, 61, 145, 0.20); }
 /* Contagem de roles na coluna Acesso — o nome de cada role vive no title. */
 .pill.role { color: var(--brand-azul-institucional); background: rgba(11, 61, 145, 0.07); border-color: rgba(11, 61, 145, 0.20); }
 /* Permissão de ação: amarelo da marca (ênfase) — distingue da pílula azul de app. */

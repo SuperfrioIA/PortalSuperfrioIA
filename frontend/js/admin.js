@@ -305,12 +305,12 @@
       entity: "apps",
       emptyMsg: t("admin.empty.apps"),
       rows: ADM.apps,
-      texto: (a) => `${a.nome} ${a.slug} ${a.secao_nome} ${a.url || ""} ${a.tipo_acesso}`,
+      texto: (a) => `${a.nome} ${a.slug} ${a.secao_nome} ${a.url || ""} ${a.tipo_acesso} ${a.tipo_conteudo}`,
       headers: [
         `<th style="width:42px"></th>`,
-        th("admin.col.app"), th("admin.col.secao"), th("admin.col.tipo"),
-        th("admin.col.badge"), th("admin.col.ordem"), th("admin.col.status"),
-        thRight("admin.col.acoes"),
+        th("admin.col.app"), th("admin.col.secao"), th("admin.col.conteudo"),
+        th("admin.col.tipo"), th("admin.col.badge"), th("admin.col.ordem"),
+        th("admin.col.status"), thRight("admin.col.acoes"),
       ],
       rowHtml: (a) => `<tr>
         <td><span class="app-card-icon" style="width:30px;height:30px">${iconSvg(a.icone || "default")}</span></td>
@@ -319,6 +319,7 @@
           <div class="col-slug">${escapeHtml(a.slug)}</div>
         </td>
         <td>${escapeHtml(a.secao_nome)}</td>
+        <td><span class="pill ${escapeHtml(a.tipo_conteudo)}">${escapeHtml(t(`admin.conteudo.${a.tipo_conteudo}`))}</span></td>
         <td><span class="pill ${a.tipo_acesso}">${escapeHtml(a.tipo_acesso)}</span></td>
         <td>${a.badge ? `<span class="pill ${a.badge.toLowerCase()}">${escapeHtml(a.badge)}</span>` : `<span class="col-meta">${escapeHtml(t("admin.dash"))}</span>`}</td>
         <td>${a.ordem}</td>
@@ -863,6 +864,14 @@
         <label>${escapeHtml(t("admin.f.url"))}</label>
         <input name="url" required value="${attr(r && r.url)}" placeholder="https://...">
       </div>
+      <div class="form-field">
+        <label>${escapeHtml(t("admin.f.tipoConteudo"))}</label>
+        <select name="tipo_conteudo">
+          <option value="sistema" ${(!r || r.tipo_conteudo !== "indicador") ? "selected" : ""}>${escapeHtml(t("admin.f.conteudoSistema"))}</option>
+          <option value="indicador" ${r && r.tipo_conteudo === "indicador" ? "selected" : ""}>${escapeHtml(t("admin.f.conteudoIndicador"))}</option>
+        </select>
+        <div class="field-hint">${escapeHtml(t("admin.f.conteudoHint"))}</div>
+      </div>
       <div class="row-2">
         <div class="form-field">
           <label>${escapeHtml(t("admin.f.tipoAcesso"))}</label>
@@ -1149,7 +1158,10 @@
   }
 
   function iconOptions(current) {
-    const opts = ["", "warehouse", "briefcase", "book", "scale", "chat", "cart", "document", "truck"];
+    const opts = [
+      "", "warehouse", "briefcase", "book", "scale", "chat", "cart", "document",
+      "truck", "radar", "chip", "network", "presentation", "chart",
+    ];
     return opts
       .map((o) => `<option value="${o}" ${o === (current || "") ? "selected" : ""}>${o || t("admin.f.none")}</option>`)
       .join("");
@@ -1214,6 +1226,7 @@
       out.secao_id = parseInt(fd.get("secao_id"), 10);
       out.url = (fd.get("url") || "").trim();
       out.tipo_acesso = fd.get("tipo_acesso") || "url";
+      out.tipo_conteudo = fd.get("tipo_conteudo") || "sistema";
       out.badge = (fd.get("badge") || "").trim() || null;
       out.ordem = parseInt(fd.get("ordem") || "0", 10) || 0;
     } else if (entity === "roles") {

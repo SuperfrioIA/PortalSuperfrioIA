@@ -64,7 +64,7 @@ def test_init_db_idempotente_e_schema_completo():
     apps = {c["name"] for c in insp.get_columns("apps")}
     assert "token_version" in usuarios
     assert {"nome_es", "descricao_es"} <= secoes
-    assert {"nome_es", "descricao_es"} <= apps
+    assert {"nome_es", "descricao_es", "tipo_conteudo"} <= apps
 
 
 # Schema como o init_db ANTIGO (pré-Alembic) deixava: CREATE TABLE originais

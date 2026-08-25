@@ -31,6 +31,18 @@ SECOES = [
         "icone": "radar",
         "ordem": 3,
     },
+    {
+        "slug": "tecnologia",
+        "nome": "Tecnologia",
+        "nome_es": "Tecnología",
+        "descricao": "Documentos e mapas da área de tecnologia.",
+        "descricao_es": "Documentos y mapas del área de tecnología.",
+        "icone": "chip",
+        # 90, não 4: produção tem seção criada à mão (QHSE) cuja `ordem` este
+        # repositório não conhece. Um número alto evita empate — e Tecnologia
+        # como última do menu é ordem razoável. Reordenar é edição de cadastro.
+        "ordem": 90,
+    },
 ]
 
 APPS = [
@@ -88,6 +100,7 @@ APPS = [
         "icone": "document",
         "url": "/processos-abertos/",
         "tipo_acesso": "iframe",
+        "tipo_conteudo": "indicador",
         "badge": None,
         "ordem": 4,
     },
@@ -103,6 +116,7 @@ APPS = [
         "icone": "truck",
         "url": "/integracao-in-out/",
         "tipo_acesso": "iframe",
+        "tipo_conteudo": "indicador",
         "badge": "NEW",
         "ordem": 5,
     },
@@ -194,10 +208,57 @@ APPS = [
         "badge": None,
         "ordem": 1,
     },
+    # Tecnologia
+    {
+        # Existiam como botão fixo na sidebar, fora do catálogo — ou seja, sem
+        # linha na matriz de acesso e sem jeito de controlar quem vê. Viraram app
+        # (Receita 1, `frontend/governanca/` e `frontend/mapa-ia/`) justamente
+        # para a visibilidade passar a ser dado, não código.
+        #
+        # Governance TI era visível a qualquer pessoa logada: o grant de `ver`
+        # para todas as roles existentes é feito UMA VEZ, na criação do app, em
+        # `backend/usuarios/seed.py` — senão quem não é admin perderia o acesso
+        # na virada.
+        "secao": "tecnologia",
+        "slug": "governanca-ti",
+        "nome": "Governance TI",
+        "nome_es": "Governance TI",
+        "descricao": "Apresentação da governança de TI: estrutura, papéis e diretrizes.",
+        "descricao_es": "Presentación de la gobernanza de TI: estructura, roles y directrices.",
+        "icone": "presentation",
+        "url": "/governanca/",
+        "tipo_acesso": "iframe",
+        "badge": None,
+        "ordem": 1,
+    },
+    {
+        # Sem grant nenhum de propósito: só admin enxerga (admin passa por cima
+        # da matriz). Atenção: isso esconde o CARD, não fecha a URL — apps
+        # estáticos são servidos sem login (ver docs/PERMISSIONAMENTO_HOJE.md).
+        "secao": "tecnologia",
+        "slug": "mapa-ia",
+        "nome": "Mapa IA",
+        "nome_es": "Mapa IA",
+        "descricao": "Mapa do ecossistema de IA: sistemas, integrações e iniciativas.",
+        "descricao_es": "Mapa del ecosistema de IA: sistemas, integraciones e iniciativas.",
+        "icone": "network",
+        "url": "/mapa-ia/",
+        "tipo_acesso": "iframe",
+        "badge": None,
+        "ordem": 2,
+    },
 ]
 
 
-def seed(session) -> None:
+def seed(session) -> set[str]:
+    """Semeia seções e apps. Devolve os slugs de app CRIADOS nesta execução.
+
+    Quem precisa reagir à criação de um app (o grant inicial de `ver`, em
+    `backend/usuarios/seed.py`) usa esse retorno para agir só na virada — nunca
+    a cada boot, senão o seed desfaria uma revogação feita pelo administrador.
+    """
+    criados: set[str] = set()
+
     for s in SECOES:
         existe = session.execute(
             select(Secao.id).where(Secao.slug == s["slug"])
@@ -232,12 +293,18 @@ def seed(session) -> None:
                     descricao=a["descricao"], descricao_es=a["descricao_es"],
                     icone=a["icone"], secao_id=secao_id[a["secao"]],
                     url=a["url"], tipo_acesso=a["tipo_acesso"],
+                    # Só os indicadores declaram: 'sistema' é o caso comum e o
+                    # default da coluna (migration 0006).
+                    tipo_conteudo=a.get("tipo_conteudo", "sistema"),
                     badge=a["badge"], ordem=a["ordem"],
                 )
             )
+            criados.add(a["slug"])
         # Backfill ES em bancos já seedados (não sobrescreve edição do admin)
         session.execute(
             update(App)
             .where(App.slug == a["slug"], App.nome_es.is_(None))
             .values(nome_es=a["nome_es"], descricao_es=a["descricao_es"])
         )
+
+    return criados

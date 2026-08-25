@@ -213,7 +213,9 @@ def test_listar_roles_traz_counts(client, admin_headers):
     assert r.status_code == 200
     armazem_full = next(x for x in r.json() if x["slug"] == "armazem-full")
     assert armazem_full["usuarios_count"] == 1  # operador.armazem
-    assert len(armazem_full["apps"]) == 3
+    # 3 apps da role + governanca-ti, que nasceu liberado para todas as roles
+    # (era botão fixo da sidebar antes de virar app — ver backend/usuarios/seed.py)
+    assert len(armazem_full["apps"]) == 4
 
 
 # ============ Usuários ============
