@@ -53,9 +53,33 @@ def sistemas(user: dict = Depends(get_current_user)):
 
 # ============ Home ============
 
+def _app_publico(a: dict) -> dict:
+    """Só o que a home precisa — nada de id, ativo ou datas."""
+    return {
+        "slug": a["slug"],
+        "nome": a["nome"],
+        "nome_es": a["nome_es"],
+        "descricao": a["descricao"],
+        "descricao_es": a["descricao_es"],
+        "icone": a["icone"],
+        "url": a["url"],
+        "tipo_acesso": a["tipo_acesso"],
+        "badge": a["badge"],
+    }
+
+
 @router.get("/home")
 def home(user: dict = Depends(get_current_user)):
-    """Estrutura pronta pro frontend: lista de seções com seus apps."""
+    """Estrutura pronta pro frontend, já separada nos dois grupos do menu.
+
+    `indicadores` é lista chata (os painéis de acompanhamento não são agrupados
+    por seção — são poucos e o menu os mostra direto); `secoes` traz apenas os
+    apps de sistema, então a contagem de cada seção é a de sistemas, não a de
+    tudo. Quem decide a classificação é `apps.tipo_conteudo`, no cadastro.
+
+    A divisão vive aqui e não no frontend de propósito: é a mesma regra para a
+    home, para o menu e para qualquer consumidor futuro da API.
+    """
     with db() as session:
         if user.get("is_admin"):
             apps = service.apps_ativos_com_secao(session)
@@ -63,8 +87,12 @@ def home(user: dict = Depends(get_current_user)):
             permitidos = usuarios_service.app_ids_permitidos(session, user["id"])
             apps = service.apps_ativos_com_secao(session, app_ids=permitidos)
 
+    indicadores: list[dict] = []
     secoes: dict[str, dict] = {}
     for a in apps:
+        if a["tipo_conteudo"] == "indicador":
+            indicadores.append(a)
+            continue
         slug = a["secao_slug"]
         if slug not in secoes:
             secoes[slug] = {
@@ -75,17 +103,11 @@ def home(user: dict = Depends(get_current_user)):
                 "ordem": a["secao_ordem"],
                 "apps": [],
             }
-        secoes[slug]["apps"].append({
-            "slug": a["slug"],
-            "nome": a["nome"],
-            "nome_es": a["nome_es"],
-            "descricao": a["descricao"],
-            "descricao_es": a["descricao_es"],
-            "icone": a["icone"],
-            "url": a["url"],
-            "tipo_acesso": a["tipo_acesso"],
-            "badge": a["badge"],
-        })
+        secoes[slug]["apps"].append(_app_publico(a))
+
+    # `apps` vem ordenado por seção; a lista chata de indicadores precisa da
+    # própria ordem, senão o menu ficaria agrupado por seção sem dizer isso.
+    indicadores.sort(key=lambda a: (a["ordem"], a["nome"]))
 
     return {
         "user": {
@@ -93,6 +115,7 @@ def home(user: dict = Depends(get_current_user)):
             "nome": user["nome"],
             "is_admin": bool(user["is_admin"]),
         },
+        "indicadores": [_app_publico(a) for a in indicadores],
         "secoes": sorted(secoes.values(), key=lambda s: s["ordem"]),
     }
 
@@ -177,6 +200,7 @@ class AppCreate(BaseModel):
     descricao_es: Optional[str] = None
     icone: Optional[str] = None
     tipo_acesso: str = "url"
+    tipo_conteudo: str = "sistema"
     badge: Optional[str] = None
     ordem: int = 0
 
@@ -190,6 +214,7 @@ class AppUpdate(BaseModel):
     secao_id: Optional[int] = None
     url: Optional[str] = None
     tipo_acesso: Optional[str] = None
+    tipo_conteudo: Optional[str] = None
     badge: Optional[str] = None
     ordem: Optional[int] = None
 
@@ -199,6 +224,13 @@ def _check_tipo_acesso(tipo: Optional[str]) -> None:
     # iframe nem nova aba — o front reconhece esse tipo em `openApp()`.
     if tipo is not None and tipo not in ("url", "iframe", "interno"):
         raise HTTPException(400, "tipo_acesso deve ser 'url', 'iframe' ou 'interno'")
+
+
+def _check_tipo_conteudo(tipo: Optional[str]) -> None:
+    # O QUE o app é, não como abre. Separa os dois grupos do menu do portal:
+    # 'indicador' = painel de acompanhamento, 'sistema' = aplicação/ferramenta.
+    if tipo is not None and tipo not in ("indicador", "sistema"):
+        raise HTTPException(400, "tipo_conteudo deve ser 'indicador' ou 'sistema'")
 
 
 def _check_url(url: Optional[str]) -> None:
@@ -266,6 +298,7 @@ def listar_apps(_: dict = Depends(require_admin)):
 def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
     ensure_slug(body.slug)
     _check_tipo_acesso(body.tipo_acesso)
+    _check_tipo_conteudo(body.tipo_conteudo)
     _check_url(body.url)
     url = _normalizar_url_interna(body.url, body.tipo_acesso)
     with db() as session:
@@ -276,7 +309,8 @@ def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
                     slug=body.slug, nome=body.nome, nome_es=body.nome_es,
                     descricao=body.descricao, descricao_es=body.descricao_es,
                     icone=body.icone, secao_id=body.secao_id, url=url,
-                    tipo_acesso=body.tipo_acesso, badge=body.badge, ordem=body.ordem,
+                    tipo_acesso=body.tipo_acesso, tipo_conteudo=body.tipo_conteudo,
+                    badge=body.badge, ordem=body.ordem,
                 )
             )
         return _select_app(session, cur.inserted_primary_key[0])
@@ -285,6 +319,7 @@ def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
 @router_admin.patch("/apps/{app_id}")
 def atualizar_app(app_id: int, body: AppUpdate, _: dict = Depends(require_admin)):
     _check_tipo_acesso(body.tipo_acesso)
+    _check_tipo_conteudo(body.tipo_conteudo)
     _check_url(body.url)
     with db() as session:
         atual = row_or_404(session, App, app_id, "apps")

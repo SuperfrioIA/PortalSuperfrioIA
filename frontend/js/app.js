@@ -3,11 +3,22 @@
 const API = ""; // mesmo host (FastAPI serve os estáticos)
 const TOKEN_KEY = "sf_portal_token";
 
+// `vista` é o que a home está mostrando. Três formas:
+//   "__all__"          → indicadores + todos os sistemas (estado inicial)
+//   "__indicadores__"  → só o bloco de indicadores
+//   "__sistemas__"     → só os sistemas, todas as seções
+//   "<slug da seção>"  → só aquela seção de sistemas
+const VISTA_TUDO = "__all__";
+const VISTA_INDICADORES = "__indicadores__";
+const VISTA_SISTEMAS = "__sistemas__";
+const GRUPOS_KEY = "sf_nav_grupos";
+
 const state = {
   token: localStorage.getItem(TOKEN_KEY) || null,
   user: null,
-  secoes: [],         // [{slug, nome, icone, ordem, apps:[...]}]
-  currentSecao: "__all__",
+  indicadores: [],    // [{slug, nome, url, tipo_acesso, ...}] — lista chata
+  secoes: [],         // [{slug, nome, icone, ordem, apps:[...]}] — só sistemas
+  vista: VISTA_TUDO,
   query: "",
 };
 
@@ -55,6 +66,10 @@ const ICONS = {
   document: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
   truck: '<rect x="1" y="6" width="13" height="10" rx="1"/><path d="M14 9h4l3 3v4h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
   radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/><path d="M12 3v2"/><path d="M21 12h-2"/>',
+  chip: '<rect x="7" y="7" width="10" height="10" rx="1"/><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 10h1"/><path d="M3 14h1"/><path d="M20 10h1"/><path d="M20 14h1"/><path d="M10 3v1"/><path d="M14 3v1"/><path d="M10 20v1"/><path d="M14 20v1"/>',
+  network: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+  presentation: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  chart: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/>',
   default: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/><path d="M9 21V9"/>',
 };
 function iconSvg(key) {
@@ -96,8 +111,9 @@ async function fetchHome() {
 function logout(reason) {
   state.token = null;
   state.user = null;
+  state.indicadores = [];
   state.secoes = [];
-  state.currentSecao = "__all__";
+  state.vista = VISTA_TUDO;
   state.query = "";
   localStorage.removeItem(TOKEN_KEY);
   showLogin();
@@ -187,77 +203,182 @@ function renderHeader() {
   });
 }
 
+/* ---------- Menu: grupos ---------- */
+/* Estado aberto/fechado por navegador. Os dois grupos começam ABERTOS: o menu é
+   a porta de entrada do hub e, fechado na primeira visita, a pessoa não vê que
+   existe algo dentro. localStorage pode estourar em janela privada — por isso o
+   try/catch em vez de confiar que sempre dá. */
+let grupos = null; // fonte da verdade em memória; localStorage é só persistência
+
+function gruposAbertos() {
+  if (grupos) return grupos;
+  let raw = {};
+  try {
+    raw = JSON.parse(localStorage.getItem(GRUPOS_KEY) || "{}");
+  } catch (_e) {
+    /* localStorage bloqueado: cai no default e o estado vale só nesta sessão */
+  }
+  grupos = { indicadores: raw.indicadores !== false, sistemas: raw.sistemas !== false };
+  return grupos;
+}
+
+function nomeDoGrupo(head) {
+  return head.dataset.vista === VISTA_INDICADORES ? "indicadores" : "sistemas";
+}
+
+function setGrupo(head, aberto) {
+  head.setAttribute("aria-expanded", aberto ? "true" : "false");
+  head.closest(".nav-group").classList.toggle("fechado", !aberto);
+  const atual = gruposAbertos();
+  atual[nomeDoGrupo(head)] = aberto;
+  try {
+    localStorage.setItem(GRUPOS_KEY, JSON.stringify(atual));
+  } catch (_e) {
+    /* sem persistência: `grupos` em memória segura o estado até o refresh */
+  }
+}
+
+function abrirGrupo(vistaDoGrupo) {
+  const head = document.querySelector(`.nav-group-head[data-vista="${vistaDoGrupo}"]`);
+  if (head && head.getAttribute("aria-expanded") !== "true") setGrupo(head, true);
+}
+
+/* Troca o que a home mostra. Sempre abre o grupo da vista escolhida: clicar em
+   "Armazém" com o grupo Sistemas fechado deixaria o item ativo invisível. */
+function irPara(vista) {
+  state.vista = vista;
+  if (vista === VISTA_INDICADORES) abrirGrupo(VISTA_INDICADORES);
+  else if (vista !== VISTA_TUDO) abrirGrupo(VISTA_SISTEMAS);
+  renderActiveVista();
+  renderContent();
+}
+
 function renderSidebar() {
-  const cont = document.getElementById("sidebar-secoes");
-  cont.innerHTML = "";
+  /* INDICADORES — os sub-itens são APPS e abrem o painel direto, sem passar pela
+     grade. Não levam contagem: item de app, não de agrupamento. */
+  const subInd = document.getElementById("nav-sub-indicadores");
+  subInd.innerHTML = "";
+  state.indicadores.forEach((app) => {
+    const btn = document.createElement("button");
+    btn.className = "sidebar-sub";
+    btn.dataset.app = app.slug;
+    btn.innerHTML = `<span class="rotulo">${escapeHtml(pick(app, "nome"))}</span>`;
+    btn.addEventListener("click", () => openApp(app));
+    subInd.appendChild(btn);
+  });
+  document.getElementById("count-indicadores").textContent = state.indicadores.length;
+
+  /* SISTEMAS — os sub-itens são SEÇÕES e filtram a grade. A contagem é a de apps
+     de sistema da seção: os indicadores saíram daqui e foram pro outro grupo. */
+  const subSis = document.getElementById("nav-sub-sistemas");
+  subSis.innerHTML = "";
   state.secoes.forEach((s) => {
     const btn = document.createElement("button");
-    btn.className = "sidebar-link";
-    btn.dataset.secao = s.slug;
+    btn.className = "sidebar-sub";
+    btn.dataset.vista = s.slug;
     btn.innerHTML = `
-      ${iconSvg(s.icone || "default").replace('<svg ', '<svg class="icon" ')}
-      ${escapeHtml(pick(s, "nome"))}
+      ${iconSvg(s.icone || "default").replace("<svg ", '<svg class="icon" ')}
+      <span class="rotulo">${escapeHtml(pick(s, "nome"))}</span>
       <span class="count">${s.apps.length}</span>
     `;
-    btn.addEventListener("click", () => {
-      state.currentSecao = s.slug;
-      renderActiveSecao();
-      renderContent();
-    });
-    cont.appendChild(btn);
+    btn.addEventListener("click", () => irPara(s.slug));
+    subSis.appendChild(btn);
   });
+  const totalSistemas = state.secoes.reduce((acc, s) => acc + s.apps.length, 0);
+  document.getElementById("count-sistemas").textContent = totalSistemas;
 
-  const total = state.secoes.reduce((acc, s) => acc + s.apps.length, 0);
-  document.getElementById("count-all").textContent = total;
+  const abertos = gruposAbertos();
+  document.querySelectorAll(".nav-group-head").forEach((head) => {
+    const aberto = abertos[nomeDoGrupo(head)];
+    head.setAttribute("aria-expanded", aberto ? "true" : "false");
+    const grupo = head.closest(".nav-group");
+    grupo.classList.toggle("fechado", !aberto);
+
+    // Grupo sem nada liberado sai do menu: item que abre "nenhum app encontrado"
+    // é pior do que item ausente. Se a vista estava nele, volta pra visão cheia.
+    const vazio = head.dataset.vista === VISTA_INDICADORES
+      ? state.indicadores.length === 0
+      : state.secoes.length === 0;
+    grupo.classList.toggle("hidden", vazio);
+    if (vazio && state.vista === head.dataset.vista) state.vista = VISTA_TUDO;
+  });
 }
 
-function renderActiveSecao() {
-  document.querySelectorAll(".sidebar-link").forEach((el) => {
-    el.classList.toggle("active", el.dataset.secao === state.currentSecao);
+function renderActiveVista() {
+  document.querySelectorAll("[data-vista]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.vista === state.vista);
+  });
+  // Seção ativa dentro de Sistemas: o grupo fica marcado mesmo sem ser o ativo,
+  // senão o menu não mostra de onde veio o que está na tela.
+  const emSecao = state.secoes.some((s) => s.slug === state.vista);
+  document.querySelectorAll(".nav-group").forEach((g) => {
+    const head = g.querySelector(".nav-group-head");
+    g.classList.toggle("tem-ativo", !!head && head.dataset.vista === VISTA_SISTEMAS && emSecao);
   });
 }
 
-function filteredSecoes() {
+/* ---------- Grade ---------- */
+function appsFiltrados(apps) {
   const q = state.query.trim().toLowerCase();
+  if (!q) return apps;
+  return apps.filter(
+    (a) =>
+      (a.nome || "").toLowerCase().includes(q) ||
+      (a.descricao || "").toLowerCase().includes(q)
+  );
+}
+
+function secoesVisiveis() {
+  if (state.vista === VISTA_INDICADORES) return [];
   let secoes = state.secoes;
-  if (state.currentSecao !== "__all__") {
-    secoes = secoes.filter((s) => s.slug === state.currentSecao);
+  if (state.vista !== VISTA_TUDO && state.vista !== VISTA_SISTEMAS) {
+    secoes = secoes.filter((s) => s.slug === state.vista);
   }
-  if (!q) return secoes;
   return secoes
-    .map((s) => ({
-      ...s,
-      apps: s.apps.filter(
-        (a) =>
-          (a.nome || "").toLowerCase().includes(q) ||
-          (a.descricao || "").toLowerCase().includes(q)
-      ),
-    }))
+    .map((s) => ({ ...s, apps: appsFiltrados(s.apps) }))
     .filter((s) => s.apps.length > 0);
 }
 
-function badgeHtml(app) {
+/* App "fora do Hub": sistema com deploy, banco e login próprios — o Conciliador
+   de Estoque é o caso. Abre em nova aba e NÃO compartilha a sessão do portal, ao
+   contrário do que roda embutido aqui (QHSE, Projetos IA e os painéis).
+   Quem diz isso é o `tipo_acesso`: 'iframe' e 'interno' rodam no Hub, 'url' fora. */
+function ehExterno(app) {
+  return app.tipo_acesso === "url";
+}
+
+/* Só o app de fora do Hub leva selo de origem: a maioria roda aqui dentro, e um
+   "No Hub" em quase todo card viraria ruído — o que precisa saltar é a exceção.
+   Para quem roda no Hub, o pé do card já diz "Abrir aqui". */
+function badgesHtml(app) {
+  const origem = ehExterno(app)
+    ? `<span class="app-card-badge externo">${escapeHtml(t("badge.externo"))}</span>`
+    : "";
+  let extra = "";
   if (app.badge) {
-    const cls = app.badge.toLowerCase() === "new" ? "new" : app.badge.toLowerCase() === "beta" ? "beta" : "";
-    return `<span class="app-card-badge ${cls}">${escapeHtml(app.badge)}</span>`;
+    const b = app.badge.toLowerCase();
+    const cls = b === "new" ? "new" : b === "beta" ? "beta" : "";
+    extra = `<span class="app-card-badge ${cls}">${escapeHtml(app.badge)}</span>`;
   }
-  if (app.tipo_acesso === "iframe") {
-    return `<span class="app-card-badge iframe">${escapeHtml(t("badge.embed"))}</span>`;
-  }
-  return "";
+  return `<div class="app-card-badges">${extra}${origem}</div>`;
 }
 
 function cardHtml(app) {
-  const arrow = app.tipo_acesso === "iframe" || app.tipo_acesso === "interno"
-    ? `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`
-    : `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>`;
-  const acessoLabel = app.tipo_acesso === "iframe" || app.tipo_acesso === "interno" ? t("card.open.iframe") : t("card.open.url");
+  const externo = ehExterno(app);
+  const arrow = externo
+    ? `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>`
+    : `<svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  const acessoLabel = externo ? t("card.open.externo") : t("card.open.iframe");
 
+  // O card externo se distingue por borda tracejada + acento na lateral (ver
+  // `.app-card--externo` no CSS), sem mudar de tamanho e sem bloco separado no
+  // fim da seção — que enterraria justamente o sistema mais pesado. Quem abre a
+  // seção continua sendo decidido pelo campo `ordem` do cadastro.
   return `
-    <a class="app-card" data-slug="${escapeHtml(app.slug)}" href="${escapeHtml(app.url)}">
+    <a class="app-card${externo ? " app-card--externo" : ""}" data-slug="${escapeHtml(app.slug)}" href="${escapeHtml(app.url)}">
       <div class="app-card-top">
         <div class="app-card-icon">${iconSvg(app.icone || "default")}</div>
-        ${badgeHtml(app)}
+        ${badgesHtml(app)}
       </div>
       <h3 class="app-card-title">${escapeHtml(pick(app, "nome"))}</h3>
       <p class="app-card-desc">${escapeHtml(pick(app, "descricao"))}</p>
@@ -269,11 +390,29 @@ function cardHtml(app) {
   `;
 }
 
+function blocoHtml(titulo, apps) {
+  return `
+    <section class="section-block">
+      <div class="section-block-head">
+        <h2>${escapeHtml(titulo)}</h2>
+        <span class="count-chip">${apps.length} app${apps.length === 1 ? "" : "s"}</span>
+        <span class="rule"></span>
+      </div>
+      <div class="app-grid">
+        ${apps.map(cardHtml).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderContent() {
   const cont = document.getElementById("content");
-  const secoes = filteredSecoes();
+  const mostraIndicadores =
+    state.vista === VISTA_TUDO || state.vista === VISTA_INDICADORES;
+  const indicadores = mostraIndicadores ? appsFiltrados(state.indicadores) : [];
+  const secoes = secoesVisiveis();
 
-  if (secoes.length === 0) {
+  if (!indicadores.length && !secoes.length) {
     cont.innerHTML = `
       <div class="empty-state">
         <h3>${escapeHtml(t("empty.title"))}</h3>
@@ -284,19 +423,9 @@ function renderContent() {
   }
 
   let html = "";
+  if (indicadores.length) html += blocoHtml(t("portal.nav.indicadores"), indicadores);
   secoes.forEach((s) => {
-    html += `
-      <section class="section-block">
-        <div class="section-block-head">
-          <h2>${escapeHtml(pick(s, "nome"))}</h2>
-          <span class="count-chip">${s.apps.length} app${s.apps.length === 1 ? "" : "s"}</span>
-          <span class="rule"></span>
-        </div>
-        <div class="app-grid">
-          ${s.apps.map(cardHtml).join("")}
-        </div>
-      </section>
-    `;
+    html += blocoHtml(pick(s, "nome"), s.apps);
   });
   cont.innerHTML = html;
 
@@ -312,6 +441,8 @@ function renderContent() {
 }
 
 function findAppBySlug(slug) {
+  const indicador = state.indicadores.find((x) => x.slug === slug);
+  if (indicador) return indicador;
   for (const s of state.secoes) {
     const a = s.apps.find((x) => x.slug === slug);
     if (a) return a;
@@ -371,26 +502,10 @@ function closeIframe() {
   document.body.classList.remove("overlay-aberto");
 }
 
-/* Abre a apresentação "Governance TI" (estática em /governanca/) embutida no portal,
-   em tela cheia. Conteúdo próprio e confiável (same-origin): sandbox igual ao de
-   openApp desde 2026-07-07 (ambos com allow-same-origin agora — ver comentário lá). */
-function openGovernanca() {
-  const iframe = document.getElementById("iframe-content");
-  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
-  iframe.src = "/governanca/";
-  document.getElementById("iframe-overlay").classList.add("visible", "cheio"); // sem a barra do overlay: o app traz o header
-  document.body.classList.add("overlay-aberto");
-}
-
-/* Abre o "Mapa IA" (estático em /mapa-ia/) embutido no portal, em tela cheia.
-   Mesmo padrão do openGovernanca — conteúdo próprio e confiável (same-origin). */
-function openMapaIa() {
-  const iframe = document.getElementById("iframe-content");
-  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
-  iframe.src = "/mapa-ia/";
-  document.getElementById("iframe-overlay").classList.add("visible", "cheio"); // sem a barra do overlay: o app traz o header
-  document.body.classList.add("overlay-aberto");
-}
+/* Governance TI e Mapa IA eram funções próprias aqui (openGovernanca/openMapaIa),
+   presas a um botão fixo da sidebar. Viraram app do catálogo (seção Tecnologia,
+   tipo_acesso=iframe) e passam pelo openApp() acima: mesmo sandbox, mesma tela
+   cheia, e agora com linha na matriz de acesso. */
 
 function escapeHtml(s) {
   if (s == null) return "";
@@ -562,11 +677,12 @@ async function loadPortal() {
   try {
     const data = await fetchHome();
     state.user = data.user;
+    state.indicadores = data.indicadores || [];
     state.secoes = data.secoes;
     showPortal();
     renderHeader();
     renderSidebar();
-    renderActiveSecao();
+    renderActiveVista();
     renderContent();
   } catch (e) {
     console.error(e);
@@ -627,7 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!state.user) return;
     renderHeader();
     renderSidebar();
-    renderActiveSecao();
+    renderActiveVista();
     renderContent();
     if (!document.getElementById("screen-changelog").classList.contains("hidden")) {
       renderChangelog();
@@ -644,8 +760,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-open-admin").addEventListener("click", () => {
     if (window.SF && window.SF.openAdmin) window.SF.openAdmin();
   });
-  document.getElementById("btn-open-governanca").addEventListener("click", openGovernanca);
-  document.getElementById("btn-open-mapa-ia").addEventListener("click", openMapaIa);
   document.getElementById("btn-open-changelog").addEventListener("click", openChangelog);
   document.getElementById("btn-back-from-changelog").addEventListener("click", closeChangelog);
   document.getElementById("btn-open-sistemas").addEventListener("click", openSistemas);
@@ -662,14 +776,29 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("screen-portal").classList.remove("hidden");
   });
 
-  /* "Todos os apps" no topo da sidebar */
-  document
-    .querySelector(".sidebar-link[data-secao='__all__']")
-    .addEventListener("click", () => {
-      state.currentSecao = "__all__";
-      renderActiveSecao();
+  /* Grupos do menu. Um clique no cabeçalho faz as duas coisas: abre/fecha o
+     grupo E passa a mostrar o que tem dentro dele na grade — mesmo fechado, a
+     grade continua no grupo escolhido. Os sub-itens ganham listener em
+     renderSidebar(), porque são montados a partir da API. */
+  document.querySelectorAll(".nav-group-head").forEach((head) => {
+    head.addEventListener("click", () => {
+      const aberto = head.getAttribute("aria-expanded") === "true";
+      setGrupo(head, !aberto);
+      state.vista = head.dataset.vista;
+      renderActiveVista();
       renderContent();
     });
+  });
+
+  /* A marca volta pra visão completa (o item "Todos os apps" saiu do menu). */
+  const home = document.getElementById("btn-home");
+  home.addEventListener("click", () => irPara(VISTA_TUDO));
+  home.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      irPara(VISTA_TUDO);
+    }
+  });
 
   /* iframe overlay */
   document.getElementById("iframe-close").addEventListener("click", closeIframe);

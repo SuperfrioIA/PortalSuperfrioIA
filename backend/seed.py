@@ -12,9 +12,11 @@ from backend.usuarios import seed as usuarios_seed
 
 def seed_initial() -> None:
     with db() as session:
-        portal_seed.seed(session)
+        apps_criados = portal_seed.seed(session)
         projetos_ia_seed.seed(session)
-        usuarios_seed.seed(session)
+        # `apps_criados` existe para o grant inicial de `ver` de app que nasce
+        # visível para todo mundo (ver `_VER_PARA_TODAS_AS_ROLES`).
+        usuarios_seed.seed(session, apps_criados=apps_criados)
         # commit e close ficam a cargo do context manager db()
 
 
