@@ -25,8 +25,17 @@ from alembic import command
 from sqlalchemy import inspect
 
 from backend.core import permissoes as catalogo
-from backend.core.database import _alembic_config, engine
-from backend.volumetria_catering import auditoria, conexao, contrato, download, recorte, schema
+from backend.usuarios import service as usuarios_service
+from backend.core.database import _alembic_config, db, engine
+from backend.volumetria_catering import (
+    auditoria,
+    conexao,
+    contrato,
+    download,
+    recorte,
+    schema,
+    ticket,
+)
 from backend.volumetria_catering.permissoes import APP_SLUG, EXPORTAR
 
 BASE = "/api/volumetria-catering"
@@ -458,3 +467,145 @@ def test_auditoria_abre_fecha_e_falha(client, admin_headers):
 def test_auditoria_recusa_formato_fora_do_escopo():
     with pytest.raises(ValueError):
         auditoria.abrir({}, "pdf")
+
+
+# ============ Ticket de download (o único jeito de o navegador baixar) ============
+# A navegação que baixa o arquivo não carrega `Authorization` — o porquê inteiro
+# está em `backend/volumetria_catering/ticket.py`. O que se prova aqui é que o
+# ticket não é um cheque em branco: ele vale um minuto, só para um recorte, só
+# para baixar, e morre com a sessão de quem o pediu.
+
+def _ticket(client, headers, params=None):
+    r = client.post(f"{BASE}/download/ticket", params=params or JAN, headers=headers)
+    assert r.status_code == 503, r.text  # sem banco externo, o ticket não é emitido
+    return r
+
+
+def test_ticket_nao_e_emitido_com_o_banco_fora_do_ar(client, admin_headers):
+    """A conferência do banco acontece ANTES de a tela navegar: é isso que faz o
+    503 chegar como mensagem na tela em vez de página de erro do navegador."""
+    r = _ticket(client, admin_headers)
+    assert "volumetria" in r.json()["detail"].lower()
+
+
+def test_ticket_exige_login_e_exportar(client, analista_headers):
+    assert client.post(f"{BASE}/download/ticket", params=JAN).status_code == 401
+    r = client.post(f"{BASE}/download/ticket", params=JAN, headers=analista_headers)
+    assert r.status_code == 403
+    assert EXPORTAR in r.json()["detail"]
+
+
+def test_ticket_recusa_o_que_o_download_recusa(client, admin_headers):
+    """Visão conjunta e formato desconhecido morrem na emissão, com 400 — e não
+    depois, quando a resposta do arquivo já começou."""
+    r = client.post(
+        f"{BASE}/download/ticket", params={**JAN, "movimento": "amb"}, headers=admin_headers
+    )
+    assert r.status_code == 400
+    assert "um movimento por vez" in r.json()["detail"]
+    r = client.post(
+        f"{BASE}/download/ticket", params={**JAN, "formato": "pdf"}, headers=admin_headers
+    )
+    assert r.status_code == 400
+
+
+def test_assinatura_do_recorte_ignora_a_ordem_e_separa_recortes():
+    """A mesma consulta com os parâmetros em outra ordem é o MESMO recorte: sem
+    ordenar, o ticket morreria por um detalhe de montagem da URL."""
+    a = ticket.assinatura_do_recorte([("de", "2026-01-01"), ("unidade", "RMSPII")])
+    b = ticket.assinatura_do_recorte([("unidade", "RMSPII"), ("de", "2026-01-01")])
+    assert a == b
+    outro = ticket.assinatura_do_recorte([("de", "2026-01-02"), ("unidade", "RMSPII")])
+    assert outro != a
+
+
+def _assina(params, usuario="admin", token_version=None):
+    """Ticket assinado sobre EXATAMENTE os parâmetros que a requisição vai levar
+    — é assim que a tela monta os dois pedidos, do mesmo `URLSearchParams`.
+
+    O `token_version` sai do banco quando não é dito: fixar um número aqui faria
+    o teste passar por acaso (o default do modelo é 1, não 0) e esconderia a
+    checagem de revogação, que é justamente o que se quer provar."""
+    if token_version is None:
+        with db() as session:
+            linha = usuarios_service.por_username(session, usuario)
+        token_version = linha["token_version"] if linha else 0
+    return ticket.emitir(
+        {"username": usuario, "token_version": token_version}, list(params.items())
+    )
+
+
+def test_ticket_de_um_recorte_nao_baixa_outro(client, admin_headers):
+    """Quem achasse a URL no histórico não trocaria os filtros: o recorte está
+    assinado dentro do ticket."""
+    params = {**JAN, "formato": "csv"}
+    t = _assina(params)
+    r = client.get(f"{BASE}/download", params={**params, "ticket": t})
+    assert r.status_code == 503  # ticket aceito; para no banco ausente
+
+    r = client.get(
+        f"{BASE}/download",
+        params={"de": "2026-02-01", "ate": "2026-02-28", "formato": "csv", "ticket": t},
+    )
+    assert r.status_code == 401
+    assert "não corresponde ao recorte" in r.json()["detail"]
+
+
+def test_ticket_expirado_manda_clicar_de_novo(client, monkeypatch):
+    monkeypatch.setattr(ticket, "VALIDO_POR_SEGUNDOS", -5)
+    t = _assina({**JAN, "formato": "csv"})
+    r = client.get(f"{BASE}/download", params={**JAN, "formato": "csv", "ticket": t})
+    assert r.status_code == 401
+    assert "expirou" in r.json()["detail"]
+
+
+def test_ticket_adulterado_ou_de_outro_escopo_nao_baixa(client, admin_headers):
+    r = client.get(f"{BASE}/download", params={**JAN, "formato": "csv", "ticket": "nada"})
+    assert r.status_code == 401
+
+    # um token de SESSÃO do Hub não serve de ticket: escopo é escopo
+    sessao = admin_headers["Authorization"].split()[1]
+    r = client.get(f"{BASE}/download", params={**JAN, "formato": "csv", "ticket": sessao})
+    assert r.status_code == 401
+    assert "não serve" in r.json()["detail"]
+
+
+def test_ticket_nao_serve_como_token_de_sessao(client, admin_headers):
+    """A trava que justifica o claim `tver` em vez de `tv`: um ticket achado no
+    histórico ou no log do balanceador NÃO vale como a pessoa inteira por um
+    minuto — ele é recusado como Bearer em todo o resto do Hub."""
+    t = _assina({**JAN, "formato": "csv"})
+    como_bearer = {"Authorization": f"Bearer {t}"}
+    assert client.get(f"{BASE}/opcoes", headers=como_bearer).status_code == 401
+    assert client.get("/api/auth/me/permissoes", headers=como_bearer).json()["autenticado"] is False
+    assert client.get("/api/admin/matriz", headers=como_bearer).status_code == 401
+
+
+def test_ticket_morre_quando_a_sessao_e_revogada(client, admin_headers):
+    """Logout, troca de senha e revogação mexem no `token_version`. O ticket
+    carrega o valor de quando foi emitido, então ele morre junto — a permissão e
+    a sessão são reconferidas no banco no momento do download, não só na
+    emissão."""
+    t = _assina(JAN, token_version=99)
+    r = client.get(f"{BASE}/download", params={**JAN, "ticket": t})
+    assert r.status_code == 401
+    assert "não vale mais" in r.json()["detail"]
+
+    fantasma = _assina(JAN, usuario="nao.existe")
+    r = client.get(f"{BASE}/download", params={**JAN, "ticket": fantasma})
+    assert r.status_code == 401
+
+
+def test_ticket_de_quem_perdeu_exportar_nao_baixa(client, admin_headers):
+    """O ticket prova quem pediu, não o que a pessoa ainda pode: `exportar` é
+    conferida no banco na hora de baixar."""
+    r = client.post(
+        "/api/admin/usuarios",
+        json={"username": "vol.sem.exportar", "senha": "senha-de-teste-123", "roles": []},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201, r.text
+    t = _assina(JAN, usuario="vol.sem.exportar")
+    r = client.get(f"{BASE}/download", params={**JAN, "ticket": t})
+    assert r.status_code == 403
+    assert EXPORTAR in r.json()["detail"]
