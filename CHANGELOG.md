@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0] — 2026-08-27
+### Adicionado
+- Volumetria de Catering no Hub — a tela de recebimento e expedição de catering (que morava num endereço próprio, com login próprio) passa a abrir por card no portal, com o login da Microsoft e o mesmo "Voltar ao hub" das outras telas. Matriz por unidade, cliente e mês, planilha com a linha crua e download em CSV ou Excel, sempre no recorte dos filtros
+- Baixar a volumetria virou permissão — consultar a tela exige só o acesso ao app; baixar o arquivo é uma célula própria na matriz de acesso, e quem baixou o quê fica registrado. No endereço antigo, qualquer pessoa logada baixava
+- A tela diz de quando é o dado — a data da última carga aparece no cabeçalho, e o detalhe (tabela, origem, quantas linhas) fica em "Fontes & método"
+### Observações
+- O número continua vindo do mesmo banco de sempre, alimentado pela carga que já roda duas vezes ao dia; o Hub só lê. Enquanto a transição durar, a tela antiga continua no ar e é a oficial
+
 ## [0.11.0] — 2026-08-25
 ### Adicionado
 - Menu lateral separando Indicadores de Sistemas — os painéis de acompanhamento (Processos Abertos e Integração In/Out) ganharam um grupo próprio, e as áreas do catálogo viraram subitens de Sistemas. Clicar num painel no menu já abre o painel
