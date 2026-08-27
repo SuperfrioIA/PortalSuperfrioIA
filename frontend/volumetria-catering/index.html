@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperFrio · IceStar — Volumetria de Catering</title>
+<link rel="icon" href="/img/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!--
+  Volumetria de catering — porte da tela V3 do projeto nuvem-ia
+  (`catering/web/matriz.html`, main de 27/ago/2026) para dentro do Hub.
+  Ver docs/PLANO_VOLUMETRIA_CATERING.md (lote H2).
+
+  O que mudou do original, e por quê:
+
+  - o `<script>` inline virou `app.js`: o CSP do Hub é `script-src 'self'` e
+    inline não roda (a tela abriria em branco, sem erro visível);
+  - o `<style>` FICA inline: `style-src` permite, e ele já usa os tokens da
+    marca (Plataforma LATAM). Só o bloco do cabeçalho foi trocado;
+  - o cabeçalho da V3 (logo + sessão + "Sair" + link Administração) deu lugar
+    ao `pa-hero` da casa, o mesmo de frontend/processos-abertos/ e
+    frontend/integracao-in-out/. Identidade e logout são da shell do portal,
+    não de cada app;
+  - o back-link é OBRIGATÓRIO: app nosso aberto pelo card abre em tela cheia
+    SEM a barra do overlay (ver commit a07ed6d), então sem ele a única saída
+    seria a tecla Esc.
+-->
+<style>
+:root{
+  --brand-azul-institucional:#071A3A; --brand-azul-corporativo:#0A2A5E;
+  --brand-azul-principal:#1E6FD9; --brand-azul-conexao:#3FA9F5;
+  --brand-amarelo:#FFC400; --brand-amarelo-suave:#FFD84D;
+  --brand-branco:#FFFFFF; --brand-cinza-claro:#C7D2E3; --brand-azul-escuro:#050F24;
+  --grad-institucional:linear-gradient(135deg,#050F24 0%,#071A3A 50%,#0A2A5E 100%);
+  --grad-conexao:linear-gradient(135deg,#1E6FD9 0%,#3FA9F5 100%);
+  --font-primary:'Montserrat',sans-serif;
+  --radius-sm:6px; --radius-md:12px;
+  --shadow-sm:0 2px 8px rgba(7,26,58,.12); --shadow-md:0 6px 20px rgba(7,26,58,.18);
+  --superficie:#F7F9FC; --cartao:#F0F4FA;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-primary);background:var(--superficie);
+     color:var(--brand-azul-institucional);font-size:13px}
+
+/* ---------- cabecalho padrao do Hub ----------
+   Mesmo bloco de frontend/integracao-in-out/ e frontend/processos-abertos/:
+   hero institucional escuro, back-link, onda de transicao pro fundo claro. A
+   onda termina na cor de `--superficie`, que e o fundo desta tela. */
+.pa-hero{position:relative;background:var(--grad-institucional);color:#fff;
+  padding:18px clamp(20px,4vw,32px) 34px;overflow:hidden}
+.pa-hero-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.pa-logo{height:36px;width:auto;object-fit:contain}
+.back-link{background:transparent;border:1px solid rgba(255,255,255,.28);
+  color:rgba(255,255,255,.82);padding:6px 10px;border-radius:var(--radius-sm);
+  font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;transition:all .12s;text-decoration:none}
+.back-link:hover{background:rgba(255,255,255,.10);color:#fff}
+.back-link svg{stroke:currentColor}
+.pa-hero-inner{display:flex;flex-wrap:wrap;align-items:flex-end;
+  justify-content:space-between;gap:16px;width:100%}
+.pa-hero-text{flex:1 1 260px;min-width:0}
+.pa-eyebrow{margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--brand-azul-conexao)}
+.pa-hero h1{margin:0 0 6px;font-size:clamp(20px,3vw,26px);font-weight:700;color:#fff}
+.pa-subtitle-p{margin:0;font-size:12.5px;color:var(--brand-cinza-claro);line-height:1.5}
+.pa-subtitle-p code{font-size:11.5px;opacity:.9}
+/* A procedencia do dado (ultima carga) vive aqui: quem le a Matriz precisa
+   saber DE QUANDO ela e, e o Hub enxerga se a carga da nuvem-ia falhou sem
+   ser quem a roda. */
+.pa-date-pill{background:rgba(255,255,255,.15);color:#fff;font-size:11px;
+  font-weight:600;padding:4px 12px;border-radius:20px;text-align:right;
+  line-height:1.5;max-width:280px}
+.pa-wave{position:absolute;left:0;right:0;bottom:-1px;width:100%;height:36px;display:block}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+/* ---------- barra de filtros ---------- */
+.filtros{background:var(--brand-branco);border-bottom:1px solid var(--brand-cinza-claro);
+         padding:12px 22px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;
+         box-shadow:var(--shadow-sm)}
+.campo{display:flex;flex-direction:column;gap:4px}
+.campo label{font-size:10px;font-weight:600;text-transform:uppercase;
+             letter-spacing:.6px;color:var(--brand-azul-corporativo)}
+input[type=date],select{font-family:var(--font-primary);font-size:12px;padding:6px 8px;
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-sm);
+  background:var(--brand-branco);color:var(--brand-azul-institucional)}
+select[multiple]{min-width:150px;height:64px}
+/* 31 opcoes de dois digitos nao precisam dos 150px dos nomes de cliente */
+#dia{min-width:76px}
+.grupo{display:flex;gap:0;border:1px solid var(--brand-cinza-claro);
+       border-radius:var(--radius-sm);overflow:hidden}
+.grupo button{font-family:var(--font-primary);font-size:12px;font-weight:500;
+  padding:6px 11px;border:0;background:var(--brand-branco);cursor:pointer;
+  color:var(--brand-azul-corporativo);border-right:1px solid var(--brand-cinza-claro)}
+.grupo button:last-child{border-right:0}
+.grupo button[aria-pressed=true]{background:var(--brand-amarelo);
+  color:var(--brand-azul-institucional);font-weight:700}
+.grupo button:disabled{opacity:.4;cursor:not-allowed}
+
+/* ---------- filtros com caixas de selecao (V3.7.1) ----------
+   A barra ENCURTA: cinco selects de 64px de altura viram cinco botoes de uma
+   linha (decisao da Maria, 27/ago/2026). As regras de `select[multiple]` acima
+   ficam de proposito -- o select continua no DOM como fonte da verdade e so
+   recebe `.escondido` DEPOIS de o painel existir, entao se a montagem falhasse
+   a pessoa ficaria com o campo nativo em vez de nada. */
+select.escondido{display:none}
+.caixas{position:relative}
+.abre-filtro{font-family:var(--font-primary);font-size:12px;
+  padding:6px 26px 6px 8px;border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);background:var(--brand-branco);
+  color:var(--brand-azul-institucional);cursor:pointer;text-align:left;
+  min-width:150px;max-width:210px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background-image:linear-gradient(45deg,transparent 50%,var(--brand-azul-corporativo) 50%),
+                   linear-gradient(135deg,var(--brand-azul-corporativo) 50%,transparent 50%);
+  background-position:right 12px center, right 7px center;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+/* 31 opcoes de dois digitos nao precisam dos 150px dos nomes de cliente */
+.abre-filtro.curta{min-width:86px}
+.abre-filtro[aria-expanded=true]{border-color:var(--brand-azul-principal)}
+/* V3.7.3: "nenhum marcado" e um estado de EDICAO que nao pode ser aplicado, e
+   por isso ele tem que se parecer com pendencia -- nao com uma escolha
+   valida. Mesmo amarelo dos avisos da tela. */
+.abre-filtro.vazio{border-color:var(--brand-amarelo);background:#FFF8E1;
+  font-weight:600}
+.abre-filtro:disabled{opacity:.45;cursor:not-allowed}
+.painel{position:absolute;top:calc(100% + 3px);left:0;z-index:30;
+  background:var(--brand-branco);border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);box-shadow:var(--shadow-md);
+  min-width:160px;max-width:330px;max-height:264px;overflow-y:auto;padding:6px}
+.painel[hidden]{display:none}
+.caixa{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12px;
+  cursor:pointer;white-space:nowrap;border-radius:4px}
+.caixa:hover{background:#EEF3FB}
+.caixa.tudo{font-weight:700;border-radius:0;padding-bottom:7px;margin-bottom:4px;
+  border-bottom:1px solid var(--brand-cinza-claro)}
+.caixa input{cursor:pointer;flex:0 0 auto}
+.acoes{margin-left:auto;display:flex;gap:8px;align-items:flex-end}
+.primario{font-family:var(--font-primary);font-weight:700;font-size:12px;
+  padding:8px 16px;border:0;border-radius:var(--radius-sm);cursor:pointer;
+  background:var(--brand-amarelo);color:var(--brand-azul-institucional)}
+.secundario{font-family:var(--font-primary);font-weight:500;font-size:12px;
+  padding:8px 14px;border:1px solid var(--brand-azul-conexao);
+  border-radius:var(--radius-sm);cursor:pointer;background:transparent;
+  color:var(--brand-azul-principal)}
+.secundario:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- conteudo ---------- */
+main{padding:18px 22px 40px}
+.linha-titulo{display:flex;align-items:baseline;gap:10px;margin:0 0 4px}
+h2{font-size:14px;font-weight:700;margin:0}
+.desc{font-size:11px;color:var(--brand-azul-corporativo);opacity:.8;margin:0 0 12px}
+.aviso{background:#FFF8E1;border-left:3px solid var(--brand-amarelo);
+  padding:8px 12px;border-radius:var(--radius-sm);font-size:12px;margin:0 0 12px;
+  line-height:1.45}
+
+/* ---------- a matriz ---------- */
+.rolagem{overflow-x:auto;background:var(--brand-branco);
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-sm)}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
+th,td{padding:6px 10px;text-align:right;white-space:nowrap}
+th{background:var(--brand-azul-institucional);color:var(--brand-branco);
+   font-weight:600;font-size:11px;position:sticky;top:0;z-index:3}
+th.rotulo,td.rotulo{text-align:left;position:sticky;left:0;z-index:2;
+  min-width:320px;max-width:420px;white-space:normal}
+th.rotulo{z-index:4}
+td.rotulo{background:var(--brand-branco)}
+tbody tr:hover td{background:#EEF3FB}
+tbody tr:hover td.rotulo{background:#EEF3FB}
+tr.n0>td{font-weight:700;border-top:2px solid var(--brand-azul-principal)}
+tr.n0>td.rotulo{background:var(--cartao)}
+tr.n1>td{font-weight:600}
+tr.n2>td,tr.n3>td{font-weight:400;color:#33507d}
+tr.faixa>td{font-style:normal;background:#FBFCFE}
+tr.faixa>td.rotulo{background:#FBFCFE}
+td.rotulo{padding-left:calc(10px + var(--recuo,0px))}
+.abre{background:none;border:0;cursor:pointer;font-family:var(--font-primary);
+  font-size:11px;color:var(--brand-azul-principal);padding:0 6px 0 0;font-weight:700}
+.vazio{color:var(--brand-cinza-claro)}
+tfoot td{font-weight:800;background:var(--brand-azul-corporativo);
+  color:var(--brand-branco);position:sticky;bottom:0}
+tfoot td.rotulo{background:var(--brand-azul-corporativo)}
+.paginacao{display:flex;gap:10px;align-items:center;justify-content:flex-end;
+  margin-top:10px;font-size:11px}
+
+/* ---------- a planilha ---------- */
+/* Cliente e Operacao sao largas (`NAO TROCA NOTA DE ARMAZENAGEM`) e empurravam
+   a coluna da MEDIDA fora da tela -- numa tela cujo principio e mostrar o
+   numero, isso e defeito. Teto com reticencias, e o texto inteiro no title. */
+/* A primeira coluna da planilha NAO usa `.rotulo` da Matriz: aquela tem
+   min-width 320px (nome de cliente com hierarquia), e aqui e a data -- 320px
+   empurravam a coluna do numero fora da tela. */
+table.planilha th.primeira,table.planilha td.primeira{text-align:left;
+  position:sticky;left:0;z-index:2;min-width:92px;white-space:nowrap}
+table.planilha td.primeira{background:var(--brand-branco)}
+table.planilha th.primeira{z-index:4}
+table.planilha tbody tr:hover td.primeira{background:#EEF3FB}
+table.planilha td.texto{max-width:230px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+table.planilha td.numero{font-variant-numeric:tabular-nums;font-weight:600}
+table.planilha th{white-space:nowrap}
+
+/* ---------- baixar o recorte ---------- */
+.baixar{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.baixar-rotulo{font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--brand-azul-corporativo)}
+.nota{font-size:11px;color:var(--brand-azul-corporativo);opacity:.85;
+  max-width:640px;line-height:1.45}
+
+/* ---------- fontes & metodo: um lugar so ---------- */
+details.metodo{margin-top:22px;background:var(--brand-branco);
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-md);
+  padding:12px 16px}
+details.metodo summary{font-weight:700;font-size:12px;cursor:pointer;
+  color:var(--brand-azul-corporativo)}
+details.metodo div{margin-top:10px;font-size:12px;line-height:1.6}
+details.metodo ul{margin:6px 0 0;padding-left:18px}
+.carregando{padding:30px;text-align:center;color:var(--brand-azul-corporativo)}
+.erro{background:#FDECEC;border-left:3px solid #C0392B;padding:10px 12px;
+  border-radius:var(--radius-sm);font-size:12px}
+</style>
+</head>
+<body>
+<h2 class="sr-only">SuperFrio — Volumetria de catering: recebimento e expedição por unidade, cliente e mês</h2>
+<header class="pa-hero">
+  <div class="pa-hero-top">
+    <a class="back-link" href="/" target="_top" title="Voltar ao hub">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+      <span>Voltar ao hub</span>
+    </a>
+    <img class="pa-logo" src="/img/icestar-superfrio-logo-white.png" alt="IceStar · SuperFrio">
+  </div>
+  <div class="pa-hero-inner">
+    <div class="pa-hero-text">
+      <p class="pa-eyebrow">Portal SuperFrio &amp; IceStar</p>
+      <h1>Volumetria de catering</h1>
+      <p class="pa-subtitle-p">Fonte: DW Oracle — <code>DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01</code> / <code>DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01</code></p>
+    </div>
+    <span class="pa-date-pill" id="procedencia">—</span>
+  </div>
+  <svg class="pa-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0,40 L0,18 Q360,40 720,20 T1440,16 L1440,40 Z" fill="#F7F9FC"/></svg>
+</header>
+
+<div class="filtros">
+  <div class="campo">
+    <label for="de">De</label>
+    <input type="date" id="de">
+  </div>
+  <div class="campo">
+    <label for="ate">Até</label>
+    <input type="date" id="ate">
+  </div>
+  <div class="campo">
+    <label for="dia">Dia do mês</label>
+    <select id="dia" multiple title="Recorta dentro de todos os meses do período. Vazio = todos os dias."></select>
+  </div>
+  <div class="campo">
+    <label>Dado disponível</label>
+    <span class="nota" id="dica-periodo"></span>
+  </div>
+  <div class="campo">
+    <label>Movimento</label>
+    <div class="grupo" id="movimento"></div>
+  </div>
+  <div class="campo">
+    <label>Medida</label>
+    <div class="grupo" id="lente"></div>
+  </div>
+  <div class="campo" id="campo-faixa">
+    <label id="rotulo-faixa">Faixa da expedição</label>
+    <div class="grupo" id="faixa"></div>
+  </div>
+  <div class="campo">
+    <label for="unidade">Unidade</label>
+    <select id="unidade" multiple></select>
+  </div>
+  <div class="campo">
+    <label for="cliente">Cliente</label>
+    <select id="cliente" multiple></select>
+  </div>
+  <div class="campo">
+    <label for="tipo">Tipo de estoque</label>
+    <select id="tipo" multiple></select>
+  </div>
+  <div class="campo">
+    <label for="operacao">Operação</label>
+    <select id="operacao" multiple></select>
+  </div>
+  <div class="campo">
+    <label>Visão</label>
+    <div class="grupo" id="visao"></div>
+  </div>
+  <div class="acoes">
+    <button class="secundario" id="limpar">Limpar</button>
+    <button class="primario" id="aplicar">Aplicar</button>
+  </div>
+</div>
+
+<main>
+  <div class="linha-titulo"><h2 id="titulo">Matriz</h2></div>
+  <p class="desc" id="desc"></p>
+  <div id="avisos"></div>
+  <div class="rolagem"><div class="carregando" id="corpo">Carregando…</div></div>
+  <div class="paginacao" id="paginacao"></div>
+
+  <div class="baixar">
+    <span class="baixar-rotulo">Baixar o recorte</span>
+    <button class="secundario" id="baixar-csv">CSV</button>
+    <button class="secundario" id="baixar-xlsx">Excel (xlsx)</button>
+    <span class="nota" id="nota-download"></span>
+  </div>
+
+  <details class="metodo">
+    <summary>Fontes &amp; método</summary>
+    <div id="metodo"></div>
+  </details>
+</main>
+
+<script src="app.js?v=1"></script>
+</body>
+</html>

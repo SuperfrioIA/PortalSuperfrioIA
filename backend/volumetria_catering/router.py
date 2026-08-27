@@ -43,10 +43,13 @@ from fastapi.responses import StreamingResponse
 
 from backend.auth.dependencies import (
     get_current_user,
+    get_current_user_optional,
     require_admin,
     require_permissao,
     usuario_pode,
 )
+from backend.core.database import db
+from backend.usuarios import service as usuarios_service
 from backend.volumetria_catering import (
     auditoria,
     conexao,
@@ -56,6 +59,7 @@ from backend.volumetria_catering import (
     planilha,
     recorte,
     schema,
+    ticket as ticket_mod,
 )
 from backend.volumetria_catering.permissoes import APP_SLUG, EXPORTAR
 
@@ -345,8 +349,72 @@ def api_planilha(
 
 
 # ------------------------------------------------------------------ download
-@router.get("/download")
-def api_download(
+_SEM_EXPORTAR = (
+    f"Requer a permissão de exportar da Volumetria de Catering ({EXPORTAR}). "
+    "Consultar a Matriz e a planilha na tela não exige. Peça a um administrador "
+    "para incluí-la em alguma das suas roles."
+)
+
+
+def _itens_do_recorte(request: Request):
+    """Os parâmetros que o ticket assina: a query string menos o próprio ticket."""
+    return [(k, v) for k, v in request.query_params.multi_items() if k != "ticket"]
+
+
+def _usuario_do_ticket(ticket: str, request: Request) -> dict:
+    """Quem pediu o download, provado pelo ticket em vez do header.
+
+    A parte criptográfica é do `ticket.py`; aqui vem o que exige banco: o
+    usuário ainda existe, o `token_version` dele não mudou (logout, troca de
+    senha e revogação matam o ticket antes do minuto acabar) e a permissão
+    `exportar` **continua** valendo — conferida agora, não só na emissão.
+    """
+    try:
+        payload = ticket_mod.abrir(ticket, _itens_do_recorte(request))
+    except ticket_mod.TicketInvalido as erro:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(erro)) from None
+
+    with db() as session:
+        user = usuarios_service.por_username(session, payload["sub"])
+    if not user or user["token_version"] != payload.get("tver"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "a sessão que pediu este download não vale mais. Entre no portal "
+                "de novo e clique em baixar."
+            ),
+        )
+    if not usuario_pode(user, EXPORTAR):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_SEM_EXPORTAR)
+    return user
+
+
+def _quem_baixa(request: Request, ticket: str | None, user_bearer: dict | None) -> dict:
+    """Duas portas para o mesmo download, e a mesma permissão nas duas.
+
+    - **ticket**: o caminho da tela. Navegação não carrega `Authorization`, e é
+      a navegação que faz o navegador salvar o arquivo (ver `ticket.py`);
+    - **Bearer**: o caminho de quem chama a API direto — script, `curl`, teste.
+
+    O Bearer continua valendo de propósito: sem ele, testar o download exigiria
+    emitir ticket, e a API perderia um uso legítimo por causa de uma limitação
+    do navegador.
+    """
+    if ticket:
+        return _usuario_do_ticket(ticket, request)
+    if not user_bearer:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not usuario_pode(user_bearer, EXPORTAR):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_SEM_EXPORTAR)
+    return user_bearer
+
+
+@router.post("/download/ticket")
+def api_download_ticket(
     request: Request,
     de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
     ate: str = Query(..., description="último dia, AAAA-MM-DD (inclusivo)"),
@@ -361,13 +429,62 @@ def api_download(
     dia: list[str] = Query(default=[], description="dia do MÊS, 1..31"),
     user: dict = Depends(require_permissao(EXPORTAR)),
 ):
+    """Autoriza UM download deste recorte, por um minuto.
+
+    Existe porque o download navega e navegação não carrega header — o porquê
+    inteiro está em `ticket.py`. A tela pede o ticket com o Bearer, e é **aqui**
+    que os erros aparecem de forma legível: filtro inválido, visão conjunta e
+    banco fora do ar viram JSON num `fetch`, e não uma página de JSON cru
+    depois de o navegador ter começado a baixar.
+    """
+    if formato not in ("csv", "xlsx"):
+        raise HTTPException(status_code=400, detail=f"formato: {formato!r}")
+    filtros = _filtros(de, ate, movimento, lente, faixa, 1,
+                       unidade, cliente, tipo_estoque, operacao, dia)
+    _um_movimento_por_vez(filtros, "O download")
+
+    # Banco alcançável e contrato íntegro antes de a tela navegar: é o que faz o
+    # 503 chegar como mensagem na tela em vez de página de erro do navegador.
+    with _cursor():
+        pass
+
+    return {
+        "ticket": ticket_mod.emitir(user, _itens_do_recorte(request)),
+        "valido_por_segundos": ticket_mod.VALIDO_POR_SEGUNDOS,
+    }
+
+
+@router.get("/download")
+def api_download(
+    request: Request,
+    de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
+    ate: str = Query(..., description="último dia, AAAA-MM-DD (inclusivo)"),
+    formato: str = Query("csv"),
+    movimento: str = Query("rec"),
+    lente: str = Query("liq"),
+    faixa: str = Query("solicitado"),
+    unidade: list[str] = Query(default=[]),
+    cliente: list[str] = Query(default=[]),
+    tipo_estoque: list[str] = Query(default=[]),
+    operacao: list[str] = Query(default=[]),
+    dia: list[str] = Query(default=[], description="dia do MÊS, 1..31"),
+    ticket: str | None = Query(
+        default=None,
+        description="ticket de /download/ticket; alternativa ao header Authorization",
+    ),
+    user_bearer: dict | None = Depends(get_current_user_optional),
+):
     """O recorte inteiro, em CSV (streaming) ou xlsx (sob teto).
 
     **Sempre no recorte dos filtros da tela**: os mesmos parâmetros da Matriz e
     da planilha, e a auditoria registra exatamente qual recorte saiu. `pagina`
     não entra de propósito — download de uma página só não é download do
     recorte.
+
+    Autentica por **ticket** (a tela) ou por **Bearer** (API direta), com a
+    mesma exigência de `exportar` nas duas portas — ver `_quem_baixa`.
     """
+    user = _quem_baixa(request, ticket, user_bearer)
     if formato not in ("csv", "xlsx"):
         raise HTTPException(status_code=400, detail=f"formato: {formato!r}")
     filtros = _filtros(de, ate, movimento, lente, faixa, 1,

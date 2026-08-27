@@ -547,3 +547,51 @@ def test_verificacao_boa_fica_em_cache_e_falha_nao(cat, client, admin_headers):
     # sem cache de falha: corrigido o banco, o próximo request passa
     _drop_coluna(cat, "cat_fato_recebimento", "passageira")
     assert client.get(f"{BASE}/opcoes", headers=admin_headers).status_code == 200
+
+
+def test_download_pelo_ticket_sai_igual_e_audita_quem_baixou(cat, client, admin_headers):
+    """O caminho REAL da tela, ponta a ponta: pede o ticket com o Bearer e baixa
+    por navegação, sem header nenhum.
+
+    É o único caminho que o navegador tem (`ticket.py` explica por quê), então
+    ele precisa entregar exatamente o mesmo arquivo do caminho por Bearer — e a
+    auditoria precisa gravar o usuário certo, porque é ela que responde quem
+    baixou o quê.
+    """
+    semear_entrada(cat, gem="0000000001", peso="100.000")
+    semear_entrada(cat, gem="0000000002", peso="250.500")
+
+    r = client.post(f"{BASE}/download/ticket", params=JAN, headers=admin_headers)
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["valido_por_segundos"] == 60
+
+    # a navegação NÃO leva Authorization — é o ticket que prova quem é
+    baixado = client.get(f"{BASE}/download", params={**JAN, "ticket": corpo["ticket"]})
+    assert baixado.status_code == 200, baixado.text
+    assert baixado.headers["content-type"].startswith("text/csv")
+    assert 'filename="catering_entrada_2026-01-01_a_2026-01-31.csv"' in \
+        baixado.headers["content-disposition"]
+
+    por_bearer = client.get(f"{BASE}/download", params=JAN, headers=admin_headers)
+    assert baixado.content == por_bearer.content  # mesmo recorte, mesmo arquivo
+
+    registros = auditoria.listar(2)
+    assert [r["status"] for r in registros] == ["ok", "ok"]
+    assert {r["usuario"] for r in registros} == {"admin"}
+    assert {r["linhas"] for r in registros} == {2}
+
+
+def test_ticket_de_outro_recorte_nao_baixa_este(cat, client, admin_headers):
+    """A amarra do `rec`: com o ticket na URL, editar o filtro na barra de
+    endereço não vale — e a recusa vem ANTES de a auditoria abrir."""
+    semear_entrada(cat, gem="0000000001")
+    ticket = client.post(
+        f"{BASE}/download/ticket", params={**JAN, "unidade": ["RMSPII"]}, headers=admin_headers
+    ).json()["ticket"]
+    antes = len(auditoria.listar(1000))
+
+    r = client.get(f"{BASE}/download", params={**JAN, "ticket": ticket})
+    assert r.status_code == 401
+    assert "não corresponde ao recorte" in r.json()["detail"]
+    assert len(auditoria.listar(1000)) == antes  # download que não saiu não é linha na trilha
