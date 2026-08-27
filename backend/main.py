@@ -27,6 +27,7 @@ from backend.projetos_ia.router import router as projetos_ia_router
 from backend.projetos_ia.router import router_admin as projetos_ia_admin_router
 from backend.seed import seed_initial
 from backend.usuarios.router import router_admin as usuarios_admin_router
+from backend.volumetria_catering.router import router as volumetria_catering_router
 
 
 # Sem isto, `logger.info` de qualquer modulo nosso e DESCARTADO: o dictConfig do
@@ -188,6 +189,9 @@ app.include_router(processos_abertos_router)
 app.include_router(integracao_in_out_router)
 app.include_router(projetos_ia_router)
 app.include_router(projetos_ia_admin_router)
+# Consulta somente leitura sobre o banco da nuvem-ia. Conexão por request: o
+# startup e o /api/health NÃO dependem daquele banco (docs/PLANO_VOLUMETRIA_CATERING.md).
+app.include_router(volumetria_catering_router)
 
 
 @app.get("/api/health")

@@ -135,6 +135,26 @@ APPS = [
         "badge": None,
         "ordem": 6,
     },
+    {
+        # Também existe de verdade neste repositório (backend/volumetria_catering/,
+        # Receita 2 com a fonte num banco externo) — dono da permissão
+        # `volumetria-catering:exportar`, que precisa desta linha para existir na
+        # matriz de acesso. A TELA (frontend/volumetria-catering/) é o lote H2: até
+        # lá nenhuma role recebe `ver` pelo seed, então só admin vê o card, e a
+        # URL responde 404. Ver docs/PLANO_VOLUMETRIA_CATERING.md.
+        "secao": "armazem",
+        "slug": "volumetria-catering",
+        "nome": "Volumetria de Catering",
+        "nome_es": "Volumetría de Catering",
+        "descricao": "Recebimento e expedição de catering por unidade, cliente e mês, lidos do DW.",
+        "descricao_es": "Recepción y expedición de catering por unidad, cliente y mes, leídos del DW.",
+        "icone": "scale",
+        "url": "/volumetria-catering/",
+        "tipo_acesso": "iframe",
+        "tipo_conteudo": "indicador",
+        "badge": "NEW",
+        "ordem": 7,
+    },
     # Backoffice
     {
         "secao": "backoffice",

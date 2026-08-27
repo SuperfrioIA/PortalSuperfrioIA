@@ -14,11 +14,13 @@ startup (e nos testes) elimina essa dependência de ordem de import.
 from backend.integracao_in_out import permissoes as integracao_in_out_permissoes
 from backend.processos_abertos import permissoes as processos_abertos_permissoes
 from backend.projetos_ia import permissoes as projetos_ia_permissoes
+from backend.volumetria_catering import permissoes as volumetria_catering_permissoes
 
 _MODULOS = (
     processos_abertos_permissoes,
     integracao_in_out_permissoes,
     projetos_ia_permissoes,
+    volumetria_catering_permissoes,
 )
 
 

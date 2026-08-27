@@ -30,6 +30,14 @@ services:
       FTP_PORT: ${FTP_PORT:-21}
       FTP_USER: ${FTP_USER:-}
       FTP_PASSWORD: ${FTP_PASSWORD:-}
+      # Volumetria de catering: leitura SOMENTE do banco da nuvem-ia (nuvem-db),
+      # com o role `hub_leitura`. Vazio = módulo desligado (o card responde 503,
+      # o resto do Hub não sente). Formato libpq, não SQLAlchemy:
+      #   postgresql://hub_leitura:senha@nuvem-db:5432/nuvem
+      # A rede Docker compartilhada que faz `nuvem-db` resolver é o lote H3.
+      VOLUMETRIA_DB_URL: ${VOLUMETRIA_DB_URL:-}
+      VOLUMETRIA_FUSO_EXIBICAO: ${VOLUMETRIA_FUSO_EXIBICAO:-America/Sao_Paulo}
+      VOLUMETRIA_ABERTURA_DE: ${VOLUMETRIA_ABERTURA_DE:-ano-corrente}
     volumes:
       - ./data:/app/data
     depends_on:
