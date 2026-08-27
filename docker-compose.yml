@@ -44,6 +44,14 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    # `default` continua (é por ela que o hub fala com o `db` deste compose);
+    # `hub-nuvem` é a rede compartilhada com o compose da nuvem-ia, onde só o
+    # `nuvem-db` entra — é assim que `VOLUMETRIA_DB_URL` resolve `nuvem-db` sem
+    # publicar porta nenhuma. Declarar `networks` num serviço DESLIGA a adesão
+    # automática à `default`, por isso ela precisa estar listada aqui.
+    networks:
+      - default
+      - hub-nuvem
 
   db:
     image: postgres:16-alpine
@@ -66,3 +74,12 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  # Criada UMA vez na VM, à mão: `docker network create hub-nuvem` (lote H3 de
+  # docs/PLANO_VOLUMETRIA_CATERING.md). `external: true` = o compose não cria
+  # nem apaga; sem ela existir, `docker compose up` falha nomeando a rede — que
+  # é o comportamento certo, e não subir sem o banco da volumetria em silêncio.
+  # O outro lado (o `nuvem-db`) entra nela pelo compose da nuvem-ia.
+  hub-nuvem:
+    external: true
