@@ -1,6 +1,64 @@
 # HANDOFF — Analisador de Mapa Estatísticos (NF × WMS) — SuperFrio/IceStar
 
-**Status:** Confirmado funcionando pelo usuário após modularização (teste real no navegador com upload de PDF/XLSX). Integrado ao Hub SuperFrio & Icestar em 2026-07-07 como app da seção **QHSE**, `tipo_acesso = iframe`. Atualizado para **v2.0** em 2026-07-08 (validação de peso por soma dos itens). Atualizado para **v2.11** em 2026-07-22 (ver changelog abaixo). ✅
+**Status:** **v2.24** — release atual no Hub (2026-08-31). Integrado ao Hub SuperFrio & Icestar em 2026-07-07 como app da seção **QHSE**, `tipo_acesso = iframe`. Marcos: **v2.0** em 2026-07-08 (validação de peso por soma dos itens), **v2.11** em 2026-07-22, **v2.24** em 2026-08-31 (ver changelogs abaixo). O sistema passou a se chamar **PGA · Análise de Mapa Estatísticos** na v2.21. ✅
+
+---
+
+## Changelog v2.11 → v2.24 (2026-08-31)
+
+Portado do standalone (`QSSA_Qualidade\Programa QSSA`, `analise_mapa_estatistico_v2_24.html`)
+preservando a estrutura modular do Hub. O port foi verificado por **round-trip**: remontar
+`index.html` + `app.js` reproduz o standalone v2.24 byte a byte, tirando as 10 linhas do
+"Voltar ao hub" (CSS + âncora) e a troca do `<script>` inline por `<script src="app.js">`.
+
+**Fluxo e navegação**
+
+- **Wizard de 3 → 2 passos (v2.17):** notas (PDF/XML) e relatório do WMS foram unificados numa
+  tela só, lado a lado, com um único botão "Conferir" que libera quando os dois lados estão
+  carregados. A sidebar agora tem "1 Importar dados" e "2 Resultado".
+- **Dois fluxos independentes — Recebimento × Expedição (v2.23):** seletor na sidebar, cada
+  fluxo com estado próprio (arquivos, notas, resultado); trocar de fluxo não perde nada. Não é
+  código duplicado — é o mesmo motor sobre estados separados, com rótulos vindos de `MODULOS`.
+  **O Recebimento não mudou.**
+- **Expedição ligada ao relatório real (v2.24):** lê o `rpt_jda_sif_expedicao_v01`, com lista de
+  colunas própria (25). O casamento é pela **NF Entrada STR7** — a `PO_NUM` é campo livre e
+  divergia em 58 de 2304 linhas do arquivo real. O `Lacre SIF` é capturado à parte do `SIF` do
+  produto, e produto sem SIF passa sem virar divergência.
+
+**Regras de conferência**
+
+- **SIF × SISB (v2.14, v2.22):** o relatório do WMS não tem coluna de SISB — o número de
+  inspeção (SIF **ou** SISB) vem todo na coluna SIF. Agora **a nota diz o que ele é**:
+  `classificaInsp` (que substituiu `sifDiverge`) bate com o SIF → é SIF; senão bate com o
+  SISB → migra para a coluna SISB e confere lá; não bate com nenhum → divergência. Corrige
+  falso positivo em produto de inspeção estadual. O SISB da NF é capturado em coluna própria.
+- **Coluna Origem (v2.12, v2.13):** NACIONAL × ESTRANGEIRA pela **Tabela "A" da NF-e** (1º dígito
+  do CST no DANFE / tag `<orig>` no XML), com fallback pela descrição do produto quando o CST
+  não vem. É **informativa** — não altera Confere/Divergência. Sem cor, só negrito.
+
+**Exportação para Excel (novo)**
+
+- **Botão ⤓ Exportar para Excel (v2.19):** gera `.xlsx` com o detalhamento por item achatado na
+  aba **Detalhamento** e os totais por nota na aba **Resumo por NF**. Respeita o filtro ativo
+  (todas / conferem / divergem). A regra de status/SIF/origem foi extraída para `detailRows()`,
+  fonte única da tela e do Excel.
+- **Detalhamento com 13 colunas (v2.20):** entraram `Diferença (kg)` (numérica, `0` quando não há
+  diferença) e `Diferença (SIF)` (`OK`/`NOK`). O arquivo **não traz mais `—`**: SIF/SISB/pesos sem
+  informação saem zerados e texto sem informação sai em branco. A tela segue com o travessão.
+- Prefixo `PGA_` no nome do arquivo exportado (v2.21).
+
+**Identidade e layout**
+
+- **Renome para PGA (v2.21):** selo `PGA` na sidebar, `<title>` e prefixo do `.xlsx`. Só
+  identidade, sem mexer em lógica.
+- `.content` de 1180 → 1440px e títulos do detalhamento em uma linha (`nowrap`), para as colunas
+  caberem sem quebrar (v2.15); coluna Descrição de 21% → 30% (v2.16); os dois cards de importação
+  com altura fixa e igual (620px), com a lista de arquivos e o painel de colunas rolando por
+  dentro (v2.18).
+
+**Nada mudou em `vendor/`** — os 3 arquivos são idênticos aos do standalone (conferido por hash
+após normalizar CRLF). Nenhuma dependência nova, nenhum `<script>`/`on*=` inline: o CSP do
+portal segue respeitado sem exceção.
 
 ---
 
@@ -22,11 +80,20 @@ Origem: desenvolvido/validado em standalone (repo pessoal) e portado para cá pr
 
 ## 1. O que é o projeto
 
-Ferramenta HTML standalone (offline) para reconciliar o **peso líquido esperado** extraído de notas fiscais (DANFE PDF / NF-e XML) contra o **peso recebido pelo WMS** (relatório Excel `rpt_jda_recebimento_dtl_v03`). Fluxo em wizard de 3 passos:
+Ferramenta HTML standalone (offline) para reconciliar o **peso líquido esperado** extraído de notas fiscais (DANFE PDF / NF-e XML) contra o **peso registrado pelo WMS**. Desde a v2.23 são **dois fluxos independentes**, escolhidos na sidebar:
 
-1. Importar DANFE (PDF) ou NF-e (XML) — extrai NF, chave de acesso, peso líquido esperado, itens.
-2. Importar relatório WMS (Excel) — mapeia 16 colunas de recebimento.
-3. Reconciliação — cruza por NF, mostra divergências, permite expandir detalhes por nota.
+| Fluxo | Relatório do WMS | Casamento |
+|---|---|---|
+| **Recebimento** | `rpt_jda_recebimento_dtl_v03` (18 colunas) | coluna NF |
+| **Expedição** | `rpt_jda_sif_expedicao_v01` (25 colunas) | NF Entrada STR7 |
+
+Wizard de **2 passos** (era 3 até a v2.16 — ver changelog da v2.17):
+
+1. **Importar dados** (tela única): DANFE (PDF) / NF-e (XML) — extrai NF, chave de acesso, peso
+   líquido esperado, itens — **e** o relatório do WMS (Excel), lado a lado. A tabela de
+   conferência das notas fica abaixo.
+2. **Resultado** — cruza as notas, mostra divergências de peso e de SIF/SISB, permite expandir o
+   detalhamento por item e exportar tudo para Excel.
 
 Marca SuperFrio | IceStar (Conexão LATAM). Padrão visual: Montserrat, gradiente azul escuro `#0A2A5E→#10468F`, amarelo `#FFC400` para alertas/estado ativo.
 
@@ -38,8 +105,8 @@ Vive em `frontend/mapa-estatistico/` deste repositório (Receita 1 do [CONTRIBUT
 
 ```
 frontend/mapa-estatistico/
-  index.html        13 KB   ← HTML + CSS (edite este)
-  app.js             ~?KB   ← lógica do app, extraído do <script> inline (edite este)
+  index.html         77 KB  ← HTML + CSS (edite este)
+  app.js             46 KB   ← lógica do app, extraído do <script> inline (edite este)
   vendor/
     xlsx.min.js       882 KB  ← SheetJS — NÃO EDITAR
     pdf.min.js        320 KB  ← PDF.js (lib principal) — NÃO EDITAR
@@ -67,7 +134,7 @@ Continua 100% offline — não depende de CDN nem internet (exceto a fonte Monts
 
 ## 3. Como é servido / acessado
 
-O Hub serve todo `frontend/` como estático (`backend/main.py`, `StaticFiles`). O app é acessado em `/mapa-estatistico/` e cadastrado na tela **Administração** do portal como card na seção **QHSE**, `tipo_acesso = iframe`. Roda em iframe sandboxed (sem `allow-same-origin`) — como não depende de cookie/localStorage do domínio do portal, funciona normalmente.
+O Hub serve todo `frontend/` como estático (`backend/main.py`, `StaticFiles`). O app é acessado em `/mapa-estatistico/` e cadastrado na tela **Administração** do portal como card na seção **QHSE**, `tipo_acesso = iframe`. Roda em iframe sandboxed. **Atualizado:** desde 2026-07-07 o sandbox inclui `allow-same-origin` (item A1 de `docs/AUDITORIA_SEGURANCA.md`) justamente porque o worker do PDF.js é montado via Blob e falha com origem opaca. O app não depende de cookie/localStorage do domínio do portal, mas tecnicamente teria acesso — trade-off consciente da plataforma, documentado no CONTRIBUTING.
 
 ---
 
@@ -83,6 +150,10 @@ O Hub serve todo `frontend/` como estático (`backend/main.py`, `StaticFiles`). 
 
 ## 5. Pendências conhecidas
 
+- **Expedição — confirmar quais notas são (v2.24).** O `rpt_jda_sif_expedicao_v01` só traz **NF de
+  entrada**, e é por ela que o casamento é feito (`NF Entrada STR7`). Falta confirmar com a
+  operação se as notas conferidas na expedição são mesmo as de entrada, ou se é preciso outra
+  fonte para a NF de saída. **Não bloqueia o Recebimento**, que não mudou.
 - **Alinhamento da coluna de resultados** na sub-tabela de detalhes por invoice (mencionado em handoff anterior à modularização — ainda não resolvido).
 
 ## 6. Histórico resumido (contexto de sessões anteriores, pré-integração ao Hub)
@@ -119,4 +190,5 @@ Arquivo único `analise_mapa_estatistico_v1_9.html` (repositório separado `QSSA
 
 ## 7. Próximo passo sugerido
 
-Resolver a pendência do alinhamento da coluna de resultados na sub-tabela de detalhes.
+Confirmar com a operação a pendência da Expedição (qual NF o relatório traz), e depois resolver o
+alinhamento da coluna de resultados na sub-tabela de detalhes.
