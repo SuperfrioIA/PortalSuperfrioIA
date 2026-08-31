@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0] — 2026-08-31
+### Adicionado
+- Análise de Mapa Estatísticos atualizada da v2.11 para a **v2.24** — o app agora se chama **PGA · Análise de Mapa Estatísticos** e ganhou o fluxo de **Expedição** ao lado do de Recebimento: são dois fluxos independentes, escolhidos na lateral, cada um com seus próprios arquivos e resultado. Trocar de fluxo não perde o que já estava carregado, e o Recebimento continua exatamente como era
+- **Exportar para Excel** na tela de resultado — baixa o detalhamento item por item (13 colunas, incluindo a diferença em kg e se o SIF confere) mais os totais por nota numa segunda aba, sempre no recorte do filtro ativo (todas / conferem / divergem)
+- **A nota diz se o número de inspeção é SIF ou SISB** — o relatório do WMS traz os dois na mesma coluna, e antes o produto de inspeção estadual aparecia como divergência sem ser. Agora, se não bate com o SIF mas bate com o SISB, confere pelo SISB; se não bate com nenhum, é divergência de verdade
+- Coluna **Origem** no detalhamento (Nacional × Estrangeira), lida da própria nota. É informativa — não muda o resultado da conferência
+### Alterado
+- **Importação numa tela só** — as notas (PDF/XML) e o relatório do WMS ficam lado a lado, e o wizard passou de 3 para 2 passos: importar e conferir. Um botão só, que libera quando os dois lados estão carregados
+- Tela mais larga e títulos do detalhamento em uma linha, para as colunas caberem sem quebrar
+### Observações
+- Continua sendo app estático embutido (Receita 1): sem backend, sem banco, sem rota nova, sem permissão nova além do `ver`. O endereço segue `/mapa-estatistico/`, então o cadastro em Administração não muda
+- **Pendente na Expedição:** o relatório `rpt_jda_sif_expedicao_v01` só traz a NF de entrada, e é por ela que a conferência casa as linhas. Falta a operação confirmar se são mesmo essas as notas da expedição. Não afeta o Recebimento
+
 ## [0.12.0] — 2026-08-27
 ### Adicionado
 - Volumetria de Catering no Hub — a tela de recebimento e expedição de catering (que morava num endereço próprio, com login próprio) passa a abrir por card no portal, com o login da Microsoft e o mesmo "Voltar ao hub" das outras telas. Matriz por unidade, cliente e mês, planilha com a linha crua e download em CSV ou Excel, sempre no recorte dos filtros

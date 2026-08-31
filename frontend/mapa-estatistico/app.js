@@ -2,7 +2,43 @@
 if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__a=new Uint8Array(__n);for(var __i=0;__i<__n;__i++)__a[__i]=__b.charCodeAt(__i);pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([__a],{type:"application/javascript"}));}
 (function(){
   const $=id=>document.getElementById(id);
-  const state={notes:[],rows:null,colmap:null,netCol:null,nfCol:null,romCol:null,results:[],extra:{},notasExcel:null,filter:"all",_id:0};
+  /* ---------- v2.23: dois fluxos independentes (Recebimento × Expedição) ----------
+     Decisão de arquitetura: a Expedição NÃO é uma cópia do código. É o MESMO motor
+     (importação → tratamento → resultado) rodando sobre um ESTADO PRÓPRIO, com os rótulos
+     vindos de MODULOS. Duplicar o código significaria manter duas vezes cada correção de
+     regra (SIF/SISB, peso, origem) — e elas divergiriam na primeira manutenção.
+     O que a Expedição vai ter de diferente (layout de relatório, regras de cruzamento) entra
+     como configuração aqui, sem tocar no fluxo de Recebimento, que continua exatamente como
+     estava. Trocar de fluxo não perde nada: cada lado guarda seus arquivos e seu resultado. */
+  const MODULOS={
+    receb:{
+      id:"receb", nome:"Recebimento", verbo:"recebido", semX:"Sem recebimento", arquivo:"recebimento",
+      wmsH2:"Recebimento WMS", wmsTitulo:"Relatório de recebimento", thQtdX:"Recebido (XLSX)",
+      // Coluna do relatório usada para casar com a NF conferida (a 1ª que existir no arquivo).
+      chaveNf:["nf"],
+      wmsNota:'Relatório extraído do <b>WMS</b> pelo Pentaho — caminho <span class="path">Pentaho › Unidades › rpt_jda_recebimento_dtl_v03</span> <a class="notelink" href="http://operationsreports.superfrio.com.br:8080/pentaho/api/repos/%3Apublic%3Aunidades%3Arpt_jda_recebimento_dtl_v03.prpt/viewer" target="_blank" rel="noopener">Abrir no Pentaho ↗</a>. Ele pode conter linhas de <b>várias notas</b> — cada uma é filtrada pela sua <b>NF</b>.'
+    },
+    exped:{
+      id:"exped", nome:"Expedição", verbo:"expedido", semX:"Sem expedição", arquivo:"expedicao",
+      wmsH2:"Expedição WMS", wmsTitulo:"Relatório de expedição", thQtdX:"Expedido (XLSX)",
+      // v2.24: o relatório de expedição NÃO tem coluna "NF". Tem duas colunas de nota de
+      // entrada: "NF Entrada PO_NUM" (campo livre do WMS — vem com sufixo de carga "7602.7",
+      // ou até com código de pedido "AJT160626...") e "NF Entrada STR7" (o número já limpo
+      // pelo próprio relatório: "7602", "1572498"). O casamento usa a STR7 — medido no
+      // arquivo real, PO_NUM e STR7 divergem em 58 das 2304 linhas, e em todas elas quem
+      // está certo é a STR7. PO_NUM fica como reserva, caso um relatório venha sem a STR7.
+      chaveNf:["nfEntradaStr7","nfEntradaPoNum"],
+      wmsNota:'Relatório <span class="path">rpt_jda_sif_expedicao_v01</span> extraído do <b>WMS</b>. O casamento usa a coluna <b>NF Entrada STR7</b> (número da nota já limpo pelo relatório) — a <b>NF Entrada PO_NUM</b> é campo livre e vem com sufixo de carga (ex.: <span class="path">7602.7</span>). Produtos sem SIF (não cárneos) são lidos normalmente e não entram na conferência de inspeção.'
+    }
+  };
+  const novoEstado=()=>({notes:[],rows:null,colmap:null,netCol:null,nfCol:null,romCol:null,results:[],extra:{},
+                         notasExcel:null,filter:"all",_id:0,step:1,tol:"0",ui:null});
+  const mods={receb:novoEstado(),exped:novoEstado()};
+  let modulo="receb";
+  // `state` é `let` (era `const`): todo o app continua escrevendo em `state` sem saber que
+  // existem dois — na troca de fluxo o ponteiro passa a apontar para o outro estado.
+  let state=mods[modulo];
+  const MOD=()=>MODULOS[modulo];
   const norm=s=>{ if(s==null) return ""; return String(s).split("-")[0].replace(/\D/g,"").replace(/^0+/,""); };
   const sa=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
   const fmt=n=>Number(n).toLocaleString("pt-BR",{minimumFractionDigits:0,maximumFractionDigits:3});
@@ -26,7 +62,59 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     return nf?("0"+nf):nf;
   }
 
-  function goStep(n){[1,2,3].forEach(i=>{$("scr"+i).classList.toggle("active",i===n);const st=$("st"+i);st.classList.toggle("active",i===n);st.classList.toggle("done",i<n);});window.scrollTo({top:0,behavior:"smooth"});}
+  // v2.17: wizard de 2 passos (1 = importar notas + Excel na mesma tela, 2 = resultado).
+  // v2.23: o passo passou a ser guardado no estado do fluxo, para a troca voltar onde parou.
+  function goStep(n){state.step=n;[1,2].forEach(i=>{$("scr"+i).classList.toggle("active",i===n);const st=$("st"+i);st.classList.toggle("active",i===n);st.classList.toggle("done",i<n);});window.scrollTo({top:0,behavior:"smooth"});}
+
+  /* ---------- v2.23: troca entre Recebimento e Expedição ---------- */
+  function aplicarRotulos(){
+    const m=MOD();
+    $("eyebrow1").textContent="Análise · "+m.nome;
+    $("eyebrow2").textContent="Análise · "+m.nome;
+    $("wmsH2").textContent=m.wmsH2;
+    $("wmsTitulo").textContent=m.wmsTitulo;
+    $("wmsNota").innerHTML=m.wmsNota;
+    $("thQtdX").textContent=m.thQtdX;
+    $("leadRes").textContent="Peso líquido esperado (nota) × "+m.verbo+" (WMS), por NF. Clique numa linha para ver o detalhe por lote.";
+    [["modReceb","receb"],["modExped","exped"]].forEach(([id,k])=>{
+      const el=$(id); el.classList.toggle("active",modulo===k); el.setAttribute("aria-pressed",String(modulo===k));
+    });
+  }
+  // A lista de arquivos importados e o painel de colunas são escritos direto no DOM (não dá
+  // para redesenhá-los a partir do estado), então o HTML deles é guardado no fluxo que sai.
+  const UI_PADRAO={pdfList:"",pdfListShow:false,pdfTitle:"Arraste os PDFs ou XMLs aqui ou clique para selecionar",
+                   dropTitle:"Arraste a planilha aqui ou clique para selecionar",dropSub:"Formato .xlsx, .xls ou .csv",
+                   detect:"",detectShow:false};
+  function snapshotUI(){
+    state.tol=$("tol").value;
+    state.ui={pdfList:$("pdfList").innerHTML,pdfListShow:$("pdfList").classList.contains("show"),
+              pdfTitle:$("pdfTitle").textContent,dropTitle:$("dropTitle").textContent,dropSub:$("dropSub").textContent,
+              detect:$("detect").innerHTML,detectShow:$("detect").classList.contains("show")};
+  }
+  function restoreUI(){
+    const u=state.ui||UI_PADRAO;
+    $("pdfList").innerHTML=u.pdfList; $("pdfList").classList.toggle("show",u.pdfListShow);
+    $("pdfTitle").textContent=u.pdfTitle;
+    $("dropTitle").textContent=u.dropTitle; $("dropSub").textContent=u.dropSub;
+    $("detect").innerHTML=u.detect; $("detect").classList.toggle("show",u.detectShow);
+    $("tol").value=state.tol;
+  }
+  // Fluxo ainda sem conferência feita: KPIs em "—" (e não em zero, que sugeriria "conferi e deu 0").
+  function resetResultado(){
+    ["sNotas","sExcel","sOk","sWarn","sDiff"].forEach(id=>{ const e=$(id); if(e) e.textContent="—"; });
+    $("sDiff").parentElement.className="stat";
+    $("resBody").innerHTML=""; $("extra").innerHTML=""; $("filterInfo").textContent="";
+  }
+  function trocarModulo(m){
+    if(m===modulo) return;
+    snapshotUI();                                   // guarda o que está na tela no fluxo que sai
+    modulo=m; state=mods[m];                        // ponteiro passa para o outro estado
+    aplicarRotulos(); restoreUI();
+    if(!state.notes.length) addNote(); else renderNotes();   // renderNotes já chama syncConferir
+    updateFilterButtons();
+    if(state.results.length) applyTolerance(); else resetResultado();
+    goStep(state.step);
+  }
 
   /* ---------- notes table ---------- */
   function updateEditedBadge(tr,n){
@@ -81,7 +169,14 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     validateNotes();
   }
   const validNotes=()=>state.notes.filter(n=>n.nf.trim()!=="" && n.peso!=="" && !isNaN(parsePeso(n.peso)));
-  function validateNotes(){ $("toStep2").disabled=validNotes().length===0; }
+  // Declaração de função (hoisted) porque syncConferir é chamado por renderNotes, que roda
+  // na inicialização — antes do ponto onde este helper aparece no arquivo.
+  function excelPronto(){ return !!(state.rows && state.netCol); }
+  // v2.17: com as duas importações na mesma tela, o único botão de avanço é o "Conferir",
+  // e ele só libera quando os DOIS lados estão prontos (antes o gate era em dois passos:
+  // "Continuar para importação" exigia as notas e "Conferir" exigia o Excel).
+  function syncConferir(){ $("conferir").disabled = !(validNotes().length && excelPronto()); }
+  const validateNotes=syncConferir;
   function clearEmpty(){ state.notes=state.notes.filter(n=>n.nf.trim()!=="" || n.peso.trim()!==""); }
 
   $("addRow").addEventListener("click",()=>addNote());
@@ -95,17 +190,12 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     if(added){$("bulkTxt").value="";renderNotes();}
   });
 
-  $("toStep2").addEventListener("click",()=>goStep(2));
-  $("backStep1").addEventListener("click",()=>goStep(1));
   $("backStep1b").addEventListener("click",()=>goStep(1));
-  $("backStep2").addEventListener("click",()=>goStep(2));
   // Navegação por clique nas etapas da sidebar (com travas p/ não abrir tela sem dados)
-  const excelPronto=()=>!!(state.rows && state.netCol);
   $("st1").addEventListener("click",()=>goStep(1));
-  $("st2").addEventListener("click",()=>{ if(validNotes().length) goStep(2); });
-  $("st3").addEventListener("click",()=>{
-    if(validNotes().length && excelPronto()){ conferir(); goStep(3); }
-    else if(state.results.length){ goStep(3); }
+  $("st2").addEventListener("click",()=>{
+    if(validNotes().length && excelPronto()){ conferir(); goStep(2); }
+    else if(state.results.length){ goStep(2); }
   });
 
   /* ---------- PDF import ---------- */
@@ -137,7 +227,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
             itm.querySelector(".vals").textContent="NF "+disp+" · já importada — ignorada";
           }else{
             const pesoStr=data.liq!=null?String(data.liq):"";
-            state.notes.push({id:++state._id,nf:disp,peso:pesoStr,origin:tipo+": "+f.name,flag:data.liq==null||!!data.pesoWarn,nfFlag:!!data.nfWarn,sif:data.sif||"",itens:data.itens||[],nfOriginal:disp,pesoOriginal:pesoStr});
+            state.notes.push({id:++state._id,nf:disp,peso:pesoStr,origin:tipo+": "+f.name,flag:data.liq==null||!!data.pesoWarn,nfFlag:!!data.nfWarn,sif:data.sif||"",sisb:data.sisb||"",itens:data.itens||[],nfOriginal:disp,pesoOriginal:pesoStr});
             const okAll=data.liq!=null && !data.nfWarn && !data.pesoWarn;
             itm.querySelector(".ic").className="ic "+(okAll?"ok":"warn");
             itm.querySelector(".ic").textContent=okAll?"✓":"⚠";
@@ -181,7 +271,12 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
       const p=prods[i];
       const g=t=>{ const e=p.getElementsByTagName(t); return e.length?e[0].textContent.trim():null; };
       const unid=g("uCom")||""; const qtd=g("qCom")?parseFloat(g("qCom")):null;
-      itens.push({codigo:g("cProd"), desc:g("xProd")||"", unid, qtd, peso:/^KG/i.test(unid)?qtd:null});
+      // Origem (Tabela "A"): a tag <orig> fica no <imposto><ICMS><ICMSxx> do mesmo <det>,
+      // fora do <prod> — por isso a busca sobe para o elemento pai.
+      const det=p.parentNode;
+      const og=det?det.getElementsByTagName("orig"):null;
+      const cst=(og&&og.length)?og[0].textContent.trim():null;
+      itens.push({codigo:g("cProd"), desc:g("xProd")||"", unid, qtd, cst, peso:/^KG/i.test(unid)?qtd:null});
     }
     // Mesma validação do PDF: quando todos os itens têm peso (uCom="KG"), a soma tem que bater
     // com <pesoL>. Se não bater (ou <pesoL> não vier), a soma dos itens é quem manda.
@@ -191,7 +286,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
       if(liq==null){ liq=soma; }
       else if(Math.abs(soma-liq)>0.5){ pesoWarn=true; liq=soma; }
     }
-    return {nf,liq,bru,nfWarn:false,pesoWarn,sif:extractSif(text),itens};
+    return {nf,liq,bru,nfWarn:false,pesoWarn,sif:extractSif(text),sisb:extractSisb(text),itens};
   }
 
   async function extractPdf(file){
@@ -214,21 +309,81 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     return dv===parseInt(k[43],10);
   }
   const nNFdaChave=k=>String(parseInt(k.substr(25,9),10));
+  /* ---------- Origem da mercadoria: NACIONAL × ESTRANGEIRA ---------- */
+  // Tabela "A" da NF-e (Origem da Mercadoria ou Serviço). É o 1º dígito do CST impresso na
+  // tabela de itens do DANFE (ex.: CST "050" -> origem 0) e a tag <orig> do ICMS no XML.
+  // Fonte oficial e por item — mais confiável que a descrição do produto.
+  const ORIGEM_TAB={
+    "0":"Nacional, exceto as indicadas nos códigos 3, 4, 5 e 8",
+    "1":"Estrangeira — Importação direta, exceto a indicada no código 6",
+    "2":"Estrangeira — Adquirida no mercado interno, exceto a indicada no código 7",
+    "3":"Nacional, mercadoria ou bem com Conteúdo de Importação superior a 40% e igual ou inferior a 70%",
+    "4":"Nacional, cuja produção tenha sido feita em conformidade com os processos produtivos básicos (DL 288/1967 e leis correlatas)",
+    "5":"Nacional, mercadoria ou bem com Conteúdo de Importação inferior ou igual a 40%",
+    "6":"Estrangeira — Importação direta, sem similar nacional, constante em lista de Resolução Camex e gás natural",
+    "7":"Estrangeira — Adquirida no mercado interno, sem similar nacional, constante em lista de Resolução Camex e gás natural",
+    "8":"Nacional — Mercadoria ou bem com Conteúdo de Importação superior a 70%"
+  };
+  const ORIGEM_ESTRANGEIRA=new Set(["1","2","6","7"]);   // os demais (0,3,4,5,8) são nacionais
+  // Converte o CST (ou a tag <orig>) no código de origem da Tabela "A".
+  // "050"/"0102" -> "0" (1º dígito); "2" -> "2". CST de 2 dígitos NÃO carrega origem -> null.
+  function origFromCst(cst){
+    const d=String(cst==null?"":cst).replace(/\D/g,"");
+    if(!d) return null;
+    const c=(d.length>=3)?d[0]:(d.length===1?d:null);
+    if(c==null||!ORIGEM_TAB[c]) return null;
+    return {code:c, nacional:!ORIGEM_ESTRANGEIRA.has(c), src:"cst"};
+  }
+  // Fallback: mapeia a descrição do produto quando o CST não foi capturado.
+  // Só termos inequívocos — nada de siglas curtas ("AR", "PY"), que dariam falso positivo
+  // dentro de palavras de descrição de carne/embalagem.
+  const RX_DESC_EST=/\b(IMPORTAD[OA]S?|IMPORTACAO|IMPORT|ESTRANGEIR[OA]S?|URUGUAI[OA]?S?|ARGENTIN[OA]S?|PARAGUAI[OA]?S?|CHILEN[OA]S?|BOLIVIAN[OA]S?|MERCOSUL)\b/;
+  const RX_DESC_NAC=/\b(NACIONAL(?:ES)?|NAC)\b/;
+  function origFromDesc(desc){
+    const t=sa(desc||"").toUpperCase();
+    if(!t) return null;
+    const est=RX_DESC_EST.test(t), nac=RX_DESC_NAC.test(t);
+    if(est===nac) return null;                            // nenhum termo, ou os dois -> inconclusivo
+    return {code:null, nacional:nac, src:"desc"};
+  }
+  // Origem de um item: CST manda; se não veio, cai para a descrição.
+  function origemItem(it){
+    if(!it) return null;
+    return origFromCst(it.cst) || origFromDesc(it.desc);
+  }
+  // Célula da coluna Origem no detalhamento.
+  function origemCell(o){
+    if(!o) return "—";
+    const rot=o.nacional?"Nacional":"Estrangeira";
+    if(o.src==="cst"){
+      return `<span class="orig" title="${esc("CST/origem "+o.code+" — "+ORIGEM_TAB[o.code])}">`+
+             `${rot} <span class="oc">(${o.code})</span></span>`;
+    }
+    return `<span class="orig infer" title="Inferida pela descrição do produto — o CST/origem não foi capturado nesta nota">`+
+           `${rot} <span class="oc">(desc.)</span></span>`;
+  }
+
   // SIF (Serviço de Inspeção Federal) — extrai SÓ O NÚMERO do SIF dos dados adicionais.
   // O rótulo costuma vir como "LACRE SIF :0006974/SIF1889", onde o SIF real é só o "1889"
   // (número após o "SIF" interno). Se não houver "SIF" interno, usa o 1º grupo de dígitos
   // do token (ex.: "236-ICMS" -> 236, "2544" -> 2544).
-  function extractSif(s){
+  // Generalizado na v2.14 para atender SIF e SISB com a mesma mecânica — `rot` é o trecho de
+  // regex do rótulo (alternativas mais longas primeiro, ex.: "SISBI|SISB").
+  function extractReg(s,rot){
     if(!s) return "";
-    let m=/LACRE\s+SIF\s*:?\s*([0-9][\w\/.\-]*)/i.exec(s);
-    if(!m) m=/\bSIF\s*:?\s*([0-9][\w\/.\-]*)/i.exec(s);
+    let m=new RegExp("LACRE\\s+(?:"+rot+")\\s*:?\\s*([0-9][\\w\\/.\\-]*)","i").exec(s);
+    if(!m) m=new RegExp("\\b(?:"+rot+")\\s*:?\\s*([0-9][\\w\\/.\\-]*)","i").exec(s);
     if(!m) return "";
     const tok=m[1].replace(/[.\s]+$/,"").trim();
-    const inner=[...tok.matchAll(/SIF\s*(\d+)/ig)];         // "0006974/SIF1889" -> 1889
+    const inner=[...tok.matchAll(new RegExp("(?:"+rot+")\\s*(\\d+)","ig"))];  // "0006974/SIF1889" -> 1889
     if(inner.length) return inner[inner.length-1][1];
     const num=/(\d+)/.exec(tok);                            // senão, o número do token
     return num?num[1]:"";
   }
+  const extractSif =s=>extractReg(s,"SIF");
+  // SISB — Sistema Brasileiro de Inspeção de Produtos de Origem Animal (SISBI/POA). Mesmo
+  // tratamento do SIF: aceita "SISBI" e "SISB", com ou sem "LACRE" na frente.
+  const extractSisb=s=>extractReg(s,"SISBI|SISB");
 
   // Acha o Y (geometria PDF) da linha de cabeçalho "CÓD/DESCRIÇÃO/NCM" da tabela de itens —
   // usado para excluir os tokens da tabela de produtos ao procurar o peso do CABEÇALHO da nota.
@@ -319,7 +474,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
         else { pesoWarn=true; liq=soma; }
       }
     }
-    return {nf,liq,bru,nfWarn,pesoWarn,sif:extractSif(full),itens};
+    return {nf,liq,bru,nfWarn,pesoWarn,sif:extractSif(full),sisb:extractSisb(full),itens};
   }
   // Extrai itens da tabela "DADOS DO PRODUTO/SERVIÇOS".
   // Principal: reconstrói as LINHAS pela geometria (agrupa por Y, ordena por X), porque vários
@@ -332,7 +487,9 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
   // CST/CFOP e UNID/QTDE podem vir separados por espaço OU grudados com "/" (ex.: DANFE BRF/Sadia:
   // "050/5905", "CX/1.980"), e a QTDE nesse layout é inteira (sem vírgula decimal) — daí o [\s\/]+
   // como separador e a parte decimal da QTDE ser opcional.
-  const RX_ITEM=/((?=[A-Z0-9.\-\/]*\d)[A-Z0-9][A-Z0-9.\-\/]{1,19})\s+([A-Za-zÀ-ÿ][\s\S]{1,80}?)\s+(\d{4}\.?\d{2}\.?\d{2})\s+\d{2,3}[\s\/]+(\d{4})\s+([A-Z]{1,4})[\s\/]+(\d[\d.]*(?:,\d+)?)/;
+  // O CST (grupo 4) passou a ser capturado na v2.12: seu 1º dígito é a origem da mercadoria
+  // (Tabela "A" da NF-e). Grupos: 1=código 2=descrição 3=NCM 4=CST 5=CFOP 6=UNID 7=QTDE.
+  const RX_ITEM=/((?=[A-Z0-9.\-\/]*\d)[A-Z0-9][A-Z0-9.\-\/]{1,19})\s+([A-Za-zÀ-ÿ][\s\S]{1,80}?)\s+(\d{4}\.?\d{2}\.?\d{2})\s+(\d{2,3})[\s\/]+(\d{4})\s+([A-Z]{1,4})[\s\/]+(\d[\d.]*(?:,\d+)?)/;
   const RX_END=/^-{5,}|informa[cç][oõ]es\s+complementares|c[aá]lculo do issqn|dados adicionais|reservado ao fisco/i;
   // A coluna PESO fica no fim da linha do DANFE, depois de VL.UNIT/VALOR TOTAL/B.ICMS/...,
   // e é o único valor da linha com 3 casas decimais (os demais valores monetários usam 2).
@@ -368,7 +525,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
       const m=RX_ITEM.exec(L.text);
       if(m){
         const codigo=m[1]; let desc=m[2].replace(/\s+/g," ").trim();
-        const unid=m[5], qtd=brNum(m[6]);
+        const cst=m[4], unid=m[6], qtd=brNum(m[7]);
         // anexa quebras de linha da descrição (abaixo, na coluna da descrição, sem ser item nem fim)
         let j=i+1;
         while(j<lines.length){
@@ -380,7 +537,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
         }
         desc=desc.replace(/\s+/g," ").replace(/\s*-\s*$/,"").trim();
         const peso=extractPeso(L.text.slice(m.index+m[0].length),unid,qtd);
-        itens.push({codigo, desc, unid, qtd, peso});
+        itens.push({codigo, desc, unid, qtd, cst, peso});
         i=j-1;
       }
     }
@@ -402,12 +559,12 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     const matches=[]; let m;
     while((m=rx.exec(body))) matches.push(m);
     const itens=matches.map((m,idx)=>{
-      const unid=m[5], qtd=brNum(m[6]);
+      const unid=m[6], qtd=brNum(m[7]);
       const desc=m[2].replace(/\s+/g," ").replace(/\s*-\s*$/,"").trim();
       const start=m.index+m[0].length;
       const end=(idx+1<matches.length)?matches[idx+1].index:body.length;
       const peso=extractPeso(body.slice(start,end),unid,qtd);
-      return {codigo:m[1], desc, unid, qtd, peso};
+      return {codigo:m[1], desc, unid, qtd, cst:m[4], peso};
     });
     return itens;
   }
@@ -430,14 +587,15 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
         state.rows=XLSX.utils.sheet_to_json(ws,{defval:null});
         detectColumns(state.rows);
         $("dropSub").textContent=state.rows.length+" linhas · aba "+wb.SheetNames[0];
-        showDetectPanel(); $("conferir").disabled=!state.netCol;
+        showDetectPanel(); syncConferir();
       }catch(err){ $("dropSub").textContent="Erro ao ler o arquivo";
         $("detect").innerHTML='<div class="row err">Não consegui ler a planilha. Confira se é um .xlsx válido.</div>';
-        $("detect").classList.add("show"); state.rows=null; $("conferir").disabled=true; } };
+        $("detect").classList.add("show"); state.rows=null; syncConferir(); } };
     r.readAsArrayBuffer(f);
   }
-  // Colunas a capturar do relatório do WMS (para conferência e futura extração de dados)
-  const CAMPOS=[
+  // Colunas a capturar do relatório do WMS (para conferência e futura extração de dados).
+  // v2.24: cada fluxo tem a SUA lista — os dois relatórios não têm as mesmas colunas.
+  const CAMPOS_RECEB=[
     {key:"unidade",      label:"Unidade",            exact:["unidade"]},
     {key:"cliente",      label:"Cliente",            exact:["cliente"]},
     {key:"romaneio",     label:"Romaneio",           exact:["romaneio"]},
@@ -447,6 +605,9 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     {key:"codProduto",   label:"Código Produto",     any:["codigo produto","cod produto"]},
     {key:"descProduto",  label:"Descrição Produto",  any:["descricao produto","descricao do produto"]},
     {key:"sif",          label:"SIF",                exact:["sif"]},
+    // O relatório do WMS não traz coluna de SISB: o número vem na coluna SIF e é identificado
+    // pela nota (ver classificaInsp). Marcada como `opcional` para não virar alerta na captura.
+    {key:"sisb",         label:"SISB",               exact:["sisb","sisbi"], opcional:"vem na coluna SIF, identificado pela nota"},
     {key:"lote",         label:"Lote",               exact:["lote"]},
     {key:"dataProducao", label:"Data Produção",      any:["data producao","fabricacao"]},
     {key:"dataValidade", label:"Data Validade",      any:["data validade","validade"]},
@@ -456,35 +617,78 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     {key:"pesoBruto",    label:"Peso Bruto",         any:["peso bruto"]},
     {key:"conferente",   label:"Conferente",         exact:["conferente"]},
   ];
+  // Expedição — relatório `rpt_jda_sif_expedicao_v01`. Difere do recebimento em três pontos:
+  // a nota vem em duas colunas ("NF Entrada PO_NUM" livre e "NF Entrada STR7" limpa), a
+  // quantidade é "Qtd Expedida", e há campos de inspeção que o recebimento não tem
+  // (Lacre SIF, Certificação, Habilitação, Rastreabilidade, Família).
+  // Cuidado ao mexer: "SIF" é `exact` de propósito — se virasse `any`, casaria com "Lacre SIF",
+  // que é OUTRA coisa (o SIF do lacre do veículo, ex. "0013743/SIF159", diferente do SIF do
+  // produto na mesma linha, ex. "0104").
+  const CAMPOS_EXPED=[
+    {key:"unidade",        label:"Unidade",             exact:["unidade"]},
+    {key:"cliente",        label:"Cliente",             exact:["cliente"]},
+    {key:"romaneio",       label:"Romaneio",            exact:["romaneio"]},
+    {key:"pedidoSaida",    label:"Pedido de Saída",     any:["pedido de saida","pedido saida"]},
+    {key:"nfEntradaStr7",  label:"NF Entrada STR7",     exact:["nf entrada str7"], any:["str7"]},
+    {key:"nfEntradaPoNum", label:"NF Entrada PO_NUM",   exact:["nf entrada po_num"], any:["po_num"]},
+    {key:"checkin",        label:"Data Checkin",        exact:["data checkin"]},
+    {key:"fechamento",     label:"Data Fechamento",     exact:["data fechamento"], any:["data fecham"]},
+    {key:"codProduto",     label:"Código Produto",      any:["codigo produto","cod produto"]},
+    {key:"descProduto",    label:"Descrição Produto",   any:["descricao produto","descricao do produto"]},
+    {key:"familia",        label:"Família",             exact:["familia"]},
+    {key:"sif",            label:"SIF",                 exact:["sif"]},
+    {key:"lacreSif",       label:"Lacre SIF",           exact:["lacre sif"]},
+    {key:"sisb",           label:"SISB",                exact:["sisb","sisbi"], opcional:"vem na coluna SIF, identificado pela nota"},
+    {key:"lote",           label:"Lote",                exact:["lote"]},
+    {key:"dataProducao",   label:"Data Produção",       any:["data producao","fabricacao"]},
+    {key:"dataValidade",   label:"Data Validade",       any:["data validade","validade"]},
+    {key:"um",             label:"UM",                  exact:["um"], any:["unidade medida"]},
+    {key:"qtdExpedida",    label:"Qtd Expedida",        any:["qtd expedida","quantidade expedida"]},
+    {key:"pesoLiquido",    label:"Peso Líquido",        any:["peso liquido"]},
+    {key:"pesoBruto",      label:"Peso Bruto",          any:["peso bruto"]},
+    {key:"conferente",     label:"Conferente",          exact:["conferente"]},
+    {key:"certificacao",   label:"Certificação",        exact:["certificacao"]},
+    {key:"habilitacao",    label:"Habilitação",         exact:["habilitacao"]},
+    {key:"rastreabilidade",label:"Rastreabilidade",     exact:["rastreabilidade"]},
+  ];
+  const CAMPOS_POR_MODULO={receb:CAMPOS_RECEB,exped:CAMPOS_EXPED};
+  function camposAtuais(){ return CAMPOS_POR_MODULO[modulo]; }
   function detectColumns(rows){
     state.colmap={}; state.netCol=state.nfCol=state.romCol=null;
     if(!rows.length) return;
     const cols=Object.keys(rows[0]).map(k=>({k,n:sa(k)}));
-    CAMPOS.forEach(c=>{
+    camposAtuais().forEach(c=>{
       let hit=null;
       if(c.exact){ const e=cols.find(o=>c.exact.includes(o.n)); if(e) hit=e.k; }
       if(!hit && c.any){ const a=cols.find(o=>c.any.some(s=>o.n.includes(s))); if(a) hit=a.k; }
       state.colmap[c.key]=hit;
     });
     state.netCol=state.colmap.pesoLiquido;
-    state.nfCol=state.colmap.nf;
+    // v2.24: a coluna de NF varia por fluxo (receb: "NF"; exped: "NF Entrada STR7", com
+    // "NF Entrada PO_NUM" de reserva). A 1ª da lista que existir no arquivo é a que vale.
+    state.nfCol=(MOD().chaveNf||["nf"]).map(k=>state.colmap[k]).find(Boolean)||null;
     state.romCol=state.colmap.romaneio;
   }
   function showDetectPanel(){
     const m=state.colmap||{};
-    const found=CAMPOS.filter(c=>m[c.key]).length;
-    const grid=CAMPOS.map(c=>{
-      const ok=!!m[c.key];
-      return `<div class="capitem ${ok?'ok':'miss'}"><span class="ck">${ok?'✓':'⚠'}</span><span>${c.label}${ok?'':' — não encontrada'}</span></div>`;
+    const campos=camposAtuais();
+    const found=campos.filter(c=>m[c.key]).length;
+    // Coluna ausente que é ausente **por projeto** (`opcional`, hoje só o SISB) não é alerta:
+    // sai em tom informativo, com a explicação de onde o dado é lido no lugar dela.
+    const grid=campos.map(c=>{
+      const ok=!!m[c.key], info=!ok&&!!c.opcional;
+      const cls=ok?'ok':(info?'info':'miss'), ico=ok?'✓':(info?'ⓘ':'⚠');
+      const nota=ok?'':(info?' — '+c.opcional:' — não encontrada');
+      return `<div class="capitem ${cls}"><span class="ck">${ico}</span><span>${c.label}${nota}</span></div>`;
     }).join("");
     $("detect").innerHTML=
-      `<p class="caphead">Colunas capturadas (${found} de ${CAMPOS.length})</p>`+
+      `<p class="caphead">Colunas capturadas (${found} de ${campos.length})</p>`+
       `<div class="capgrid">${grid}</div>`+
       `<div class="captot"><span>Total de linhas lidas</span><b>${state.rows.length}</b></div>`;
     $("detect").classList.add("show");
   }
 
-  $("conferir").addEventListener("click",()=>{ conferir(); goStep(3); });
+  $("conferir").addEventListener("click",()=>{ conferir(); goStep(2); });
   $("tol").addEventListener("input",()=>applyTolerance());
   // Filtros por clique (ou teclado, já que são <div role="button">) nos KPIs
   // (DANFE importadas = todas, Conferem = ok, Divergem = divergentes)
@@ -507,11 +711,12 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     state.results=notes.map(n=>{ const alvo=norm(n.nf);
       const matched=state.rows.filter(r=>rowMatchesNf(r,alvo));
       const recebido=matched.reduce((s,r)=>s+(Number(r[state.netCol])||0),0);
-      const res={nf:n.nf.trim(),alvo,esperado:parsePeso(n.peso)||0,recebido,matched,sif:n.sif||"",itens:n.itens||[]};
-      // divergência de SIF: SIF da NF ≠ SIF do XLSX em algum item recebido (mesma regra do detalhe)
+      const res={nf:n.nf.trim(),alvo,esperado:parsePeso(n.peso)||0,recebido,matched,sif:n.sif||"",sisb:n.sisb||"",itens:n.itens||[]};
+      // divergência de inspeção: número do WMS não casou nem com o SIF nem com o SISB da NF
+      // em algum item recebido (mesma regra do detalhe — ver classificaInsp)
       const grps=xlsxPorProduto(res); let sifDiv=false;
       (res.itens||[]).forEach(it=>{ const key=sa(it.codigo||"")||sa(it.desc||""); const g=key?grps.get(key):null;
-        if(g && it.peso!=null && sifDiverge(res.sif,g.sifs)) sifDiv=true; });
+        if(g && it.peso!=null && classificaInsp(res.sif,res.sisb,g.sifs,g.sisbs).bad) sifDiv=true; });
       res.sifDiv=sifDiv;
       return res; });
     const inf=new Set(state.results.map(r=>r.alvo)); const extra={}; const todasExcel=new Set();
@@ -535,7 +740,7 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     state.results.forEach((r,i)=>{
       if(!passaFiltro(r)) return; shown++;
       const cls=r.diff>1e-9?"pos":r.diff<-1e-9?"neg":"zero"; const sign=r.diff>1e-9?"+":r.diff<-1e-9?"−":"";
-      const status=r.none?'<span class="pill none">Sem recebimento</span>':r.ok?'<span class="pill ok">Confere</span>':'<span class="pill warn">Divergência</span>';
+      const status=r.none?'<span class="pill none">'+MOD().semX+'</span>':r.ok?'<span class="pill ok">Confere</span>':'<span class="pill warn">Divergência</span>';
       const tr=document.createElement("tr"); tr.className="note"; tr.dataset.i=i;
       tr.innerHTML=`<td><span class="caret">▸</span> ${esc(r.nf)}</td><td class="n">${fmt3(r.esperado)}</td><td class="n">${fmt3(r.recebido)}</td><td class="n diff ${cls}">${sign}${fmt3(Math.abs(r.diff))}</td><td>${status}</td>`;
       tr.addEventListener("click",()=>toggleDetail(tr,i)); tb.appendChild(tr);
@@ -580,6 +785,8 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     rows.forEach(tr=>allOpen?closeDetail(tr):openDetail(tr,Number(tr.dataset.i)));
     syncToggleAllHeader();
   }
+  // Agrupa as linhas do WMS casadas com a NF por produto (código; cai p/ descrição),
+  // somando o peso líquido e juntando os SIFs distintos daquele produto no XLSX.
   // Extrai o número comparável do SIF, tolerando os formatos que aparecem na NF:
   // usa o número após "SIF" (ex.: "0006974/SIF1889" -> 1889); senão o 1º grupo de dígitos
   // (ex.: "236-ICMS" -> 236, "2544" -> 2544); ignora zeros à esquerda.
@@ -590,75 +797,199 @@ if(window.pdfjsLib&&window.__PDFW){var __b=atob(window.__PDFW),__n=__b.length,__
     let d = all.length ? all[all.length-1][1] : ((/(\d+)/.exec(t)||[])[1]||"");
     return d ? (d.replace(/^0+/,"")||"0") : "";
   }
-  // SIF da NF diverge do SIF do XLSX? Só compara quando os dois lados têm SIF numérico.
-  function sifDiverge(nfSif, xlsxSifs){
-    const nfN=sifNum(nfSif); if(!nfN) return false;
-    const nums=[...xlsxSifs].map(sifNum).filter(Boolean); if(!nums.length) return false;
-    return !nums.includes(nfN);
+  // v2.22 — O relatório do WMS **não tem coluna própria de SISB**: o número de inspeção do
+  // produto chega todo na coluna "SIF", seja ele um SIF ou um SISB. Quem diz o que é aquele
+  // número é a NOTA. Regra pedida pelo usuário, na ordem:
+  //   1) bate com o SIF da NF   -> é SIF  → fica na coluna SIF (XLSX) e confere;
+  //   2) senão, bate com o SISB -> é SISB → vai para a coluna SISB (XLSX) e confere lá;
+  //   3) não bate com nenhum dos dois     -> divergência.
+  // Substituiu o `sifDiverge` da v2.10, que só sabia comparar SIF × SIF e por isso acusava
+  // divergência em produto de inspeção estadual (SISB) cujo número batia perfeitamente.
+  // `sisbsProprios` são os valores que vieram de uma coluna SISB de verdade, quando o
+  // relatório tiver uma: esses não passam por classificação, já nasceram identificados.
+  function classificaInsp(nfSif,nfSisb,valores,sisbsProprios){
+    const nSif=sifNum(nfSif), nSisb=sifNum(nfSisb);
+    const sifs=[], sisbs=[...(sisbsProprios||[])], soltos=[];
+    [...(valores||[])].forEach(v=>{
+      const n=sifNum(v);
+      if(n && nSif && n===nSif) sifs.push(v);
+      else if(n && nSisb && n===nSisb) sisbs.push(v);
+      else soltos.push(v);                                 // não casou com SIF nem com SISB
+    });
+    // Só acusa divergência quando havia com o que comparar: nota sem SIF e sem SISB não
+    // autoriza conclusão nenhuma sobre o número que veio do WMS (mesma cautela do sifDiverge).
+    return {sifs,sisbs,soltos,bad:soltos.length>0 && !!(nSif||nSisb)};
   }
-  // Agrupa as linhas do WMS casadas com a NF por produto (código; cai p/ descrição),
-  // somando o peso líquido e juntando os SIFs distintos daquele produto no XLSX.
   function xlsxPorProduto(r){
-    const cCod=state.colmap.codProduto, cDsc=state.colmap.descProduto, cSif=state.colmap.sif, net=state.netCol;
+    const cCod=state.colmap.codProduto, cDsc=state.colmap.descProduto, cSif=state.colmap.sif, cSisb=state.colmap.sisb, net=state.netCol;
     const map=new Map();
     (r.matched||[]).forEach(row=>{
       const codRaw=cCod?String(row[cCod]??"").trim():"";
       const dscRaw=cDsc?String(row[cDsc]??"").trim():"";
       const key=sa(codRaw)||sa(dscRaw)||"?";
       let g=map.get(key);
-      if(!g){ g={codigo:codRaw,desc:dscRaw,peso:0,sifs:new Set()}; map.set(key,g); }
+      if(!g){ g={codigo:codRaw,desc:dscRaw,peso:0,sifs:new Set(),sisbs:new Set()}; map.set(key,g); }
       g.peso+=Number(row[net])||0;
       const s=cSif?String(row[cSif]??"").trim():""; if(s) g.sifs.add(s);
+      const sb=cSisb?String(row[cSisb]??"").trim():""; if(sb) g.sisbs.add(sb);
     });
     return map;
   }
   const stat=(txt,cls)=>`<span class="dstat ${cls}">${txt}</span>`;
-  function buildDetail(r){
+  // Linhas do detalhamento de UMA nota, como DADOS (sem HTML) — v2.19.
+  // Fonte única para a tabela na tela (buildDetail) e para a exportação em Excel
+  // (exportarExcel): a regra de status/SIF/origem mora só aqui, então os dois nunca divergem.
+  // Cada linha traz o peso como número (pesoNF/pesoX, null quando não há) E como texto já
+  // formatado em pt-BR (pesoNFtxt/pesoXtxt) — a tela usa o texto, o Excel usa o número.
+  function detailRows(r){
     const itens=(r.itens&&r.itens.length)?r.itens:null;
-    const sifNF=esc(r.sif||"");
+    const sifNF=r.sif||"", sisbNF=r.sisb||"";
     const grupos=xlsxPorProduto(r);
     const usados=new Set();
-    const cell=(v,cls)=>`<td class="dt${cls?" "+cls:""}">${v}</td>`;
-    const linha=(rowCls,cod,desc,pesoNF,sifNFv,pesoX,sifX,status)=>
-      `<tr${rowCls?` class="${rowCls}"`:""}>`+cell(cod)+cell(desc)+cell(pesoNF,"n")+cell(sifNFv)+cell(pesoX,"n")+cell(sifX)+cell(status)+"</tr>";
-    let h="<table><colgroup><col style=\"width:7%\"><col style=\"width:31%\"><col style=\"width:13%\"><col style=\"width:9%\"><col style=\"width:13%\"><col style=\"width:9%\"><col style=\"width:18%\"></colgroup><thead><tr>"+
-      "<th>Item</th><th>Descrição</th>"+
-      "<th class=\"n\">Peso líq. KG (NF)</th><th>SIF (NF)</th>"+
-      "<th class=\"n\">Peso líq. KG (XLSX)</th><th>SIF (XLSX)</th><th>Status</th>"+
-      "</tr></thead><tbody>";
+    const out=[];
     if(itens){
       itens.forEach((it,idx)=>{
         const key=sa(it.codigo||"")||sa(it.desc||"");
         const g=key?grupos.get(key):null; if(g) usados.add(key);
-        const pesoNF=(it.peso!=null)?fmt3(it.peso):(fmt(it.qtd)+" "+(it.unid||""));
-        const pesoX=g?fmt3(g.peso):"—";
-        const sifXraw=g?([...g.sifs].join(", ")||"—"):"—";
+        // Classifica o número de inspeção que veio do WMS: SIF, SISB ou nenhum dos dois.
+        const cl=g?classificaInsp(sifNF,sisbNF,g.sifs,g.sisbs):null;
         let st,cls,sifBad=false;
         if(!g){ st="Só na NF"; cls="warn"; }                                   // esperado, mas não recebido
         else if(it.peso==null){ st="Verificar"; cls="warn"; }                  // sem peso numérico p/ comparar
         else {
           const pesoOk=Math.abs(it.peso-g.peso)<=5e-4;
-          sifBad=sifDiverge(sifNF,g.sifs);                                     // SIF da NF ≠ SIF do XLSX
+          sifBad=cl.bad;                                                       // não casou nem com SIF nem com SISB da NF
           if(pesoOk && !sifBad){ st="Confere"; cls="ok"; } else { st="Divergência"; cls="warn"; }
         }
-        const sifNFc=sifBad?`<span class="sifbad">${sifNF||"—"}</span>`:(sifNF||"—");
-        const sifXc =sifBad?`<span class="sifbad">${sifXraw}</span>`:sifXraw;
-        h+=linha(cls==="ok"?"":"dwarn",esc(it.codigo)||("#"+(idx+1)),esc(it.desc)||"—",pesoNF,sifNFc,pesoX,sifXc,stat(st,cls));
+        out.push({
+          cod:it.codigo||("#"+(idx+1)), desc:it.desc||"—", orig:origemItem(it),
+          pesoNF:(it.peso!=null)?it.peso:null,
+          pesoNFtxt:(it.peso!=null)?fmt3(it.peso):(fmt(it.qtd)+" "+(it.unid||"")).trim(),
+          sifNF:sifNF||"—", sisbNF:sisbNF||"—",
+          pesoX:g?g.peso:null, pesoXtxt:g?fmt3(g.peso):"—",
+          // SIF (XLSX) fica com o que é SIF + o que não casou com nada (veio dessa coluna e
+          // precisa ficar visível); SISB (XLSX) recebe o que a nota identificou como SISB.
+          sifX:cl?(cl.sifs.concat(cl.soltos).join(", ")||"—"):"—",
+          sisbX:cl?(cl.sisbs.join(", ")||"—"):"—",
+          st, cls, sifBad
+        });
       });
-      // Produtos presentes no XLSX mas sem item correspondente na NF (recebidos a mais)
+      // Produtos presentes no XLSX mas sem item correspondente na NF (recebidos a mais):
+      // não há CST desse lado, então a origem só pode sair da descrição do produto no WMS.
       grupos.forEach((g,key)=>{ if(usados.has(key)) return;
-        h+=linha("dwarn",esc(g.codigo)||"—",esc(g.desc)||"—","—","—",fmt3(g.peso),[...g.sifs].join(", ")||"—",stat("Só no XLSX","warn"));
+        out.push({
+          cod:g.codigo||"—", desc:g.desc||"—", orig:origFromDesc(g.desc),
+          pesoNF:null, pesoNFtxt:"—", sifNF:"—", sisbNF:"—",
+          pesoX:g.peso, pesoXtxt:fmt3(g.peso),
+          sifX:[...g.sifs].join(", ")||"—", sisbX:[...g.sisbs].join(", ")||"—",
+          st:"Só no XLSX", cls:"warn", sifBad:false
+        });
       });
     }else{
       // nota manual / layout não reconhecido: sem itens da NF para alinhar por produto
       const okTot=Math.abs((r.esperado||0)-(r.recebido||0))<=5e-4 && !r.none;
-      h+=linha(okTot?"":"dwarn","—","Itens não capturados do PDF (nota manual ou layout não reconhecido)",fmt3(r.esperado),sifNF||"—",fmt3(r.recebido),"—",stat(okTot?"Confere":(r.none?"Sem recebimento":"Divergência"),okTot?"ok":(r.none?"none":"warn")));
+      out.push({
+        cod:"—", desc:"Itens não capturados do PDF (nota manual ou layout não reconhecido)", orig:null,
+        pesoNF:r.esperado, pesoNFtxt:fmt3(r.esperado), sifNF:sifNF||"—", sisbNF:sisbNF||"—",
+        pesoX:r.recebido, pesoXtxt:fmt3(r.recebido), sifX:"—", sisbX:"—",
+        st:okTot?"Confere":(r.none?MOD().semX:"Divergência"),
+        cls:okTot?"ok":(r.none?"none":"warn"), sifBad:false
+      });
     }
+    return out;
+  }
+  function buildDetail(r){
+    const linhas=detailRows(r);
+    const cell=(v,cls)=>`<td class="dt${cls?" "+cls:""}">${v}</td>`;
+    const linha=(rowCls,cod,desc,orig,pesoNF,sifNFv,sisbNFv,pesoX,sifX,sisbX,status)=>
+      `<tr${rowCls?` class="${rowCls}"`:""}>`+cell(cod)+cell(desc)+cell(orig)+cell(pesoNF,"n")+cell(sifNFv)+cell(sisbNFv)+cell(pesoX,"n")+cell(sifX)+cell(sisbX)+cell(status)+"</tr>";
+    // Descrição 21% -> 30% na v2.16 (empurra a Origem p/ a direita). A folga saiu de Item, Status e
+    // dos pesos/SIF/SISB — que de todo modo já estão presos na largura mínima do próprio título (nowrap da v2.15).
+    let h="<table><colgroup><col style=\"width:5%\"><col style=\"width:30%\"><col style=\"width:10%\"><col style=\"width:10%\"><col style=\"width:6%\"><col style=\"width:6%\"><col style=\"width:10%\"><col style=\"width:6%\"><col style=\"width:6%\"><col style=\"width:11%\"></colgroup><thead><tr>"+
+      "<th>Item</th><th>Descrição</th><th>Origem</th>"+
+      "<th class=\"n\">Peso líq. KG (NF)</th><th>SIF (NF)</th><th>SISB (NF)</th>"+
+      "<th class=\"n\">Peso líq. KG (XLSX)</th><th>SIF (XLSX)</th><th>SISB (XLSX)</th><th>Status</th>"+
+      "</tr></thead><tbody>";
+    linhas.forEach(d=>{
+      const sifNFc=d.sifBad?`<span class="sifbad">${esc(d.sifNF)}</span>`:esc(d.sifNF);
+      const sifXc =d.sifBad?`<span class="sifbad">${esc(d.sifX)}</span>`:esc(d.sifX);
+      h+=linha(d.cls==="ok"?"":"dwarn",esc(d.cod),esc(d.desc),origemCell(d.orig),d.pesoNFtxt,sifNFc,esc(d.sisbNF),d.pesoXtxt,sifXc,esc(d.sisbX),stat(d.st,d.cls));
+    });
     // Totais: esperado (NF) × recebido (XLSX)
-    h+="<tr class=\"dtot\">"+cell("")+cell("Total")+cell(fmt3(r.esperado),"n")+cell("")+cell(fmt3(r.recebido),"n")+cell("")+cell("")+"</tr>";
+    h+="<tr class=\"dtot\">"+cell("")+cell("Total")+cell("")+cell(fmt3(r.esperado),"n")+cell("")+cell("")+cell(fmt3(r.recebido),"n")+cell("")+cell("")+cell("")+"</tr>";
     return h+"</tbody></table>";
   }
 
-  addNote("","","manual"); // linha inicial em branco
+  /* ---------- Exportação para Excel (v2.19; colunas revisadas na v2.20) ---------- */
+  // Mesma estrutura do detalhamento na tela, achatada: uma linha por item, com a coluna NOTA
+  // à frente. Sem linhas de "Total" no meio dos dados (elas quebrariam filtro/tabela dinâmica
+  // no Excel) — os totais por nota vão na 2ª aba, "Resumo por NF".
+  // v2.20: entram "Diferença (kg)" e "Diferença (SIF)", e o Excel deixa de ter travessão ("—"):
+  // pesos/SIF/SISB sem informação saem ZERADOS (0) e texto sem informação sai em branco.
+  const EXP_HEAD=["NOTA","ITEM (NF)","DESCRIÇÃO (NF)","ORIGEM (NF)","Peso líq. KG (NF)","SIF (NF)","SISB (NF)",
+                  "Peso líq. KG (XLSX)","SIF (XLSX)","SISB (XLSX)","Diferença (kg)","Diferença (SIF)","Status"];
+  // Versão texto da coluna Origem (a da tela é HTML): "Nacional (0)" / "Estrangeira (desc.)".
+  // No Excel, origem não identificada sai em branco (na tela continua "—").
+  function origemTexto(o){
+    if(!o) return "";
+    return (o.nacional?"Nacional":"Estrangeira")+" ("+(o.src==="cst"?o.code:"desc.")+")";
+  }
+  // Sem informação -> 0 (colunas de SIF/SISB e de peso). "—" conta como sem informação.
+  const zeroSe = v => { const s=String(v==null?"":v).trim(); return (!s||s==="—")?0:v; };
+  // Texto: "—" e vazio saem em branco (nunca o travessão).
+  const txtSe  = v => { const s=String(v==null?"":v).trim(); return (s==="—")?"":s; };
+  // Peso: número quando há; senão o texto alternativo (ex.: "5 CX"); senão 0.
+  const pesoSe = (num,txt) => (num!=null)?num:zeroSe(txt);
+  const r3 = n => Math.round(n*1000)/1000;                           // mata ruído de float na diferença
+  const FMT3="#,##0.000";
+  function exportarExcel(){
+    if(!state.results.length){ alert("Nada para exportar — faça a conferência primeiro."); return; }
+    const notas=state.results.filter(passaFiltro);
+    if(!notas.length){ alert("Nenhuma nota no filtro atual. Troque o filtro e tente de novo."); return; }
+    const aoa=[EXP_HEAD.slice()];
+    notas.forEach(r=>{
+      detailRows(r).forEach(d=>{
+        // Diferença por item = recebido (XLSX) − esperado (NF), mesmo sinal da tabela da tela.
+        // Lado ausente vale 0, então "Só na NF" sai negativo e "Só no XLSX" sai positivo.
+        const dif=r3((d.pesoX!=null?d.pesoX:0)-(d.pesoNF!=null?d.pesoNF:0));
+        aoa.push([r.nf, txtSe(d.cod), txtSe(d.desc), origemTexto(d.orig),
+                  pesoSe(d.pesoNF,d.pesoNFtxt), zeroSe(d.sifNF), zeroSe(d.sisbNF),
+                  pesoSe(d.pesoX,d.pesoXtxt), zeroSe(d.sifX), zeroSe(d.sisbX),
+                  dif, d.sifBad?"NOK":"OK", d.st]);
+      });
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=[{wch:12},{wch:12},{wch:52},{wch:18},{wch:18},{wch:12},{wch:12},{wch:20},{wch:12},{wch:12},{wch:14},{wch:14},{wch:16}];
+    ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:EXP_HEAD.length-1}})};
+    marcaFmt3(ws,aoa.length,[4,7,10]);                               // E, H e K = pesos e diferença
+    // Aba 2: totais por nota — espelha a tabela principal da tela.
+    const res=[["NOTA","Peso líq. KG esperado (NF)","Peso líq. KG "+MOD().verbo+" (XLSX)","Diferença (kg)","Status"]];
+    notas.forEach(r=>res.push([r.nf,r.esperado,r.recebido,r.recebido-r.esperado,
+      r.none?MOD().semX:(r.ok?"Confere":"Divergência")]));
+    const ws2=XLSX.utils.aoa_to_sheet(res);
+    ws2["!cols"]=[{wch:12},{wch:26},{wch:28},{wch:16},{wch:18}];
+    marcaFmt3(ws2,res.length,[1,2,3]);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Detalhamento");
+    XLSX.utils.book_append_sheet(wb,ws2,"Resumo por NF");
+    const suf={all:"",ok:"_conferem",warn:"_divergem"}[state.filter]||"";
+    XLSX.writeFile(wb,"PGA_"+MOD().arquivo+"_mapa_estatistico_"+stamp()+suf+".xlsx");
+  }
+  // Aplica o formato de 3 casas nas colunas de peso (só nas células que são número mesmo).
+  function marcaFmt3(ws,nLinhas,cols){
+    for(let r=1;r<nLinhas;r++) cols.forEach(c=>{
+      const cel=ws[XLSX.utils.encode_cell({r,c})];
+      if(cel&&cel.t==="n") cel.z=FMT3;
+    });
+  }
+  const stamp=()=>{ const d=new Date(),p=n=>String(n).padStart(2,"0");
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"_"+p(d.getHours())+p(d.getMinutes()); };
+  $("exportXlsx").addEventListener("click",exportarExcel);
+
+  $("modReceb").addEventListener("click",()=>trocarModulo("receb"));
+  $("modExped").addEventListener("click",()=>trocarModulo("exped"));
+  aplicarRotulos();
+
+  addNote("","","manual"); // linha inicial em branco (fluxo inicial = Recebimento)
 })();
 
