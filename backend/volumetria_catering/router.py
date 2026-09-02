@@ -14,7 +14,10 @@ não depende deste banco, de propósito).
   não sai sem identidade;
 - **download**: `volumetria-catering:exportar` — a célula da matriz que foi um
   dos motivos de trazer a tela para o Hub (na V3 qualquer logado baixava);
-- **auditoria**: só admin — diz quem baixou o que.
+- **auditoria**: só admin — diz quem baixou o que;
+- **diagnóstico do DW** (`/diagnostico-dw`): só admin — expõe o host do DW e
+  repassa a mensagem crua do Oracle. Credencial nenhuma: ele diz o NOME das
+  variáveis e se estão preenchidas, nunca os valores.
 
 Admin passa por cima de tudo (regra do `usuario_pode`); nada de `if is_admin`.
 
@@ -31,6 +34,15 @@ viram **503 com a causa** — e nada mais no Hub sente. O startup não toca aqui
 - `pagina` **não entra** no download;
 - `entrada + saída` é **só da Matriz**: planilha e download recusam com 400;
 - a tela mostra a **procedência** (última carga) lendo `cat_cargas`.
+
+## Duas fontes ao mesmo tempo, e só por enquanto
+
+Desde o lote D1 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md` este arquivo fala com
+dois bancos: os endpoints da tela leem o `nuvem-db` (`conexao.py`), e
+`/diagnostico-dw` lê o DW Oracle (`conexao_dw.py`). Não é indecisão — é o que
+mantém o `nuvem-db` de pé para a comparação Postgres × Oracle do D3, que é a
+defesa contra regressão silenciosa na tradução do SQL. O D3 troca a fonte da
+tela; o D6 apaga o que sobrar.
 """
 
 import logging
@@ -53,12 +65,14 @@ from backend.usuarios import service as usuarios_service
 from backend.volumetria_catering import (
     auditoria,
     conexao,
+    conexao_dw,
     contrato,
     download,
     matriz,
     planilha,
     recorte,
     schema,
+    schema_dw,
     ticket as ticket_mod,
 )
 from backend.volumetria_catering.permissoes import APP_SLUG, EXPORTAR
@@ -545,3 +559,78 @@ def api_auditoria(
     """As últimas tentativas de download, do banco do Hub. Restrita a admin: a
     tabela diz quem baixou o que, e isso não é leitura de todo mundo."""
     return auditoria.listar(limite)
+
+
+# --------------------------------------------------------- diagnóstico do DW
+@router.get("/diagnostico-dw")
+def api_diagnostico_dw(_: dict = Depends(require_admin)):
+    """Conectei no DW, vi as duas tabelas, o contrato bate?
+
+    É o aceite do lote D1 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md`: a IA não
+    conecta no DW, então a única prova possível é a Maria abrir isto na VM
+    depois de escrever a credencial no `.env`. Nada da tela passa por aqui — os
+    endpoints de consulta continuam lendo o `nuvem-db` até o D3.
+
+    **Não lê dado.** As duas conferências são o `SELECT` do contrato com
+    `WHERE 1=0` (compila e resolve privilégio sem ler bloco) e o
+    `ALL_TAB_COLUMNS`. Custo de catálogo, não de varredura.
+
+    **Divergência de contrato não é 503 aqui**, ao contrário do `_cursor()`: o
+    trabalho deste endpoint é RELATAR a divergência, e um 503 esconderia
+    justamente a lista que se veio buscar. 503 fica para o que impede o
+    diagnóstico de existir — credencial ausente e sessão que não abre.
+
+    **Só admin**, por dois motivos: ele nomeia host e usuário do DW (não a
+    senha, nunca), e repassa a mensagem crua do Oracle, que é o que faz o
+    diagnóstico valer e não é leitura de todo mundo.
+    """
+    resposta = {
+        "dsn": conexao_dw.dsn(),
+        "credencial": {
+            "usuario": conexao_dw.ENV_USUARIO,
+            "senha": conexao_dw.ENV_SENHA,
+            "configurada": conexao_dw.configurado(),
+        },
+        "contrato": contrato.ORIGEM,
+        "conectou": False,
+        "movimentos": [],
+        "ok": False,
+    }
+
+    # Nome de objeto inválido é 503 NOMEANDO a variável, não 500 genérico — e
+    # conferido ANTES de abrir sessão: erro de `.env` não precisa de round trip
+    # no DW para ser diagnosticado.
+    try:
+        for movimento in contrato.MOVIMENTOS:
+            contrato.tabela(movimento)
+    except contrato.TabelaInvalida as erro:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro)
+        ) from None
+
+    try:
+        conn = conexao_dw.conectar()
+    except conexao_dw.DWIndisponivel as erro:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro)
+        ) from None
+
+    try:
+        resposta["conectou"] = True
+        with conn.cursor() as cur:
+            conexao_dw.preparar_cursor(cur)
+            # `conferir` e não `verificar`: o primeiro movimento com problema
+            # não pode esconder o segundo. Quem abre isto quer os dois.
+            resposta["movimentos"] = [
+                schema_dw.conferir(cur, movimento) for movimento in contrato.MOVIMENTOS
+            ]
+    finally:
+        conn.close()
+
+    resposta["ok"] = not any(m["problemas"] for m in resposta["movimentos"])
+    if not resposta["ok"]:
+        logger.error(
+            "volumetria/DW: diagnóstico reprovou — %s",
+            "; ".join(p for m in resposta["movimentos"] for p in m["problemas"]),
+        )
+    return resposta

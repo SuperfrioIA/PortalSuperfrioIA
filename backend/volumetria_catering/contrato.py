@@ -15,11 +15,22 @@ Duas defesas obrigatórias, decididas em 27/ago/2026:
 2. `schema.py` compara este contrato com as colunas reais do banco
    (`information_schema`) e **falha nomeando a coluna** quando divergirem.
 
-## O que ficou de fora, de propósito
+## A premissa que caiu em 02/set/2026
 
-Tudo o que pertence à carga: nomes de objeto no DW Oracle (`tabela()`,
-`TABELA_REC`, `PK_DW`, `coluna_dw()`), o piso da carga (`ano_minimo()`,
-`piso_do_periodo()`) e o prefixo de instância. O Hub nunca conecta no DW.
+Este arquivo dizia, aqui, que os nomes de objeto no DW Oracle ficavam de fora
+"porque o Hub nunca conecta no DW". Isso deixou de valer: a Maria decidiu ler o
+DW direto (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`), então `tabela()`, `PK_DW` e
+`coluna_dw()` foram portados da nuvem-ia para cá — com os nomes MEDIDOS lá, não
+reinventados.
+
+Continua fora o que pertence só à carga: o piso de período (`ano_minimo()`,
+`piso_do_periodo()`) e o prefixo de instância. A tela recorta por período pelo
+filtro de quem está olhando, e escopo de instância é assunto da carga.
+
+Enquanto o D3 não reescreve o SQL, este contrato descreve **duas** formas do
+mesmo dado — as `cat_*` do Postgres (que morrem) e as `FATO_VOL_*` do DW —, e há
+uma conferência de drift para cada uma: `schema.py` contra o `information_schema`
+do Postgres, `schema_dw.py` contra o `ALL_TAB_COLUMNS` do Oracle.
 
 ## O que a medição da nuvem-ia decidiu, e este módulo herda
 
@@ -43,6 +54,62 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 ORIGEM = "nuvem-ia catering/contrato.py @ main 27/08/2026 (após migration 0024)"
 
 MOVIMENTOS = ("rec", "exp")
+
+# ------------------------------------------------- os objetos no DW Oracle
+# Isto era, até 02/set/2026, a parte do contrato que este módulo NÃO tinha de
+# propósito: "o Hub nunca conecta no DW". A decisão da Maria de ler o DW direto
+# (docs/PLANO_VOLUMETRIA_DW_DIRETO.md) inverte isso, e o nome do objeto passa a
+# ser conhecimento daqui. É um porte de `nuvem-ia catering/contrato.py`, não
+# invenção: os nomes foram MEDIDOS na sondagem de 25/ago/2026.
+#
+# Nome QUALIFICADO, com schema e sufixo de versão. O nome curto
+# (`FATO_VOL_REC_CAT`) é o que levou `ORA-00942` na primeira sondagem — e o
+# `ORA-00942` responde a mesma coisa para "não existe" e para "existe e você
+# não pode ver", então ele nunca prova falta de GRANT sozinho.
+TABELA_REC = "DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01"
+TABELA_EXP = "DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01"
+
+# O processo do lado do DW que alimenta as duas tabelas. Não é usado em consulta
+# nenhuma: existe para a mensagem de "dado velho" poder dizer QUEM está atrasado
+# (ver o incidente de 28/08/2026 no plano) quando o D4 mexer na procedência.
+PROCESSO_DW = "catering_to_dw_volumetry_v01"
+
+# O nome da coluna da PK, MEDIDO, e deliberadamente desacoplado do nome da
+# tabela: a tabela ganhou schema e sufixo `_V01`, a coluna não. Derivar um
+# identificador do outro é economia que cobra juros na primeira divergência.
+PK_DW = {
+    "rec": "PK_FATO_VOL_REC_CAT",
+    "exp": "PK_FATO_VOL_EXP_CAT",
+}
+
+# Troca o nome do objeto sem tocar em código. "Não há outra versão programada"
+# é ausência de plano, não garantia — a `FATO_VOLUMETRIA` do mesmo schema já
+# está em `_V04`.
+_ENV_TABELA = {"rec": "DW_TABELA_REC", "exp": "DW_TABELA_EXP"}
+
+# Nome de objeto não pode ser bind: ele é concatenado no SQL. Então precisa de
+# guarda própria — identificador Oracle em maiúscula, com schema opcional.
+_NOME_VALIDO = re.compile(r"^[A-Z][A-Z0-9_$#]*(\.[A-Z][A-Z0-9_$#]*)?$")
+
+
+class TabelaInvalida(ValueError):
+    """Nome de objeto que não pode entrar num SQL."""
+
+
+def tabela(movimento: str) -> str:
+    """O nome qualificado do objeto no DW, com a configuração tendo a palavra
+    final."""
+    if movimento not in MOVIMENTOS:
+        raise KeyError(movimento)
+    padrao = TABELA_REC if movimento == "rec" else TABELA_EXP
+    nome = (os.environ.get(_ENV_TABELA[movimento]) or padrao).strip()
+    if not _NOME_VALIDO.match(nome):
+        raise TabelaInvalida(
+            f"{_ENV_TABELA[movimento]}={nome!r} não é nome de objeto Oracle "
+            "válido (esperado SCHEMA.TABELA em maiúsculas)"
+        )
+    return nome
+
 
 # --------------------------------------------------------- fuso de exibição
 # `cat_cargas.terminada_em` é `timestamptz` (UTC). O `to_char` renderiza no fuso
@@ -244,3 +311,34 @@ def colunas(movimento: str):
     if movimento == "exp":
         return COLUNAS_EXP
     raise KeyError(movimento)
+
+
+# ----------------------------------------------- de-para de nome de coluna
+# A invariante: o nome no DW é o nosso em MAIÚSCULAS. A única exceção é a PK,
+# cujo nome foi medido e não derivado do nome da tabela (ver `PK_DW`).
+#
+# Nossos nomes são minúsculos porque nasceram no Postgres da nuvem-ia, onde
+# identificador sem aspas vira minúsculo. A tradução ficar num lugar só é o que
+# permite `recorte.py`, `matriz.py` e o download falarem dos mesmos nomes.
+RENOMEADAS = {
+    "pk_dw": PK_DW,
+}
+
+
+def coluna_dw(nossa: str, movimento: str) -> str:
+    """Nome da coluna no DW."""
+    if movimento not in MOVIMENTOS:
+        raise KeyError(movimento)
+    if nossa in RENOMEADAS:
+        return RENOMEADAS[nossa][movimento]
+    return nossa.upper()
+
+
+def colunas_dw(movimento: str) -> list[str]:
+    """Os nomes das colunas no DW, na ordem do contrato.
+
+    É desta lista que o `SELECT` é gerado, e é por isso que ela existe: com a
+    lista explícita, coluna renomeada ou removida no DW dá `ORA-00904` NOMEANDO
+    a coluna, no primeiro `execute` — e não erro de tipo trinta mil linhas
+    adiante. `SELECT *` economizaria esta função e pagaria com isso."""
+    return [coluna_dw(nome, movimento) for nome, _tipo, _nulo in colunas(movimento)]

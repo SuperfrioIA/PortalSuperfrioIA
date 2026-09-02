@@ -38,6 +38,19 @@ services:
       VOLUMETRIA_DB_URL: ${VOLUMETRIA_DB_URL:-}
       VOLUMETRIA_FUSO_EXIBICAO: ${VOLUMETRIA_FUSO_EXIBICAO:-America/Sao_Paulo}
       VOLUMETRIA_ABERTURA_DE: ${VOLUMETRIA_ABERTURA_DE:-ano-corrente}
+      # DW Oracle — a fonte NOVA da volumetria (lote D1 de
+      # docs/PLANO_VOLUMETRIA_DW_DIRETO.md). Credencial de SOMENTE LEITURA, só
+      # no .env da VM, e com nome diferente do `DW_USER` da carga da nuvem-ia de
+      # propósito. Vazio = só o /diagnostico-dw responde 503; a tela ainda lê o
+      # `nuvem-db` acima até o D3. Host/porta/serviço têm padrão no código e só
+      # entram aqui para poderem ser trocados sem rebuild.
+      DW_LEITURA_USUARIO: ${DW_LEITURA_USUARIO:-}
+      DW_LEITURA_SENHA: ${DW_LEITURA_SENHA:-}
+      DW_HOST: ${DW_HOST:-}
+      DW_PORTA: ${DW_PORTA:-}
+      DW_SERVICO: ${DW_SERVICO:-}
+      DW_TABELA_REC: ${DW_TABELA_REC:-}
+      DW_TABELA_EXP: ${DW_TABELA_EXP:-}
     volumes:
       - ./data:/app/data
     depends_on:
