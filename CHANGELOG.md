@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.1] — 2026-09-03
+### Corrigido
+- `oracledb` faltava no `requirements.txt` — Volumetria de Transporte e de Estoque respondiam
+  503 "driver do Oracle não está instalado" mesmo com a credencial do DW já configurada. Não foi
+  esquecido no rebase do 0.15.0: nunca chegou a entrar no arquivo em nenhum commit da branch
+
 ## [0.14.0] — 2026-09-03
 ### Adicionado
 - Trilha de auditoria funcional (Fase 1) — quem fez o quê, quando, com que resultado. Cobre
