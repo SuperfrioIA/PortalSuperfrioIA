@@ -17,6 +17,16 @@
   purga nesta fase (decisão pendente, ver `docs/AUDITORIA_FUNCIONAL.md`). Leitura restrita a
   administradores; um papel de auditor sem privilégio total é roadmap
 
+## [0.15.0] — 2026-09-04
+### Adicionado
+- Volumetria de Transporte no Hub — nova tela de consulta (Matriz por unidade, cliente e tipo de movimento; planilha; download em CSV/Excel), lendo direto o DW Oracle (`FATO_VOL_TRN_CAT_V01`), sem banco intermediário. Card "Transporte de Catering" na seção Armazém
+- Volumetria de Estoque no Hub — mesma ideia, sobre `FATO_VOL_EST_CAT_V01`, com uma diferença de fundo: a Matriz agrega em **modo posição** (a foto do último dia com dado de cada mês), não soma os dias — porque a tabela é um saldo diário, não um fluxo de movimentos. A tela declara isso; não existe total anual nem "soma da planilha bate com a Matriz" aqui, de propósito. Card "Estoque de Catering"
+- Baixar as duas volumetrias novas é permissão própria por app (`volumetria-transporte:exportar`, `volumetria-estoque:exportar`), como no catering; consultar a tela exige só o acesso ao app
+### Observações
+- Dois módulos novos, independentes entre si e do `volumetria_catering` — não compartilham código (a base comum ficou para um lote futuro, se algum dia acontecer). Cada um tem a sua própria conexão, ticket de download e auditoria
+- Sem a rede de segurança que o catering terá quando comparar o SQL do Postgres com o do Oracle (D3 do outro plano): as duas telas nascem lendo o DW direto, e a prova de que o SQL gerado é aceito pelo Oracle de verdade é `/api/volumetria-transporte/diagnostico-dw` e `/api/volumetria-estoque/diagnostico-dw` rodados na VM, não uma suíte automatizada
+- Nenhuma role recebe `ver` destes apps pelo seed — só admin enxerga os cards até alguém decidir o acesso
+
 ## [0.13.0] — 2026-08-31
 ### Adicionado
 - Análise de Mapa Estatísticos atualizada da v2.11 para a **v2.24** — o app agora se chama **PGA · Análise de Mapa Estatísticos** e ganhou o fluxo de **Expedição** ao lado do de Recebimento: são dois fluxos independentes, escolhidos na lateral, cada um com seus próprios arquivos e resultado. Trocar de fluxo não perde o que já estava carregado, e o Recebimento continua exatamente como era

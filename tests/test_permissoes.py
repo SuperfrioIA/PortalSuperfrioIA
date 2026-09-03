@@ -28,8 +28,9 @@ def test_portal_home_admin_ve_tudo(client, admin_headers):
     # `secoes` traz só os apps de sistema; os indicadores vêm em lista à parte.
     # 7 exemplos + gerador-qrcode, projetos-ia, governanca-ti e mapa-ia
     assert sum(len(s["apps"]) for s in secoes) == 11
-    # processos-abertos, integracao-in-out e volumetria-catering
-    assert len(body["indicadores"]) == 3
+    # processos-abertos, integracao-in-out, volumetria-catering,
+    # volumetria-transporte e volumetria-estoque
+    assert len(body["indicadores"]) == 5
 
 
 def test_portal_home_operador_so_armazem(client, operador_headers):

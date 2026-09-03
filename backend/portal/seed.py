@@ -155,6 +155,45 @@ APPS = [
         "badge": "NEW",
         "ordem": 7,
     },
+    {
+        # Também existe de verdade (backend/volumetria_transporte/, Receita 2,
+        # fonte no DW Oracle direto — sem Postgres intermediário, diferente do
+        # catering hoje). Dono de `volumetria-transporte:exportar`. Nenhuma
+        # role recebe `ver` pelo seed: só admin vê o card até a Maria decidir
+        # quem tem acesso. Ver docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md.
+        "secao": "armazem",
+        "slug": "volumetria-transporte",
+        "nome": "Transporte de Catering",
+        "nome_es": "Transporte de Catering",
+        "descricao": "Viagens de transporte de catering por unidade, cliente e mês, lidas do DW.",
+        "descricao_es": "Viajes de transporte de catering por unidad, cliente y mes, leídos del DW.",
+        "icone": "truck",
+        "url": "/volumetria-transporte/",
+        "tipo_acesso": "iframe",
+        "tipo_conteudo": "indicador",
+        "badge": "NEW",
+        "ordem": 8,
+    },
+    {
+        # Também existe de verdade (backend/volumetria_estoque/, Receita 2,
+        # fonte no DW Oracle direto). Dono de `volumetria-estoque:exportar`.
+        # A Matriz agrega em modo POSIÇÃO (foto de fim de mês), não soma —
+        # ver docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md, "Estoque é saldo".
+        # Nenhuma role recebe `ver` pelo seed: só admin vê o card até a Maria
+        # decidir quem tem acesso.
+        "secao": "armazem",
+        "slug": "volumetria-estoque",
+        "nome": "Estoque de Catering",
+        "nome_es": "Estoque de Catering",
+        "descricao": "Posição de estoque de catering por unidade, cliente e câmara, lida do DW.",
+        "descricao_es": "Posición de estoque de catering por unidad, cliente y cámara, leída del DW.",
+        "icone": "warehouse",
+        "url": "/volumetria-estoque/",
+        "tipo_acesso": "iframe",
+        "tipo_conteudo": "indicador",
+        "badge": "NEW",
+        "ordem": 9,
+    },
     # Backoffice
     {
         "secao": "backoffice",

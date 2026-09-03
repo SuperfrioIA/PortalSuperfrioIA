@@ -66,9 +66,10 @@ def test_listar_secoes_traz_apps_count(client, admin_headers):
     r = client.get("/api/admin/secoes", headers=admin_headers)
     assert r.status_code == 200
     armazem = next(s for s in r.json() if s["slug"] == "armazem")
-    # 3 exemplos + processos-abertos, integracao-in-out, gerador-qrcode e
-    # volumetria-catering (apps reais do repo)
-    assert armazem["apps_count"] == 7
+    # 3 exemplos + processos-abertos, integracao-in-out, gerador-qrcode,
+    # volumetria-catering, volumetria-transporte e volumetria-estoque
+    # (apps reais do repo)
+    assert armazem["apps_count"] == 9
 
 
 def test_patch_secao_parcial(client, admin_headers):
