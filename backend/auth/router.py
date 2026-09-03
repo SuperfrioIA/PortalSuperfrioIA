@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
+from backend.auditoria import service as auditoria_service
 from backend.auth import entra as entra_module
 from backend.auth.dependencies import get_current_user, get_current_user_optional
 from backend.auth.provisioning import resolve_user as resolve_user_entra
@@ -13,6 +14,10 @@ from backend.auth.service import authenticate_user, create_access_token
 from backend.core.database import db
 from backend.core.limiter import limiter
 from backend.usuarios import service as usuarios_service
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 logger = logging.getLogger("backend.auth.router")
 
@@ -28,10 +33,18 @@ _STATE_COOKIE = "sf_entra_state"
 def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form.username, form.password)
     if not user:
+        auditoria_service.registrar(
+            categoria="auth", acao="login.falha", resultado="negado",
+            ator_ip=_ip(request),
+            detalhes={"username_tentado": form.username.strip().lower()},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário ou senha inválidos",
         )
+    auditoria_service.registrar(
+        categoria="auth", acao="login.ok", resultado="ok", ator=user, ator_ip=_ip(request),
+    )
     token = create_access_token(
         subject=user["username"],
         extra={
@@ -50,6 +63,20 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
             "is_admin": bool(user["is_admin"]),
         },
     }
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request, user: dict | None = Depends(get_current_user_optional)):
+    """Encerramento de sessão do lado do servidor — hoje só grava o evento.
+
+    Best-effort: aceita token ausente ou já vencido (`get_current_user_optional`
+    devolve `None` nesses casos) e sempre responde 204. O frontend chama isto
+    ANTES de limpar o `localStorage`; não há nada para revogar no servidor além
+    do rastro (o `token_version` já cobre revogação de sessão)."""
+    if user:
+        auditoria_service.registrar(
+            categoria="auth", acao="logout", resultado="ok", ator=user, ator_ip=_ip(request),
+        )
 
 
 @router.get("/me")
@@ -169,6 +196,10 @@ def auth_callback(
     _require_sso()
     if error:
         logger.warning("SSO: Microsoft recusou o login (%s)", error)
+        auditoria_service.registrar(
+            categoria="auth", acao="sso.recusado", resultado="negado", ator_ip=_ip(request),
+            detalhes={"motivo": "microsoft"},
+        )
         return _voltar_para_login("microsoft")
 
     expected = request.cookies.get(_STATE_COOKIE)
@@ -180,11 +211,19 @@ def auth_callback(
             "SSO: callback sem state válido (code=%s, state=%s, cookie=%s)",
             bool(code), bool(state), bool(expected),
         )
+        auditoria_service.registrar(
+            categoria="auth", acao="sso.recusado", resultado="negado", ator_ip=_ip(request),
+            detalhes={"motivo": "sessao"},
+        )
         return _voltar_para_login("sessao")
 
     claims = entra_module.EntraAuthProvider().exchange_code(code)
     if claims is None:
         logger.warning("SSO: o Microsoft não validou a troca do code")
+        auditoria_service.registrar(
+            categoria="auth", acao="sso.recusado", resultado="negado", ator_ip=_ip(request),
+            detalhes={"motivo": "microsoft"},
+        )
         return _voltar_para_login("microsoft")
 
     with db() as session:
@@ -196,7 +235,15 @@ def auth_callback(
         )
         if user is None:
             logger.warning("SSO: acesso recusado (%s)", motivo)
+            auditoria_service.registrar(
+                session, categoria="auth", acao="sso.recusado", resultado="negado",
+                ator_ip=_ip(request), detalhes={"motivo": motivo},
+            )
             return _voltar_para_login(motivo)
+        auditoria_service.registrar(
+            session, categoria="auth", acao="sso.ok", resultado="ok",
+            ator=user, ator_ip=_ip(request),
+        )
         token = create_access_token(
             subject=user["username"],
             extra={

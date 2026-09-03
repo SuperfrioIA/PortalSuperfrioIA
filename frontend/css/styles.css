@@ -1373,6 +1373,10 @@ body.overlay-aberto { overflow: hidden; }
 .pill.admin-total { color: #fff; background: var(--brand-azul-institucional); border-color: var(--brand-azul-institucional); }
 .pill.new { color: var(--ok); background: var(--ok-bg); border-color: rgba(26, 140, 78, 0.25); }
 .pill.beta { color: var(--warn); background: var(--warn-bg); border-color: rgba(180, 83, 9, 0.25); }
+/* Resultado de um evento de auditoria: ok reaproveita .on (verde); negado é
+   aviso (amarelo, é um 403 esperado, não uma falha); erro é o único vermelho. */
+.pill.negado { color: var(--warn); background: var(--warn-bg); border-color: rgba(180, 83, 9, 0.25); }
+.pill.erro { color: var(--err); background: var(--err-bg); border-color: rgba(214, 48, 49, 0.25); }
 .pill-stack { display: flex; flex-wrap: wrap; gap: 4px; }
 
 /* ============ MODAL ============ */
@@ -1513,6 +1517,58 @@ body.overlay-aberto { overflow: hidden; }
   cursor: pointer;
 }
 .admin-filtros .filtro-limpar:hover { background: var(--bg3); color: var(--text); }
+
+/* Auditoria: filtros próprios (busca server-side, não client-side como as
+   outras 6 abas) — mesmo wrapper .admin-filtros, campos rotulados. */
+.admin-filtros-auditoria .filtro-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.admin-filtros-auditoria .filtro-campo input,
+.admin-filtros-auditoria .filtro-campo select {
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+}
+.admin-filtros-auditoria .filtro-campo input:focus,
+.admin-filtros-auditoria .filtro-campo select:focus {
+  outline: none;
+  border-color: var(--brand-azul-principal);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(30, 111, 217, 0.14);
+}
+.admin-paginacao {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text3);
+}
+.admin-paginacao button {
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text2);
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.admin-paginacao button:hover:not(:disabled) { background: var(--bg3); color: var(--text); }
+.admin-paginacao button:disabled { opacity: 0.45; cursor: not-allowed; }
 .modal-body .acesso-hint { margin: 4px 0 12px; }
 /* O margin-bottom é o mesmo respiro de .form-field: sem ele, dois row-2 seguidos
    (ou um row-2 com field-hint) encostam o hint no rótulo de baixo. */

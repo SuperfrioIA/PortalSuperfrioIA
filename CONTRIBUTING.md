@@ -90,6 +90,19 @@ nunca devolve 401/403; anônimo recebe lista vazia.
 > pela URL direta. Portanto: proteja a **API**, não conte com a permissão do card para esconder
 > dado sensível. Ver `docs/PERMISSIONAMENTO_HOJE.md`.
 
+### Declare também a auditoria
+
+Toda mutação administrativa (criar/atualizar/toggle) precisa gravar um evento de
+`backend.auditoria` com diff (`from backend.auditoria import service as auditoria_service`,
+depois `auditoria_service.registrar(session, categoria=..., acao=..., resultado="ok", ...)`
+dentro do mesmo `with db() as session:` da mutação — a auditoria entra na mesma transação).
+`categoria`/`acao` precisam existir em `backend/auditoria/catalogo.py`; se o seu módulo tiver
+ação nova, acrescente lá antes de usar. Ver `docs/AUDITORIA_FUNCIONAL.md` para o catálogo
+completo e o formato do registro.
+
+Se o seu app **não** grava nenhum evento (ex.: Receita 1 pura, sem mutação nenhuma), diga isso
+explicitamente no PR — não deixe a ausência para quem revisar descobrir sozinho.
+
 ---
 
 ## Passo 0 — qual desses 3 casos é o seu app?

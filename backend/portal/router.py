@@ -7,16 +7,21 @@ Princípios (herdados do CRUD original):
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, insert, select, update
 
+from backend.auditoria import service as auditoria_service
 from backend.auth.dependencies import get_current_user, require_admin
 from backend.core.database import _now, db
 from backend.core.http import apply_update, ensure_slug, row_or_404, unique_or_409
 from backend.portal import service
 from backend.portal.models import App, Secao
 from backend.usuarios import service as usuarios_service
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 router_admin = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -120,6 +125,41 @@ def home(user: dict = Depends(get_current_user)):
     }
 
 
+@router.post("/abrir/{slug}")
+def abrir(slug: str, request: Request, user: dict = Depends(get_current_user)):
+    """Chamado pelo card do portal ao clicar num app — é o evento `app.abrir`
+    da auditoria (docs/AUDITORIA_FUNCIONAL.md). O frontend segue para a URL
+    independente da resposta (fire-and-forget); mesmo assim a permissão é
+    conferida de verdade aqui, não só confiada ao front.
+
+    `ver` não passa por `require_permissao` (é a coluna implícita da matriz,
+    resolvida por `app_ids_permitidos`) — por isso a checagem é direta, em vez
+    de um `Depends` compartilhado com as demais ações.
+    """
+    with db() as session:
+        row = session.execute(
+            select(App.__table__.c).where(App.slug == slug, App.ativo == 1)
+        ).mappings().fetchone()
+        if not row:
+            raise HTTPException(404, f"app '{slug}' não encontrado")
+        if not user.get("is_admin"):
+            permitidos = usuarios_service.app_ids_permitidos(session, user["id"])
+            if row["id"] not in permitidos:
+                # Sessão própria (não a do endpoint): a HTTPException abaixo
+                # reverteria o INSERT se ele estivesse na mesma transação.
+                auditoria_service.registrar(
+                    categoria="acesso", acao="acesso.negado", resultado="negado",
+                    ator=user, ator_ip=_ip(request), app_slug=slug,
+                    detalhes={"rota": request.url.path, "exigia": "ver"},
+                )
+                raise HTTPException(403, f"Você não tem acesso ao app '{slug}'")
+        auditoria_service.registrar(
+            session, categoria="acesso", acao="app.abrir", resultado="ok",
+            ator=user, ator_ip=_ip(request), app_slug=slug,
+        )
+        return {"url": row["url"]}
+
+
 # ============ Seções (admin) ============
 
 class SecaoCreate(BaseModel):
@@ -154,7 +194,7 @@ def listar_secoes(_: dict = Depends(require_admin)):
 
 
 @router_admin.post("/secoes", status_code=201)
-def criar_secao(body: SecaoCreate, _: dict = Depends(require_admin)):
+def criar_secao(body: SecaoCreate, request: Request, admin: dict = Depends(require_admin)):
     ensure_slug(body.slug)
     with db() as session:
         with unique_or_409("slug", body.slug):
@@ -165,26 +205,47 @@ def criar_secao(body: SecaoCreate, _: dict = Depends(require_admin)):
                     icone=body.icone, ordem=body.ordem,
                 )
             )
-        return row_or_404(session, Secao, cur.inserted_primary_key[0], "secoes")
+        secao_id = cur.inserted_primary_key[0]
+        auditoria_service.registrar(
+            session, categoria="admin", acao="secao.criar", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="secao", alvo_id=secao_id, alvo_rotulo=body.slug,
+            detalhes=body.model_dump(),
+        )
+        return row_or_404(session, Secao, secao_id, "secoes")
 
 
 @router_admin.patch("/secoes/{secao_id}")
-def atualizar_secao(secao_id: int, body: SecaoUpdate, _: dict = Depends(require_admin)):
+def atualizar_secao(
+    secao_id: int, body: SecaoUpdate, request: Request, admin: dict = Depends(require_admin)
+):
     with db() as session:
-        row_or_404(session, Secao, secao_id, "secoes")
+        atual = row_or_404(session, Secao, secao_id, "secoes")
         fields = body.model_dump(exclude_unset=True)
         if not fields:
-            return row_or_404(session, Secao, secao_id, "secoes")
+            return atual
         apply_update(session, Secao, secao_id, fields)
+        auditoria_service.registrar(
+            session, categoria="admin", acao="secao.atualizar", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="secao", alvo_id=secao_id, alvo_rotulo=atual["slug"],
+            detalhes=auditoria_service.diff(atual, fields),
+        )
         return row_or_404(session, Secao, secao_id, "secoes")
 
 
 @router_admin.post("/secoes/{secao_id}/toggle")
-def toggle_secao(secao_id: int, _: dict = Depends(require_admin)):
+def toggle_secao(secao_id: int, request: Request, admin: dict = Depends(require_admin)):
     with db() as session:
         row = row_or_404(session, Secao, secao_id, "secoes")
         novo = 0 if row["ativo"] else 1
         session.execute(update(Secao).where(Secao.id == secao_id).values(ativo=novo))
+        auditoria_service.registrar(
+            session, categoria="admin", acao="secao.toggle", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="secao", alvo_id=secao_id, alvo_rotulo=row["slug"],
+            detalhes={"ativo": {"de": bool(row["ativo"]), "para": bool(novo)}},
+        )
         return row_or_404(session, Secao, secao_id, "secoes")
 
 
@@ -295,7 +356,7 @@ def listar_apps(_: dict = Depends(require_admin)):
 
 
 @router_admin.post("/apps", status_code=201)
-def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
+def criar_app(body: AppCreate, request: Request, admin: dict = Depends(require_admin)):
     ensure_slug(body.slug)
     _check_tipo_acesso(body.tipo_acesso)
     _check_tipo_conteudo(body.tipo_conteudo)
@@ -313,11 +374,18 @@ def criar_app(body: AppCreate, _: dict = Depends(require_admin)):
                     badge=body.badge, ordem=body.ordem,
                 )
             )
-        return _select_app(session, cur.inserted_primary_key[0])
+        app_id = cur.inserted_primary_key[0]
+        auditoria_service.registrar(
+            session, categoria="admin", acao="app.criar", resultado="ok",
+            ator=admin, ator_ip=_ip(request), app_slug=body.slug,
+            alvo_tipo="app", alvo_id=app_id, alvo_rotulo=body.slug,
+            detalhes=body.model_dump(),
+        )
+        return _select_app(session, app_id)
 
 
 @router_admin.patch("/apps/{app_id}")
-def atualizar_app(app_id: int, body: AppUpdate, _: dict = Depends(require_admin)):
+def atualizar_app(app_id: int, body: AppUpdate, request: Request, admin: dict = Depends(require_admin)):
     _check_tipo_acesso(body.tipo_acesso)
     _check_tipo_conteudo(body.tipo_conteudo)
     _check_url(body.url)
@@ -334,15 +402,27 @@ def atualizar_app(app_id: int, body: AppUpdate, _: dict = Depends(require_admin)
                 fields["url"], fields.get("tipo_acesso") or atual["tipo_acesso"]
             )
         apply_update(session, App, app_id, fields, touch_updated=True)
+        auditoria_service.registrar(
+            session, categoria="admin", acao="app.atualizar", resultado="ok",
+            ator=admin, ator_ip=_ip(request), app_slug=atual["slug"],
+            alvo_tipo="app", alvo_id=app_id, alvo_rotulo=atual["slug"],
+            detalhes=auditoria_service.diff(atual, fields),
+        )
         return _select_app(session, app_id)
 
 
 @router_admin.post("/apps/{app_id}/toggle")
-def toggle_app(app_id: int, _: dict = Depends(require_admin)):
+def toggle_app(app_id: int, request: Request, admin: dict = Depends(require_admin)):
     with db() as session:
         row = row_or_404(session, App, app_id, "apps")
         novo = 0 if row["ativo"] else 1
         session.execute(
             update(App).where(App.id == app_id).values(ativo=novo, atualizado_em=_now())
+        )
+        auditoria_service.registrar(
+            session, categoria="admin", acao="app.toggle", resultado="ok",
+            ator=admin, ator_ip=_ip(request), app_slug=row["slug"],
+            alvo_tipo="app", alvo_id=app_id, alvo_rotulo=row["slug"],
+            detalhes={"ativo": {"de": bool(row["ativo"]), "para": bool(novo)}},
         )
         return _select_app(session, app_id)

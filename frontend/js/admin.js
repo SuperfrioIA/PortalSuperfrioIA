@@ -135,6 +135,7 @@
     else if (ADM.tab === "usuarios") renderUsuarios();
     else if (ADM.tab === "filiais") renderFiliais();
     else if (ADM.tab === "unidades-negocio") renderUnidadesNegocio();
+    else if (ADM.tab === "auditoria") renderAuditoria();
   }
 
   /* ---------- Filtros: um componente para as 6 abas ----------
@@ -1269,6 +1270,153 @@
     return out;
   }
 
+  /* ---------- Render: AUDITORIA ----------
+     Diferente das outras 6 abas: não vem do `loadAll()` (a tabela cresce sem
+     teto), busca sob demanda com paginação/filtros server-side — cada
+     `renderAuditoria()` refaz o GET com o estado atual de AUD. */
+  const AUD = {
+    pagina: 1,
+    porPagina: 50,
+    catalogoPronto: false,
+  };
+
+  function filtrosAuditoria() {
+    const v = (id) => document.getElementById(id).value.trim();
+    const out = {};
+    if (v("auditoria-de")) out.de = v("auditoria-de");
+    if (v("auditoria-ate")) out.ate = v("auditoria-ate");
+    if (v("auditoria-ator")) out.ator_username = v("auditoria-ator");
+    if (v("auditoria-app")) out.app_slug = v("auditoria-app");
+    if (v("auditoria-categoria")) out.categoria = v("auditoria-categoria");
+    if (v("auditoria-resultado")) out.resultado = v("auditoria-resultado");
+    return out;
+  }
+
+  async function carregarCatalogoAuditoria() {
+    if (AUD.catalogoPronto) return;
+    AUD.catalogoPronto = true; // marca antes: uma falha não deve tentar de novo a cada render
+
+    const selApp = document.getElementById("auditoria-app");
+    [...ADM.apps]
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      .forEach((app) => {
+        const opt = document.createElement("option");
+        opt.value = app.slug;
+        opt.textContent = app.nome;
+        selApp.appendChild(opt);
+      });
+
+    try {
+      const catalogo = await api("GET", "/api/admin/auditoria/catalogo");
+      const categorias = [...new Set(catalogo.map((e) => e.categoria))].sort();
+      const selCategoria = document.getElementById("auditoria-categoria");
+      categorias.forEach((cat) => {
+        const opt = document.createElement("option");
+        opt.value = cat;
+        opt.textContent = cat;
+        selCategoria.appendChild(opt);
+      });
+    } catch (e) {
+      if (!e.sessionExpired) console.error("catálogo de auditoria:", e.message);
+    }
+  }
+
+  function fmtQuando(iso) {
+    // `ocorrido_em` é UTC sem fuso no texto (mesmo formato do datetime()
+    // do SQLite) — mostrado como veio, com o sufixo deixando isso explícito.
+    return iso ? `${iso} UTC` : "—";
+  }
+
+  function alvoAuditoria(ev) {
+    if (!ev.alvo_tipo) return "—";
+    const rotulo = ev.alvo_rotulo || ev.alvo_id || "";
+    return `${escapeHtml(ev.alvo_tipo)}${rotulo ? ": " + escapeHtml(String(rotulo)) : ""}`;
+  }
+
+  function linhaAuditoria(ev) {
+    const detalhes = ev.detalhes && Object.keys(ev.detalhes).length
+      ? `<code class="col-meta">${escapeHtml(JSON.stringify(ev.detalhes))}</code>`
+      : "";
+    return `<tr>
+      <td class="col-meta">${escapeHtml(fmtQuando(ev.ocorrido_em))}</td>
+      <td>${escapeHtml(ev.ator_username || t("admin.auditoria.sem_ator"))}</td>
+      <td class="col-slug">${escapeHtml(ev.app_slug || "—")}</td>
+      <td><span class="col-slug">${escapeHtml(ev.categoria)}.${escapeHtml(ev.acao)}</span></td>
+      <td>${alvoAuditoria(ev)}</td>
+      <td><span class="pill ${escapeHtml(ev.resultado === "ok" ? "on" : ev.resultado)}">${escapeHtml(ev.resultado)}</span></td>
+      <td>${detalhes}</td>
+    </tr>`;
+  }
+
+  function renderPaginacaoAuditoria(total) {
+    const cont = document.getElementById("paginacao-auditoria");
+    const totalPaginas = Math.max(1, Math.ceil(total / AUD.porPagina));
+    cont.innerHTML = `
+      <span>${t("admin.auditoria.total").replace("{n}", total)}</span>
+      <button id="auditoria-pag-ant" ${AUD.pagina <= 1 ? "disabled" : ""}>&larr;</button>
+      <span>${AUD.pagina} / ${totalPaginas}</span>
+      <button id="auditoria-pag-prox" ${AUD.pagina >= totalPaginas ? "disabled" : ""}>&rarr;</button>
+    `;
+    const ant = document.getElementById("auditoria-pag-ant");
+    const prox = document.getElementById("auditoria-pag-prox");
+    if (ant) ant.addEventListener("click", () => { AUD.pagina -= 1; renderAuditoria(); });
+    if (prox) prox.addEventListener("click", () => { AUD.pagina += 1; renderAuditoria(); });
+  }
+
+  async function renderAuditoria() {
+    await carregarCatalogoAuditoria();
+    const tbl = document.getElementById("table-auditoria");
+    const params = new URLSearchParams({
+      ...filtrosAuditoria(),
+      pagina: AUD.pagina,
+      por_pagina: AUD.porPagina,
+    });
+    let pagina;
+    try {
+      pagina = await api("GET", `/api/admin/auditoria?${params}`);
+    } catch (e) {
+      if (e.sessionExpired) return;
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.err.load") + e.message)}</td></tr></tbody>`;
+      return;
+    }
+    if (pagina.itens.length === 0) {
+      tbl.innerHTML = `<tbody><tr><td>${escapeHtml(t("admin.auditoria.vazio"))}</td></tr></tbody>`;
+    } else {
+      tbl.innerHTML =
+        `<thead><tr>${[
+          "admin.auditoria.col.quando", "admin.auditoria.col.ator", "admin.auditoria.col.app",
+          "admin.auditoria.col.evento", "admin.auditoria.col.alvo", "admin.auditoria.col.resultado",
+          "admin.auditoria.col.detalhes",
+        ].map(th).join("")}</tr></thead>` +
+        `<tbody>${pagina.itens.map(linhaAuditoria).join("")}</tbody>`;
+    }
+    renderPaginacaoAuditoria(pagina.total);
+  }
+
+  function exportarAuditoria() {
+    const params = new URLSearchParams(filtrosAuditoria());
+    // `require_admin` exige o Bearer — uma navegação de `<a href>` puro não
+    // carrega o header, então baixa por fetch e entrega o blob ao navegador.
+    fetch(`/api/admin/auditoria/exportar?${params}`, {
+      headers: { Authorization: `Bearer ${SF.state.token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "auditoria.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => alert(t("admin.auditoria.err.exportar") + e.message));
+  }
+
   /* ---------- Bindings ---------- */
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".admin-tab").forEach((el) => {
@@ -1284,6 +1432,15 @@
     document.getElementById("btn-new-usuario").addEventListener("click", () => openModal("usuarios", null));
     document.getElementById("btn-new-filial").addEventListener("click", () => openModal("filiais", null));
     document.getElementById("btn-new-un").addEventListener("click", () => openModal("unidades-negocio", null));
+
+    document.getElementById("btn-auditoria-filtrar").addEventListener("click", () => {
+      AUD.pagina = 1;
+      renderAuditoria();
+    });
+    document.getElementById("btn-auditoria-exportar").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      exportarAuditoria();
+    });
 
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-cancel").addEventListener("click", closeModal);

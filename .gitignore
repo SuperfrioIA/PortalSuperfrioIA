@@ -30,3 +30,6 @@ obsidian-mapa-projeto/
 
 # Cache de testes
 .pytest_cache/
+
+# Saída de sessões do Playwright MCP (screenshots, downloads de verificação manual)
+.playwright-mcp/

@@ -109,6 +109,15 @@ async function fetchHome() {
 }
 
 function logout(reason) {
+  // Best-effort: registra o evento de auditoria antes de derrubar o token.
+  // Não bloqueia a saída — se a rede cair, o usuário sai do navegador do
+  // mesmo jeito, só sem o registro no servidor.
+  if (state.token) {
+    fetch(`${API}/api/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${state.token}` },
+    }).catch(() => {});
+  }
   state.token = null;
   state.user = null;
   state.indicadores = [];
@@ -451,6 +460,12 @@ function findAppBySlug(slug) {
 }
 
 function openApp(app) {
+  // Fire-and-forget: registra o clique na auditoria (docs/AUDITORIA_FUNCIONAL.md)
+  // sem atrasar nem bloquear a abertura — o app abre mesmo se isto falhar.
+  fetch(`${API}/api/portal/abrir/${encodeURIComponent(app.slug)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${state.token}` },
+  }).catch(() => {});
   if (app.tipo_acesso === "interno") {
     // Tela nativa do próprio SPA (ex.: Projetos IA) — sem iframe, sem nova aba.
     if (window.SF && window.SF.openProjetosIa) window.SF.openProjetosIa();

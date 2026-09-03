@@ -15,10 +15,11 @@ separados porque são tabelas diferentes; a tela junta tudo numa grade só.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, select, update
 
+from backend.auditoria import service as auditoria_service
 from backend.auth.dependencies import require_admin
 from backend.auth.service import hash_password
 from backend.core import permissoes as catalogo
@@ -27,6 +28,10 @@ from backend.core.http import apply_update, ensure_slug, ids_por_slug_or_400, ro
 from backend.portal import service as portal_service
 from backend.projetos_ia import service as projetos_ia_service
 from backend.usuarios.models import Role, Usuario, role_apps, role_permissoes, usuario_roles
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 PASSWORD_MIN_LEN = 8
 
@@ -145,7 +150,7 @@ def listar_roles(_: dict = Depends(require_admin)):
 
 
 @router_admin.post("/roles", status_code=201)
-def criar_role(body: RoleCreate, _: dict = Depends(require_admin)):
+def criar_role(body: RoleCreate, request: Request, admin: dict = Depends(require_admin)):
     ensure_slug(body.slug)
     _validar_permissoes(body.permissoes)
     with db() as session:
@@ -157,15 +162,24 @@ def criar_role(body: RoleCreate, _: dict = Depends(require_admin)):
         role_id = cur.inserted_primary_key[0]
         _set_role_apps(session, role_id, app_ids)
         _set_role_permissoes(session, role_id, body.permissoes)
+        auditoria_service.registrar(
+            session, categoria="admin", acao="role.criar", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="role", alvo_id=role_id, alvo_rotulo=body.slug,
+            detalhes={"nome": body.nome, "apps": sorted(body.apps), "permissoes": sorted(body.permissoes)},
+        )
         return _select_role(session, role_id)
 
 
 @router_admin.patch("/roles/{role_id}")
-def atualizar_role(role_id: int, body: RoleUpdate, _: dict = Depends(require_admin)):
+def atualizar_role(role_id: int, body: RoleUpdate, request: Request, admin: dict = Depends(require_admin)):
     if body.permissoes is not None:
         _validar_permissoes(body.permissoes)
     with db() as session:
-        row_or_404(session, Role, role_id, "roles")
+        atual = row_or_404(session, Role, role_id, "roles")
+        apps_antes = _app_slugs_da_role(session, role_id)
+        permissoes_antes = _permissoes_da_role(session, role_id)
+
         fields = body.model_dump(exclude_unset=True)
         apps = fields.pop("apps", None)
         permissoes = fields.pop("permissoes", None)
@@ -176,15 +190,33 @@ def atualizar_role(role_id: int, body: RoleUpdate, _: dict = Depends(require_adm
             _set_role_apps(session, role_id, app_ids)
         if permissoes is not None:
             _set_role_permissoes(session, role_id, permissoes)
+
+        detalhes = auditoria_service.diff(atual, fields)
+        if apps is not None:
+            detalhes["apps"] = auditoria_service.diff_listas(apps_antes, apps)
+        if permissoes is not None:
+            detalhes["permissoes"] = auditoria_service.diff_listas(permissoes_antes, permissoes)
+        auditoria_service.registrar(
+            session, categoria="admin", acao="role.atualizar", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="role", alvo_id=role_id, alvo_rotulo=atual["slug"],
+            detalhes=detalhes,
+        )
         return _select_role(session, role_id)
 
 
 @router_admin.post("/roles/{role_id}/toggle")
-def toggle_role(role_id: int, _: dict = Depends(require_admin)):
+def toggle_role(role_id: int, request: Request, admin: dict = Depends(require_admin)):
     with db() as session:
         row = row_or_404(session, Role, role_id, "roles")
         novo = 0 if row["ativo"] else 1
         session.execute(update(Role).where(Role.id == role_id).values(ativo=novo))
+        auditoria_service.registrar(
+            session, categoria="admin", acao="role.toggle", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="role", alvo_id=role_id, alvo_rotulo=row["slug"],
+            detalhes={"ativo": {"de": bool(row["ativo"]), "para": bool(novo)}},
+        )
         return _select_role(session, role_id)
 
 
@@ -359,8 +391,18 @@ def listar_usuarios(_: dict = Depends(require_admin)):
         return _com_filial(session, usuarios)
 
 
+def _roles_do_usuario(session, user_id: int) -> list[str]:
+    return sorted(
+        session.execute(
+            select(Role.slug)
+            .join_from(usuario_roles, Role, Role.id == usuario_roles.c.role_id)
+            .where(usuario_roles.c.usuario_id == user_id)
+        ).scalars().all()
+    )
+
+
 @router_admin.post("/usuarios", status_code=201)
-def criar_usuario(body: UsuarioCreate, _: dict = Depends(require_admin)):
+def criar_usuario(body: UsuarioCreate, request: Request, admin: dict = Depends(require_admin)):
     if not body.username or not body.username.strip():
         raise HTTPException(400, "username obrigatório")
 
@@ -394,6 +436,16 @@ def criar_usuario(body: UsuarioCreate, _: dict = Depends(require_admin)):
             )
         user_id = cur.inserted_primary_key[0]
         _set_user_roles(session, user_id, role_ids)
+        auditoria_service.registrar(
+            session, categoria="admin", acao="usuario.criar", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="usuario", alvo_id=user_id, alvo_rotulo=body.username,
+            detalhes={
+                "nome": body.nome, "email": email, "is_admin": body.is_admin,
+                "auth_source": "local" if body.senha else "ad",
+                "filial_id": body.filial_id, "roles": sorted(body.roles),
+            },
+        )
         return _select_usuario(session, user_id)
 
 
@@ -401,10 +453,12 @@ def criar_usuario(body: UsuarioCreate, _: dict = Depends(require_admin)):
 def atualizar_usuario(
     user_id: int,
     body: UsuarioUpdate,
+    request: Request,
     me: dict = Depends(require_admin),
 ):
     with db() as session:
-        row_or_404(session, Usuario, user_id, "usuarios")
+        atual = row_or_404(session, Usuario, user_id, "usuarios")
+        roles_antes = _roles_do_usuario(session, user_id)
         fields = body.model_dump(exclude_unset=True)
         roles = fields.pop("roles", None)
 
@@ -430,11 +484,20 @@ def atualizar_usuario(
             role_ids = ids_por_slug_or_400(session, Role, roles, "role")
             _set_user_roles(session, user_id, role_ids)
 
+        detalhes = auditoria_service.diff(atual, fields)
+        if roles is not None:
+            detalhes["roles"] = auditoria_service.diff_listas(roles_antes, roles)
+        auditoria_service.registrar(
+            session, categoria="admin", acao="usuario.atualizar", resultado="ok",
+            ator=me, ator_ip=_ip(request),
+            alvo_tipo="usuario", alvo_id=user_id, alvo_rotulo=atual["username"],
+            detalhes=detalhes,
+        )
         return _select_usuario(session, user_id)
 
 
 @router_admin.post("/usuarios/{user_id}/toggle")
-def toggle_usuario(user_id: int, me: dict = Depends(require_admin)):
+def toggle_usuario(user_id: int, request: Request, me: dict = Depends(require_admin)):
     if user_id == me["id"]:
         raise HTTPException(400, "Você não pode desativar a própria conta")
     with db() as session:
@@ -443,13 +506,19 @@ def toggle_usuario(user_id: int, me: dict = Depends(require_admin)):
         session.execute(
             update(Usuario).where(Usuario.id == user_id).values(ativo=novo, atualizado_em=_now())
         )
+        auditoria_service.registrar(
+            session, categoria="admin", acao="usuario.toggle", resultado="ok",
+            ator=me, ator_ip=_ip(request),
+            alvo_tipo="usuario", alvo_id=user_id, alvo_rotulo=row["username"],
+            detalhes={"ativo": {"de": bool(row["ativo"]), "para": bool(novo)}},
+        )
         return _select_usuario(session, user_id)
 
 
 @router_admin.post("/usuarios/{user_id}/password")
-def resetar_senha(user_id: int, body: PasswordReset, _: dict = Depends(require_admin)):
+def resetar_senha(user_id: int, body: PasswordReset, request: Request, admin: dict = Depends(require_admin)):
     with db() as session:
-        row_or_404(session, Usuario, user_id, "usuarios")
+        row = row_or_404(session, Usuario, user_id, "usuarios")
         session.execute(
             update(Usuario)
             .where(Usuario.id == user_id)
@@ -458,5 +527,10 @@ def resetar_senha(user_id: int, body: PasswordReset, _: dict = Depends(require_a
                 token_version=Usuario.token_version + 1,
                 atualizado_em=_now(),
             )
+        )
+        auditoria_service.registrar(
+            session, categoria="admin", acao="usuario.senha", resultado="ok",
+            ator=admin, ator_ip=_ip(request),
+            alvo_tipo="usuario", alvo_id=user_id, alvo_rotulo=row["username"],
         )
         return {"ok": True}

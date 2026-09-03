@@ -9,9 +9,13 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from backend.auditoria import service as auditoria_service
+from backend.auditoria.router import router_admin as auditoria_admin_router
 from backend.auth.router import router as auth_router
 from backend.auth.service import decode_token
+from backend.core.correlacao import correlacao_id, middleware_correlacao
 from backend.core.database import init_db
 from backend.core.limiter import limiter
 from backend.core.scheduler import agendar_diario
@@ -66,7 +70,21 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _rate_limit_com_auditoria(request: Request, exc: RateLimitExceeded) -> Response:
+    """Mesmo 429 de sempre, mais o evento — só no login, o único endpoint
+    limitado hoje. Sem usuário resolvido: o rate limit bloqueia ANTES da
+    autenticação, então só há IP para registrar."""
+    if request.url.path == "/api/auth/login":
+        auditoria_service.registrar(
+            categoria="auth", acao="login.bloqueado", resultado="negado",
+            ator_ip=request.client.host if request.client else None,
+        )
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_com_auditoria)
 
 
 # frame-src controla quais origens podem ser embutidas via <iframe> (apps tipo_acesso=iframe).
@@ -138,7 +156,8 @@ async def log_de_acesso(request: Request, call_next) -> Response:
     response = await call_next(request)
     if request.url.path.startswith("/api"):
         acesso_logger.info(
-            '%s %s "%s %s" %s',
+            '%s %s %s "%s %s" %s',
+            correlacao_id() or "-",
             request.client.host if request.client else "-",
             _usuario_do_token(request),
             request.method,
@@ -181,7 +200,14 @@ async def security_headers(request: Request, call_next) -> Response:
     return response
 
 
+# Registrado por último (`add_middleware`, não o decorador): vira o mais externo
+# dos três, então já está com o id atribuído quando `log_de_acesso` (mais interno)
+# lê `correlacao_id()` depois do `call_next`, e só reseta o ContextVar depois que
+# TODO o resto — inclusive o log — já rodou. Ver backend/core/correlacao.py.
+app.add_middleware(BaseHTTPMiddleware, dispatch=middleware_correlacao)
+
 app.include_router(auth_router)
+app.include_router(auditoria_admin_router)
 app.include_router(portal_router)
 app.include_router(portal_admin_router)
 app.include_router(usuarios_admin_router)
