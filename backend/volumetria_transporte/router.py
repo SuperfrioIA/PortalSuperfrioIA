@@ -19,6 +19,8 @@ causa — só este card. O startup do Hub não depende disto.
 """
 
 import logging
+import threading
+import time
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -122,17 +124,24 @@ def _ip(request: Request):
 
 
 # ------------------------------------------------------------------ opções
-@router.get("/opcoes")
-def opcoes(_: dict = Depends(require_ver)):
-    """O que existe para filtrar, lido do dado — e não de lista fixa."""
-    try:
-        fuso = contrato.fuso_exibicao()
-    except contrato.FusoInvalido as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
 
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    hoje = datetime.now(ZoneInfo(fuso)).date()
+# `/opcoes` varre a tabela inteira sem filtro de data (precisa saber todo
+# cliente/unidade que já existiu, não só do recorte aberto na tela) — medido
+# em 03/set/2026: ~9,4s por chamada, 9 SELECT DISTINCT/MIN/MAX contra uma
+# tabela granular (linha por movimento). Combinado com a Duda no mesmo dia:
+# cliente/unidade novo é raro (~1x/6 meses); só o "atualizado até" muda todo
+# dia, e mesmo assim 1h de atraso é aceitável. TTL alto de propósito.
+_CACHE_OPCOES_TTL_SEGUNDOS = 60 * 60
+_cache_opcoes_lock = threading.Lock()
+_cache_opcoes: dict = {"expira_em": 0.0, "dados": None}
+
+
+def _opcoes_do_dw() -> dict:
+    """Varredura pesada do `/opcoes`, com cache de processo (ver TTL acima)."""
+    agora = time.monotonic()
+    with _cache_opcoes_lock:
+        if _cache_opcoes["dados"] is not None and agora < _cache_opcoes["expira_em"]:
+            return _cache_opcoes["dados"]
 
     with _cursor() as cur:
         listas = {}
@@ -158,6 +167,36 @@ def opcoes(_: dict = Depends(require_ver)):
             f"FROM {contrato.tabela()}"
         )
         de_min, ate_max, alterado_em = cur.fetchone()
+
+    dados = {
+        "listas": listas,
+        "clientes": clientes,
+        "de_min": de_min,
+        "ate_max": ate_max,
+        "alterado_em": alterado_em,
+    }
+    with _cache_opcoes_lock:
+        _cache_opcoes["dados"] = dados
+        _cache_opcoes["expira_em"] = agora + _CACHE_OPCOES_TTL_SEGUNDOS
+    return dados
+
+
+@router.get("/opcoes")
+def opcoes(_: dict = Depends(require_ver)):
+    """O que existe para filtrar, lido do dado — e não de lista fixa."""
+    try:
+        fuso = contrato.fuso_exibicao()
+    except contrato.FusoInvalido as erro:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    hoje = datetime.now(ZoneInfo(fuso)).date()
+
+    dados = _opcoes_do_dw()
+    listas = dados["listas"]
+    clientes = dados["clientes"]
+    de_min, ate_max, alterado_em = dados["de_min"], dados["ate_max"], dados["alterado_em"]
 
     try:
         abertura_de = min(contrato.abertura_de(hoje), hoje)

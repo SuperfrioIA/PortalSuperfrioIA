@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.2] — 2026-09-03
+### Corrigido
+- `/opcoes` da Volumetria de Transporte varria a tabela inteira do DW a cada abertura de tela
+  (9 `SELECT DISTINCT`/`MIN`/`MAX`, ~9,4s medidos) — agora tem cache de processo com TTL de 1h,
+  compartilhado entre todo mundo que abre a tela. Cliente/unidade novo é raro (~1x/6 meses); só o
+  "atualizado até" fica sujeito ao atraso do TTL
+### Alterado
+- Filtros da Volumetria de Transporte e de Estoque trocam os `<select multiple>` nativos pelo
+  mesmo painel "caixas com checkbox" do catering — com 8 dimensões na tela (transporte), os
+  selects nativos ficavam todos abertos ao mesmo tempo, sem indicar "tudo" vs "nada" selecionado.
+  O catering não foi tocado neste lote — ele já tem usuários e segue seu próprio plano
+
 ## [0.15.1] — 2026-09-03
 ### Corrigido
 - `oracledb` faltava no `requirements.txt` — Volumetria de Transporte e de Estoque respondiam
