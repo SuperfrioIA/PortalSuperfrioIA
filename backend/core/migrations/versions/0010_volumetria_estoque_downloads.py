@@ -1,23 +1,22 @@
 """Auditoria de download da volumetria de estoque: `volumetria_estoque_downloads`.
 
-Mesmo desenho de `0008_volumetria_transporte_downloads.py`, tabela própria.
+Mesmo desenho de `0009_volumetria_transporte_downloads.py`, tabela própria.
 
-**Nota para quem mergear depois desta branch**: outra sessão (branch
-`feat/auditoria-nucleo`) estava criando uma migration `0008` em paralelo
-(`0008_auditoria_eventos.py`), sem relação com esta cadeia. Quem mergear por
-último precisa renumerar/reencadear (`down_revision`) contra o que já estiver
-na `main`.
+Renumerada de `0009` para `0010` no rebase de 04/set, pela mesma razão da
+irmã do transporte: encadeia depois de `0009_volumetria_transporte_downloads.py`,
+que por sua vez encadeia depois de `0008_auditoria_eventos.py` (mergeada
+primeiro).
 
-Revision ID: 0009
-Revises: 0008
+Revision ID: 0010
+Revises: 0009
 Create Date: 2026-09-04
 
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0009"
-down_revision = "0008"
+revision = "0010"
+down_revision = "0009"
 branch_labels = None
 depends_on = None
 
