@@ -19,6 +19,8 @@ Ver [CONTRIBUTING.md](../CONTRIBUTING.md) para o detalhe de cada receita.
       (`backend/<modulo>/permissoes.py`). Se a rota é pública de propósito, diga por quê.
 - [ ] CSP respeitado (sem `<script>`/`<style>` inline novo sem justificativa)
 - [ ] Se módulo novo: migration revisada manualmente e testada localmente (`alembic upgrade head`)
+- [ ] Mutação administrativa nova grava evento de auditoria com diff (`backend/auditoria`, ver
+      `docs/AUDITORIA_FUNCIONAL.md`); se não grava nenhum evento, o motivo está explicado acima
 - [ ] Suíte de testes rodada localmente e verde
 - [ ] Regra de ouro respeitada (módulo não lê tabela de outro módulo direto — só via `service.py`)
 - [ ] Nenhum dado real de produção usado em teste/seed/exemplo

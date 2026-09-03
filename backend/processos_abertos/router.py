@@ -17,9 +17,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from backend.auditoria import service as auditoria_service
 from backend.auth.dependencies import get_current_user_optional, require_permissao, usuario_pode
 from backend.core.database import DB_PATH
 from backend.processos_abertos.permissoes import EDITAR
@@ -95,8 +96,17 @@ def salvar_semana_no_historico(semana: dict) -> list[dict]:
 
 
 @router.post("/historico")
-def salvar_semana(semana: Semana, _: dict = Depends(require_permissao(EDITAR))) -> list[dict]:
-    return salvar_semana_no_historico(semana.model_dump())
+def salvar_semana(
+    semana: Semana, request: Request, user: dict = Depends(require_permissao(EDITAR))
+) -> list[dict]:
+    resultado = salvar_semana_no_historico(semana.model_dump())
+    auditoria_service.registrar(
+        categoria="acao", acao="processos-abertos.editar", resultado="ok",
+        ator=user, ator_ip=request.client.host if request.client else None,
+        app_slug="processos-abertos", alvo_tipo="semana", alvo_id=semana.date,
+        detalhes={"total": semana.total, "units": semana.units},
+    )
+    return resultado
 
 
 @router.get("/status-integracao")

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20260825a">
+<link rel="stylesheet" href="css/styles.css?v=20260903a">
 <script src="js/boot.js?v=20260730b"></script>
 </head>
 <body>
@@ -252,6 +252,7 @@
     <button class="admin-tab" data-tab="usuarios" data-i18n="admin.tab.usuarios">Usuários</button>
     <button class="admin-tab" data-tab="filiais" data-i18n="admin.tab.filiais">Filiais</button>
     <button class="admin-tab" data-tab="unidades-negocio" data-i18n="admin.tab.un">Unidades de negócio</button>
+    <button class="admin-tab" data-tab="auditoria" data-i18n="admin.tab.auditoria">Auditoria</button>
   </nav>
 
   <div class="admin-content">
@@ -307,6 +308,47 @@
       </div>
       <div class="admin-filtros" id="filtros-unidades-negocio"></div>
       <div class="admin-table-wrap"><table class="admin-table" id="table-unidades-negocio"></table></div>
+    </div>
+
+    <div class="admin-pane hidden" id="pane-auditoria">
+      <div class="admin-pane-head">
+        <h2 data-i18n="admin.auditoria.heading">Trilha de auditoria</h2>
+        <a class="btn-primary inline" id="btn-auditoria-exportar" href="#" data-i18n="admin.auditoria.exportar">Exportar CSV</a>
+      </div>
+      <div class="admin-filtros admin-filtros-auditoria" id="filtros-auditoria">
+        <label class="filtro-campo">
+          <span data-i18n="admin.auditoria.filtro.de">De</span>
+          <input type="date" id="auditoria-de">
+        </label>
+        <label class="filtro-campo">
+          <span data-i18n="admin.auditoria.filtro.ate">Até</span>
+          <input type="date" id="auditoria-ate">
+        </label>
+        <label class="filtro-campo">
+          <span data-i18n="admin.auditoria.filtro.ator">Usuário</span>
+          <input type="text" id="auditoria-ator" data-i18n-ph="admin.auditoria.filtro.ator.ph" placeholder="username">
+        </label>
+        <label class="filtro-campo">
+          <span data-i18n="admin.auditoria.filtro.app">App</span>
+          <select id="auditoria-app"><option value="" data-i18n="admin.auditoria.filtro.todos">Todos</option></select>
+        </label>
+        <label class="filtro-campo">
+          <span data-i18n="admin.auditoria.filtro.categoria">Categoria</span>
+          <select id="auditoria-categoria"><option value="" data-i18n="admin.auditoria.filtro.todos">Todas</option></select>
+        </label>
+        <label class="filtro-campo">
+          <span data-i18n="admin.auditoria.filtro.resultado">Resultado</span>
+          <select id="auditoria-resultado">
+            <option value="" data-i18n="admin.auditoria.filtro.todos">Todos</option>
+            <option value="ok">ok</option>
+            <option value="negado" data-i18n="admin.auditoria.resultado.negado">negado</option>
+            <option value="erro" data-i18n="admin.auditoria.resultado.erro">erro</option>
+          </select>
+        </label>
+        <button class="btn-ghost" id="btn-auditoria-filtrar" data-i18n="admin.auditoria.filtrar">Filtrar</button>
+      </div>
+      <div class="admin-table-wrap"><table class="admin-table" id="table-auditoria"></table></div>
+      <div class="admin-paginacao" id="paginacao-auditoria"></div>
     </div>
   </div>
 </div>
@@ -378,9 +420,9 @@
   </div>
 </div>
 
-<script src="js/i18n.js?v=20260825a"></script>
-<script src="js/app.js?v=20260825a"></script>
-<script src="js/admin.js?v=20260825a"></script>
+<script src="js/i18n.js?v=20260903a"></script>
+<script src="js/app.js?v=20260903a"></script>
+<script src="js/admin.js?v=20260903a"></script>
 <script src="js/projetos.js?v=20260730b"></script>
 </body>
 </html>

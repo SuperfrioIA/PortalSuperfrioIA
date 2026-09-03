@@ -1,12 +1,17 @@
 """Depends de FastAPI usados pelos routers de todos os módulos."""
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 
+from backend.auditoria import service as auditoria_service
 from backend.auth.service import decode_token
 from backend.core import permissoes as catalogo
 from backend.core.database import db
 from backend.usuarios import service as usuarios_service
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -49,8 +54,13 @@ def get_current_user_optional(token: str | None = Depends(oauth2_scheme_optional
         return None
 
 
-def require_admin(user: dict = Depends(get_current_user)) -> dict:
+def require_admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
     if not user.get("is_admin"):
+        auditoria_service.registrar(
+            categoria="acesso", acao="acesso.negado", resultado="negado",
+            ator=user, ator_ip=_ip(request),
+            detalhes={"rota": request.url.path, "exigia": "admin"},
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso restrito a administradores",
@@ -83,8 +93,13 @@ def require_permissao(permissao_slug: str):
     """
     permissao = catalogo.obter(permissao_slug)  # KeyError explícito no boot
 
-    def _dep(user: dict = Depends(get_current_user)) -> dict:
+    def _dep(request: Request, user: dict = Depends(get_current_user)) -> dict:
         if not usuario_pode(user, permissao_slug):
+            auditoria_service.registrar(
+                categoria="acesso", acao="acesso.negado", resultado="negado",
+                ator=user, ator_ip=_ip(request),
+                detalhes={"rota": request.url.path, "exigia": permissao_slug},
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(

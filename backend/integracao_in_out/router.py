@@ -31,9 +31,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from backend.auditoria import service as auditoria_service
 from backend.auth.dependencies import require_permissao
 from backend.core.database import DB_PATH
 from backend.integracao_in_out.permissoes import EDITAR
@@ -204,7 +205,9 @@ def listar_uploads(_: dict = Depends(require_permissao(EDITAR))) -> list[dict]:
 
 
 @router.post("/base")
-def gravar_base(envio: Envio, user: dict = Depends(require_permissao(EDITAR))) -> dict[str, Any]:
+def gravar_base(
+    envio: Envio, request: Request, user: dict = Depends(require_permissao(EDITAR))
+) -> dict[str, Any]:
     """Reescreve os meses presentes no envio; os demais ficam como estavam."""
     resumo: dict[str, list[str]] = {}
     for ano, dados in envio.anos.items():
@@ -235,4 +238,10 @@ def gravar_base(envio: Envio, user: dict = Depends(require_permissao(EDITAR))) -
         base["uploads"] = base["uploads"][-_MAX_UPLOADS:]
         _escrever(base)
 
+    auditoria_service.registrar(
+        categoria="acao", acao="integracao-in-out.editar", resultado="ok",
+        ator=user, ator_ip=request.client.host if request.client else None,
+        app_slug="integracao-in-out", alvo_tipo="envio", alvo_id=envio.arquivo or None,
+        detalhes={"linhas": envio.linhas, "meses": resumo},
+    )
     return {"anos": base["anos"], "atualizado_em": agora, "arquivo": base["arquivo"]}

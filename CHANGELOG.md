@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.14.0] — 2026-09-03
+### Adicionado
+- Trilha de auditoria funcional (Fase 1) — quem fez o quê, quando, com que resultado. Cobre
+  login/logout, login e SSO recusados, abertura de app pelo card, acesso negado, e diff
+  (antes → depois) em toda mutação administrativa: usuários, roles, apps, seções, filiais,
+  unidades de negócio, projetos IA, processos-abertos e integração in/out
+- Nova aba **Auditoria** em Administração — filtra por período, usuário, app, categoria e
+  resultado, com paginação e exportação em CSV (Excel-first)
+- Tabela append-only por trigger de banco (`auditoria_eventos`) — nem o próprio código consegue
+  alterar ou apagar um evento já gravado, só inserir
+- Correlação entre o log técnico e a auditoria: toda resposta traz `X-Request-ID`, e o mesmo id
+  aparece na linha de log e no evento da mesma requisição
+### Observações
+- Não é log técnico nem métrica operacional — os dois continuam existindo à parte. Retenção sem
+  purga nesta fase (decisão pendente, ver `docs/AUDITORIA_FUNCIONAL.md`). Leitura restrita a
+  administradores; um papel de auditor sem privilégio total é roadmap
+
 ## [0.13.0] — 2026-08-31
 ### Adicionado
 - Análise de Mapa Estatísticos atualizada da v2.11 para a **v2.24** — o app agora se chama **PGA · Análise de Mapa Estatísticos** e ganhou o fluxo de **Expedição** ao lado do de Recebimento: são dois fluxos independentes, escolhidos na lateral, cada um com seus próprios arquivos e resultado. Trocar de fluxo não perde o que já estava carregado, e o Recebimento continua exatamente como era
