@@ -15,6 +15,7 @@ from backend.integracao_in_out import permissoes as integracao_in_out_permissoes
 from backend.processos_abertos import permissoes as processos_abertos_permissoes
 from backend.projetos_ia import permissoes as projetos_ia_permissoes
 from backend.volumetria_catering import permissoes as volumetria_catering_permissoes
+from backend.volumetria_estoque import permissoes as volumetria_estoque_permissoes
 from backend.volumetria_transporte import permissoes as volumetria_transporte_permissoes
 
 _MODULOS = (
@@ -23,6 +24,7 @@ _MODULOS = (
     projetos_ia_permissoes,
     volumetria_catering_permissoes,
     volumetria_transporte_permissoes,
+    volumetria_estoque_permissoes,
 )
 
 

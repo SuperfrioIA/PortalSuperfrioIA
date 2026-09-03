@@ -14,6 +14,7 @@ import backend.portal.models  # noqa: F401 — registra Secao/App no metadata
 import backend.projetos_ia.models  # noqa: F401 — registra Projeto/Fase/Filial/Rollout
 import backend.usuarios.models  # noqa: F401 — registra Usuario/Role/vinculos
 import backend.volumetria_catering.models  # noqa: F401 — registra VolumetriaDownload
+import backend.volumetria_estoque.models  # noqa: F401 — registra VolumetriaEstoqueDownload
 import backend.volumetria_transporte.models  # noqa: F401 — registra VolumetriaTransporteDownload
 
 config = context.config

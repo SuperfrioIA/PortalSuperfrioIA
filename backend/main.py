@@ -32,6 +32,7 @@ from backend.projetos_ia.router import router_admin as projetos_ia_admin_router
 from backend.seed import seed_initial
 from backend.usuarios.router import router_admin as usuarios_admin_router
 from backend.volumetria_catering.router import router as volumetria_catering_router
+from backend.volumetria_estoque.router import router as volumetria_estoque_router
 from backend.volumetria_transporte.router import router as volumetria_transporte_router
 
 
@@ -223,6 +224,7 @@ app.include_router(volumetria_catering_router)
 # por request, startup e /api/health não dependem dele
 # (docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md).
 app.include_router(volumetria_transporte_router)
+app.include_router(volumetria_estoque_router)
 
 
 @app.get("/api/health")

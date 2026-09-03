@@ -52,6 +52,8 @@ services:
       # Volumetria de Transporte (backend/volumetria_transporte/) — mesma
       # credencial DW_LEITURA_* acima, tabela própria.
       DW_TABELA_TRN: ${DW_TABELA_TRN:-}
+      # Volumetria de Estoque (backend/volumetria_estoque/) — idem.
+      DW_TABELA_EST: ${DW_TABELA_EST:-}
     volumes:
       - ./data:/app/data
     depends_on:
