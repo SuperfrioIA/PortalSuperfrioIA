@@ -1,9 +1,10 @@
 /* Volumetria de Estoque — tela sobre backend/volumetria_estoque/.
  *
  * Irmã de frontend/volumetria-transporte/app.js — mesma estrutura (filtros
- * com o painel "caixas", árvore montada aqui a partir de linhas achatadas). A
- * diferença real: os valores que chegam do backend já são POSIÇÃO (a foto do último
- * dia com dado de cada mês, uma linha por unidade/cliente/câmara/mês — ver
+ * com o painel "caixas", árvore com abre/fecha por nível via `ESTADO.abertos`,
+ * montada aqui a partir de linhas achatadas). A diferença real: os valores
+ * que chegam do backend já são POSIÇÃO (a foto do último dia com dado de
+ * cada mês, uma linha por unidade/cliente/câmara/mês — ver
  * backend/volumetria_estoque/matriz.py), não algo para somar por dia. A
  * árvore aqui soma só entre NÓS DA HIERARQUIA (câmara → cliente → unidade),
  * nunca entre meses nem entre dias — isso o backend já resolveu.
@@ -19,7 +20,7 @@ let PODE_EXPORTAR = false;
 const ESTADO = {
   de: '', ate: '', dia: [], lente: 'liq',
   unidade: [], cliente: [], camara: [], status_lote: [],
-  pagina: 1, aba: 'matriz',
+  pagina: 1, aba: 'matriz', abertos: new Set(),
 };
 
 class RespostaRecusada extends Error {}
@@ -381,7 +382,32 @@ function fmtData(iso) {
   return `${d}/${m}/${a}`;
 }
 
-function renderMatriz(dados) {
+// Abre/fecha por nível, igual ao catering: `ESTADO.abertos` guarda os ids dos
+// nós expandidos (vazio = tudo fechado, só as unidades aparecem). `id` usa o
+// separador de unidade (`\u001f`) — não colide com sigla, chave de cliente nem
+// nome de câmara. `escapeAttr` é defesa em profundidade: hoje esses ids só
+// carregam código/chave do DW, não texto livre.
+function idNo(...partes) { return partes.join('\u001f'); }
+function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+function linhaTr(id, rotulo, nivel, totais, meses, temFilhos, tituloPorMes) {
+  const aberto = ESTADO.abertos.has(id);
+  const botao = temFilhos
+    ? `<button class="abre" data-id="${escapeAttr(id)}" aria-expanded="${aberto}">${aberto ? '−' : '+'}</button>`
+    : '';
+  const celulas = meses.map((m) => {
+    const v = totais[m];
+    const titulo = v && tituloPorMes ? ` title="${escapeAttr(tituloPorMes(m))}"` : '';
+    return `<td${titulo}>${v ? fmt(v) : '<span class="vazio">—</span>'}</td>`;
+  }).join('');
+  return `<tr class="n${nivel}"><td class="rotulo" style="--recuo:${nivel * 14}px">${botao}${rotulo}</td>${celulas}</tr>`;
+}
+
+let ULTIMA_MATRIZ = null;
+
+function redesenhaMatriz() {
+  if (!ULTIMA_MATRIZ) return;
+  const dados = ULTIMA_MATRIZ;
   const meses = Object.keys(dados.meses);
   const arvore = constroiArvore(dados.linhas);
 
@@ -396,23 +422,19 @@ function renderMatriz(dados) {
   const totalGeral = {};
 
   for (const [unidade, u] of [...arvore].sort((a, b) => a[0].localeCompare(b[0]))) {
-    corpo += `<tr class="n0"><td class="rotulo">${unidade}</td>`
-      + meses.map((m) => `<td>${u.total[m] ? fmt(u.total[m]) : '<span class="vazio">—</span>'}</td>`).join('')
-      + '</tr>';
+    const idU = idNo(unidade);
+    corpo += linhaTr(idU, unidade, 0, u.total, meses, true);
     for (const m of meses) totalGeral[m] = (totalGeral[m] || 0) + (u.total[m] || 0);
+    if (!ESTADO.abertos.has(idU)) continue;
 
-    for (const [, c] of [...u.clientes].sort((a, b) => a[1].rotulo.localeCompare(b[1].rotulo))) {
-      corpo += `<tr class="n1"><td class="rotulo" style="--recuo:14px">${c.rotulo}</td>`
-        + meses.map((m) => `<td>${c.total[m] ? fmt(c.total[m]) : '<span class="vazio">—</span>'}</td>`).join('')
-        + '</tr>';
+    for (const [clienteChave, c] of [...u.clientes].sort((a, b) => a[1].rotulo.localeCompare(b[1].rotulo))) {
+      const idC = idNo(unidade, clienteChave);
+      corpo += linhaTr(idC, c.rotulo, 1, c.total, meses, true);
+      if (!ESTADO.abertos.has(idC)) continue;
+
       for (const [camara, cam] of [...c.camaras].sort((a, b) => a[0].localeCompare(b[0]))) {
-        corpo += `<tr class="n2"><td class="rotulo" style="--recuo:28px">${camara}</td>`
-          + meses.map((m) => {
-              const v = cam.total[m];
-              const titulo = v ? ` title="Posição de ${fmtData(cam.dias[m])}"` : '';
-              return `<td${titulo}>${v ? fmt(v) : '<span class="vazio">—</span>'}</td>`;
-            }).join('')
-          + '</tr>';
+        corpo += linhaTr(idNo(unidade, clienteChave, camara), camara, 2, cam.total, meses, false,
+          (m) => `Posição de ${fmtData(cam.dias[m])}`);
       }
     }
   }
@@ -426,6 +448,19 @@ function renderMatriz(dados) {
     <tfoot>${rodape}</tfoot>
   </table>`;
   $('#paginacao').innerHTML = '';
+
+  $('.rolagem').querySelectorAll('button.abre').forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.id;
+      if (ESTADO.abertos.has(id)) ESTADO.abertos.delete(id); else ESTADO.abertos.add(id);
+      redesenhaMatriz();
+    };
+  });
+}
+
+function renderMatriz(dados) {
+  ULTIMA_MATRIZ = dados;
+  redesenhaMatriz();
 }
 
 /* ------------------------------------------------------------ a planilha */
@@ -518,6 +553,7 @@ async function inicia() {
     atualizaCaixas();
     leEstadoDosFiltros();
     ESTADO.pagina = 1;
+    ESTADO.abertos = new Set();
     carrega();
   };
   $('#aba-matriz').onclick = () => {
