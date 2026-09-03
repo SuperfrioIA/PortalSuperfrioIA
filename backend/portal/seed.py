@@ -155,6 +155,25 @@ APPS = [
         "badge": "NEW",
         "ordem": 7,
     },
+    {
+        # Também existe de verdade (backend/volumetria_transporte/, Receita 2,
+        # fonte no DW Oracle direto — sem Postgres intermediário, diferente do
+        # catering hoje). Dono de `volumetria-transporte:exportar`. Nenhuma
+        # role recebe `ver` pelo seed: só admin vê o card até a Maria decidir
+        # quem tem acesso. Ver docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md.
+        "secao": "armazem",
+        "slug": "volumetria-transporte",
+        "nome": "Transporte de Catering",
+        "nome_es": "Transporte de Catering",
+        "descricao": "Viagens de transporte de catering por unidade, cliente e mês, lidas do DW.",
+        "descricao_es": "Viajes de transporte de catering por unidad, cliente y mes, leídos del DW.",
+        "icone": "truck",
+        "url": "/volumetria-transporte/",
+        "tipo_acesso": "iframe",
+        "tipo_conteudo": "indicador",
+        "badge": "NEW",
+        "ordem": 8,
+    },
     # Backoffice
     {
         "secao": "backoffice",

@@ -38,6 +38,20 @@ services:
       VOLUMETRIA_DB_URL: ${VOLUMETRIA_DB_URL:-}
       VOLUMETRIA_FUSO_EXIBICAO: ${VOLUMETRIA_FUSO_EXIBICAO:-America/Sao_Paulo}
       VOLUMETRIA_ABERTURA_DE: ${VOLUMETRIA_ABERTURA_DE:-ano-corrente}
+      # DW Oracle — fonte direta de volumetria_transporte e volumetria_estoque
+      # (docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md). Credencial de SOMENTE
+      # LEITURA, só no .env da VM. O catering ainda lê o `nuvem-db` acima; a
+      # branch própria do D1/D3 daquele módulo (ainda não mergeada) vai usar a
+      # MESMA credencial abaixo quando chegar. Host/porta/serviço têm padrão no
+      # código e só entram aqui para poderem ser trocados sem rebuild.
+      DW_LEITURA_USUARIO: ${DW_LEITURA_USUARIO:-}
+      DW_LEITURA_SENHA: ${DW_LEITURA_SENHA:-}
+      DW_HOST: ${DW_HOST:-}
+      DW_PORTA: ${DW_PORTA:-}
+      DW_SERVICO: ${DW_SERVICO:-}
+      # Volumetria de Transporte (backend/volumetria_transporte/) — mesma
+      # credencial DW_LEITURA_* acima, tabela própria.
+      DW_TABELA_TRN: ${DW_TABELA_TRN:-}
     volumes:
       - ./data:/app/data
     depends_on:
