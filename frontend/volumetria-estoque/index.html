@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!--
   Volumetria de estoque de catering — irmã de frontend/volumetria-transporte/,
-  mesmo padrão de filtros nativos e mesmo CSS de marca. A diferença real está
+  mesmo painel de filtros "caixas" e mesmo CSS de marca. A diferença real está
   no app.js: a Matriz aqui é POSIÇÃO (foto de fim de mês), não soma — a tela
   precisa declarar isso, e a árvore não tem um "total anual" que faça sentido
   somar entre meses. Ver docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md,
@@ -66,6 +66,40 @@ input[type=date],select{font-family:var(--font-primary);font-size:12px;padding:6
   background:var(--brand-branco);color:var(--brand-azul-institucional)}
 select[multiple]{min-width:140px;height:64px}
 #dia{min-width:76px}
+
+/* ---------- filtros com caixas de selecao ----------
+   Portado de frontend/volumetria-catering/index.html (03/set/2026), no mesmo
+   lote da irmã volumetria-transporte — ver o comentário lá para o porquê. O
+   select continua no DOM como fonte da verdade e so recebe `.escondido`
+   DEPOIS de o painel existir. */
+select.escondido{display:none}
+.caixas{position:relative}
+.abre-filtro{font-family:var(--font-primary);font-size:12px;
+  padding:6px 26px 6px 8px;border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);background:var(--brand-branco);
+  color:var(--brand-azul-institucional);cursor:pointer;text-align:left;
+  min-width:150px;max-width:210px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background-image:linear-gradient(45deg,transparent 50%,var(--brand-azul-corporativo) 50%),
+                   linear-gradient(135deg,var(--brand-azul-corporativo) 50%,transparent 50%);
+  background-position:right 12px center, right 7px center;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.abre-filtro.curta{min-width:86px}
+.abre-filtro[aria-expanded=true]{border-color:var(--brand-azul-principal)}
+.abre-filtro.vazio{border-color:var(--brand-amarelo);background:#FFF8E1;
+  font-weight:600}
+.abre-filtro:disabled{opacity:.45;cursor:not-allowed}
+.painel{position:absolute;top:calc(100% + 3px);left:0;z-index:30;
+  background:var(--brand-branco);border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);box-shadow:var(--shadow-md);
+  min-width:160px;max-width:330px;max-height:264px;overflow-y:auto;padding:6px}
+.painel[hidden]{display:none}
+.caixa{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12px;
+  cursor:pointer;white-space:nowrap;border-radius:4px}
+.caixa:hover{background:#EEF3FB}
+.caixa.tudo{font-weight:700;border-radius:0;padding-bottom:7px;margin-bottom:4px;
+  border-bottom:1px solid var(--brand-cinza-claro)}
+.caixa input{cursor:pointer;flex:0 0 auto}
 .grupo{display:flex;gap:0;border:1px solid var(--brand-cinza-claro);
        border-radius:var(--radius-sm);overflow:hidden}
 .grupo button{font-family:var(--font-primary);font-size:12px;font-weight:500;

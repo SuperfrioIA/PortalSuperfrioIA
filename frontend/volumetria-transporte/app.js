@@ -1,17 +1,20 @@
 /* Volumetria de Transporte — tela sobre backend/volumetria_transporte/.
  *
  * Irmã de frontend/volumetria-catering/app.js, mas escrita do zero (T1 não
- * foi feito, não há engine compartilhado) e mais simples em dois pontos
- * deliberados:
+ * foi feito, não há engine compartilhado) e mais simples em um ponto
+ * deliberado:
  *
- * - filtros são `<select multiple>` nativos, não o painel "caixas" do
- *   catering — a maior cardinalidade medida no T0 (unidade) tem 6 opções,
- *   então o widget mais elaborado não paga o custo aqui;
  * - a Matriz chega do backend como LINHAS ACHATADAS
  *   (`{unidade, cliente, tipo_movimento, mes, valor, linhas}`), e é este
  *   arquivo que monta a árvore — o backend não pré-monta (ver matriz.py).
  *   A árvore renderiza sempre expandida (sem os botões de abrir/fechar do
  *   catering): primeira versão, funcional, sem a interação extra.
+ *
+ * Os filtros nasceram como `<select multiple>` nativos (a maior cardinalidade
+ * medida no T0, unidade, tinha só 6 opções) — mas com 8 dimensões na tela
+ * isso virava 8 caixas de 64px sempre abertas ao mesmo tempo, sem indicar
+ * "tudo" vs "nada" selecionado. Pedido da Maria em 03/set/2026: portado o
+ * mesmo painel "caixas" do catering (ver o bloco logo abaixo).
  */
 const API = '/api/volumetria-transporte';
 const $ = (s) => document.querySelector(s);
@@ -85,10 +88,205 @@ function selecionados(id) {
   return [...$('#' + id).selectedOptions].map((o) => o.value);
 }
 
-function aplicaSelecao(id, valores) {
+/* ---------------------------------------------- filtros com caixas de selecao
+   Portado de frontend/volumetria-catering/app.js (03/set/2026, pedido da
+   Maria): os 8 `<select multiple>` acima ficavam sempre abertos ao mesmo
+   tempo, sem indicar visualmente "tudo" vs "nada" selecionado — o catering já
+   tinha resolvido essa mesma dificuldade. O `<select>` continua sendo a fonte
+   de verdade (é ele que `selecionados()`/`leEstadoDosFiltros()` leem); isto é
+   só uma camada de interface por cima.
+
+   Os três estados, e como a seleção do select distingue (ver o original para
+   o raciocínio completo — V3_PLANO, lote V3.7.1/V3.7.3 do catering):
+     seleção vazia + `vazio=false` -> "Todos"              (sem filtro na URL)
+     seleção vazia + `vazio=true`  -> "Nenhum selecionado" (NÃO pode aplicar)
+     seleção com itens             -> "N selecionados"     (`vazio` sempre false)
+   `vazio` mora no widget e não no select: o select não tem onde guardar isso. */
+const CAIXAS = new Map();
+const COM_CAIXAS = ['dia', ...FILTROS_CAIXAS];
+
+const semFiltro = (id) => !Array.from($('#' + id).options).some((o) => o.selected);
+
+const estaVazio = (id) => {
+  const w = CAIXAS.get(id);
+  return !!(w && w.vazio && semFiltro(id));
+};
+
+function zeraCaixa(id) {
   const el = $('#' + id);
-  const conjunto = new Set(valores);
-  for (const opt of el.options) opt.selected = conjunto.has(opt.value);
+  if (el) Array.from(el.options).forEach((o) => { o.selected = false; });
+  const w = CAIXAS.get(id);
+  if (w) w.vazio = false;
+}
+
+function normalizaSelecao(el) {
+  const todas = Array.from(el.options);
+  if (todas.length && todas.every((o) => o.selected)) todas.forEach((o) => { o.selected = false; });
+}
+
+function rotuloFechado(id) {
+  const el = $('#' + id);
+  if (estaVazio(id)) return 'Nenhum selecionado';
+  if (semFiltro(id)) return 'Todos';
+  const marcadas = Array.from(el.selectedOptions);
+  return marcadas.length === 1 ? marcadas[0].textContent : `${marcadas.length} selecionados`;
+}
+
+const caixasVazias = () => COM_CAIXAS.filter(estaVazio).map((id) => CAIXAS.get(id).nome);
+
+function montaPainel(id) {
+  const w = CAIXAS.get(id), el = $('#' + id);
+  w.painel.innerHTML = '';
+  const vazio = estaVazio(id);
+  const todos = !vazio && semFiltro(id);
+
+  const tudo = document.createElement('label');
+  tudo.className = 'caixa tudo';
+  const marca = document.createElement('input');
+  marca.type = 'checkbox';
+  marca.checked = todos;
+  marca.onchange = () => {
+    if (todos) { w.vazio = true; }
+    else { zeraCaixa(id); }
+    atualizaCaixa(id);
+  };
+  tudo.append(marca, document.createTextNode('Selecionar tudo'));
+  w.painel.appendChild(tudo);
+
+  Array.from(el.options).forEach((opcao) => {
+    const linha = document.createElement('label');
+    linha.className = 'caixa';
+    linha.title = opcao.textContent;
+    const caixa = document.createElement('input');
+    caixa.type = 'checkbox';
+    caixa.checked = todos || opcao.selected;
+    caixa.onchange = () => {
+      if (vazio) {
+        w.vazio = false;
+        Array.from(el.options).forEach((o) => { o.selected = o === opcao; });
+      } else if (semFiltro(id)) {
+        Array.from(el.options).forEach((o) => { o.selected = o !== opcao; });
+      } else {
+        opcao.selected = !opcao.selected;
+        if (semFiltro(id)) w.vazio = true;
+      }
+      normalizaSelecao(el);
+      atualizaCaixa(id);
+    };
+    linha.append(caixa, document.createTextNode(opcao.textContent));
+    w.painel.appendChild(linha);
+  });
+}
+
+function atualizaCaixa(id) {
+  const w = CAIXAS.get(id);
+  if (!w) return;
+  w.botao.textContent = rotuloFechado(id);
+  w.botao.classList.toggle('vazio', estaVazio(id));
+  w.botao.title = estaVazio(id)
+    ? `${w.nome}: nenhum selecionado. Escolha ao menos um, ou marque "Selecionar `
+      + `tudo" para voltar a Todos.`
+    : w.titulo;
+  if (w.painel.hidden) return;
+  const antes = Array.from(w.painel.querySelectorAll('input')).indexOf(document.activeElement);
+  montaPainel(id);
+  const agora = w.painel.querySelectorAll('input');
+  const volta = antes >= 0 ? agora[antes] : null;
+  if (volta && !volta.disabled) volta.focus();
+  else if (antes >= 0) w.botao.focus();
+}
+
+const atualizaCaixas = () => COM_CAIXAS.forEach(atualizaCaixa);
+
+function fechaCaixas(menos) {
+  CAIXAS.forEach((w, id) => {
+    if (id === menos || w.painel.hidden) return;
+    w.painel.hidden = true;
+    w.botao.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function abreCaixa(id) {
+  const w = CAIXAS.get(id);
+  if (!w || w.botao.disabled) return;
+  fechaCaixas(id);
+  w.painel.hidden = false;
+  w.botao.setAttribute('aria-expanded', 'true');
+  montaPainel(id);
+  const primeira = w.painel.querySelector('input:not([disabled])');
+  if (primeira) primeira.focus();
+}
+
+function criaCaixas() {
+  COM_CAIXAS.forEach((id) => {
+    const el = $('#' + id);
+    if (!el || CAIXAS.has(id)) return;
+    const caixa = document.createElement('div');
+    caixa.className = 'caixas';
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'abre-filtro' + (id === 'dia' ? ' curta' : '');
+    botao.setAttribute('aria-expanded', 'false');
+    botao.setAttribute('aria-haspopup', 'true');
+    const painel = document.createElement('div');
+    painel.className = 'painel';
+    painel.hidden = true;
+    caixa.append(botao, painel);
+    el.parentNode.insertBefore(caixa, el.nextSibling);
+    el.classList.add('escondido');
+    const etiqueta = el.parentNode.querySelector('label');
+    CAIXAS.set(id, {
+      botao, painel,
+      titulo: el.title || '',
+      nome: (etiqueta ? etiqueta.textContent : id).trim(),
+      vazio: false,
+    });
+    botao.onclick = () => { painel.hidden ? abreCaixa(id) : fechaCaixas(); };
+    painel.onkeydown = (evento) => {
+      if (evento.key === 'Escape') { fechaCaixas(); botao.focus(); return; }
+      if (evento.key !== 'ArrowDown' && evento.key !== 'ArrowUp') return;
+      evento.preventDefault();
+      const foco = Array.from(painel.querySelectorAll('input:not([disabled])'));
+      const i = foco.indexOf(document.activeElement);
+      const proxima = foco[evento.key === 'ArrowDown' ? i + 1 : i - 1];
+      if (proxima) proxima.focus();
+    };
+    const rotulo = el.parentNode.querySelector('label[for="' + el.id + '"]');
+    if (rotulo) {
+      rotulo.removeAttribute('for');
+      rotulo.style.cursor = 'pointer';
+      rotulo.onclick = () => abreCaixa(id);
+    }
+  });
+  atualizaCaixas();
+}
+
+// Clique fora fecha; clique DENTRO não. Registrado uma vez só, fora de
+// qualquer função (mesmo padrão do catering).
+document.addEventListener('mousedown', (evento) => {
+  if (!evento.target.closest('.caixas')) fechaCaixas();
+});
+document.addEventListener('keydown', (evento) => {
+  if (evento.key === 'Escape') fechaCaixas();
+});
+
+/* A trava do estado "vazio": "nenhum marcado" não pode virar consulta — no
+   backend ele seria indistinguível de "sem filtro" (lista vazia = nenhuma
+   cláusula no WHERE), e a tela voltaria com TUDO enquanto o painel mostra
+   zero caixas. Mora em `carrega()` para cobrir Aplicar, paginação e troca de
+   aba de uma vez (mesma decisão do catering). */
+function travadoPorFiltroVazio() {
+  const pendentes = caixasVazias();
+  if (!pendentes.length) return false;
+  const quais = pendentes.join(', ');
+  const um = pendentes.length === 1;
+  $('.rolagem').innerHTML =
+    `<div class="erro"><strong>${um ? 'Filtro sem seleção' : 'Filtros sem seleção'}: `
+    + `${quais}.</strong><br>Escolha ao menos um item, ou marque `
+    + `"Selecionar tudo" para voltar a Todos. Enquanto isso a tela não é `
+    + `recalculada — o recorte pedido não descreve nenhuma linha.</div>`;
+  $('#paginacao').innerHTML = '';
+  return true;
 }
 
 /* ------------------------------------------------------------- parâmetros */
@@ -130,6 +328,9 @@ async function carregaOpcoes() {
   popularSelect('status_viagem', OPCOES.status_viagem);
   popularSelect('status_wms', OPCOES.status_wms);
   popularSelect('status_baixa', OPCOES.status_baixa);
+  // Depois de TODAS as listas estarem preenchidas: o painel se monta sobre as
+  // opções que existem, e é aqui que os selects saem da tela.
+  criaCaixas();
 
   const grupo = $('#lente');
   grupo.innerHTML = '';
@@ -278,6 +479,7 @@ function renderPlanilha(dados) {
 
 /* ------------------------------------------------------------------ carga */
 async function carrega() {
+  if (travadoPorFiltroVazio()) return;
   $('.rolagem').innerHTML = '<div class="carregando">Carregando…</div>';
   const p = parametros();
   const endpoint = ESTADO.aba === 'matriz' ? '/matriz' : '/planilha';
@@ -295,6 +497,12 @@ async function carrega() {
 
 /* --------------------------------------------------------------- download */
 async function baixa(formato) {
+  const pendentes = caixasVazias();
+  if (pendentes.length) {
+    alert(`Sem seleção em: ${pendentes.join(', ')}.\n\nEscolha ao menos um `
+      + `item, ou marque "Selecionar tudo" para voltar a Todos.`);
+    return;
+  }
   const p = parametrosDownload(formato);
   let ticket;
   try {
@@ -324,7 +532,8 @@ async function inicia() {
   $('#limpar').onclick = () => {
     $('#de').value = OPCOES.abertura.de;
     $('#ate').value = OPCOES.abertura.ate;
-    for (const id of ['dia', ...FILTROS_CAIXAS]) aplicaSelecao(id, []);
+    COM_CAIXAS.forEach(zeraCaixa);
+    atualizaCaixas();
     leEstadoDosFiltros();
     ESTADO.pagina = 1;
     carrega();

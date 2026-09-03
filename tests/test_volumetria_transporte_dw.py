@@ -35,6 +35,7 @@ from backend.volumetria_transporte import (
     matriz,
     planilha,
     recorte,
+    router,
     schema_dw,
 )
 
@@ -147,8 +148,10 @@ def _ambiente_limpo(monkeypatch):
     ):
         monkeypatch.delenv(var, raising=False)
     schema_dw.invalidar()
+    router._cache_opcoes.update({"dados": None, "expira_em": 0.0})
     yield
     schema_dw.invalidar()
+    router._cache_opcoes.update({"dados": None, "expira_em": 0.0})
 
 
 @pytest.fixture
@@ -416,6 +419,51 @@ def test_opcoes_exige_ver(client, operador_headers):
 
 def test_diagnostico_exige_admin(client, operador_headers):
     assert client.get(DIAG, headers=operador_headers).status_code == 403
+
+
+def _conexao_com_opcoes(voltas=1):
+    from datetime import date, datetime
+
+    uma_volta = [
+        [],  # sql_zero_linhas() do garantir() — consome uma posição da fila também
+        [("SP",)], [("PALLET",)], [("FROTA",)], [("ENTRADA",)],
+        [("FINALIZADA",)], [("OK",)], [("BAIXADO",)],
+        [(1, "Cliente Um")],
+        [(date(2026, 1, 1), date(2026, 9, 1), datetime(2026, 9, 1, 10, 0))],
+    ]
+    return ConexaoFalsa(resultados=uma_volta * voltas)
+
+
+def test_opcoes_usa_cache_e_nao_bate_no_dw_duas_vezes_seguidas(
+    client, admin_headers, com_credencial, monkeypatch
+):
+    conexao = _conexao_com_opcoes()
+    monkeypatch.setattr(conexao_dw, "conectar", lambda: conexao)
+
+    r1 = client.get(f"{BASE}/opcoes", headers=admin_headers)
+    assert r1.status_code == 200
+    total_apos_primeira = len(conexao.executados)
+    assert total_apos_primeira > 0
+
+    r2 = client.get(f"{BASE}/opcoes", headers=admin_headers)
+    assert r2.status_code == 200
+    assert len(conexao.executados) == total_apos_primeira  # segunda não bateu no DW
+    assert r2.json() == r1.json()
+
+
+def test_opcoes_revarre_o_dw_depois_do_ttl_vencer(
+    client, admin_headers, com_credencial, monkeypatch
+):
+    conexao = _conexao_com_opcoes(voltas=2)
+    monkeypatch.setattr(conexao_dw, "conectar", lambda: conexao)
+
+    assert client.get(f"{BASE}/opcoes", headers=admin_headers).status_code == 200
+    total_apos_primeira = len(conexao.executados)
+
+    router._cache_opcoes["expira_em"] = 0.0  # simula TTL vencido, sem precisar de time.sleep
+    schema_dw.invalidar()  # o TTL do /opcoes (1h) é bem maior que o do garantir() (10min)
+    assert client.get(f"{BASE}/opcoes", headers=admin_headers).status_code == 200
+    assert len(conexao.executados) > total_apos_primeira  # revarreu
 
 
 def test_diagnostico_sem_credencial_e_503_nomeando_a_variavel(client, admin_headers):
