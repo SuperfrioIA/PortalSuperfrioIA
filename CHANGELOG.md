@@ -11,6 +11,10 @@
   mesmo painel "caixas com checkbox" do catering — com 8 dimensões na tela (transporte), os
   selects nativos ficavam todos abertos ao mesmo tempo, sem indicar "tudo" vs "nada" selecionado.
   O catering não foi tocado neste lote — ele já tem usuários e segue seu próprio plano
+- Matriz da Volumetria de Transporte e de Estoque agora abre/fecha por nível (unidade → cliente →
+  movimento/câmara), igual ao catering — antes renderizava tudo sempre expandido, e com dado real
+  isso virava uma parede de linhas (uma unidade com 2 clientes de 6-7 câmaras cada já enchia a
+  tela). Fechado por padrão; cada nó lembra se foi aberto, sem refazer a consulta ao servidor
 
 ## [0.15.1] — 2026-09-03
 ### Corrigido
