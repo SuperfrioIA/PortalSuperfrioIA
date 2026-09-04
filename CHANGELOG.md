@@ -2,6 +2,12 @@
 
 ## [0.15.2] — 2026-09-03
 ### Corrigido
+- Download (CSV e Excel) da Volumetria de Transporte e de Estoque falhava com 500 —
+  `ORA-00904: "F"."PK_DW": invalid identifier`. O SQL do arquivo selecionava a coluna
+  `pk_dw` pelo nome interno em vez do nome real no DW (`PK_FATO_VOL_TRN_CAT`/
+  `PK_FATO_VOL_EST_CAT`, via `contrato.coluna_dw()`) — só o arquivo leva essa coluna
+  (Matriz/planilha nunca a selecionam), por isso o bug só apareceu no download, em produção,
+  com dado real (o cursor falso dos testes não valida SQL contra o Oracle de verdade)
 - Peso líquido e peso bruto da Volumetria de Transporte e de Estoque estavam rotulados "(t)" —
   na Matriz e no cabeçalho do CSV/Excel — mas o número mostrado é o kg cru do DW, sem nenhuma
   conversão por trás (diferente do catering, que divide por 1000 quando a lente é "t"). Corrigido
