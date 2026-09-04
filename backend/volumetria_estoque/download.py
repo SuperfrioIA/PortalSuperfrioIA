@@ -41,16 +41,22 @@ _ROTULO = {
     "qtde_sku": "SKUs (contagem do dia)",
     "qtde_pallet": "Pallets (UA)",
     "qtde_vol": "Volumes (cx)",
-    "qtde_peso": "Peso líquido (t)",
-    "qtde_pbrt": "Peso bruto (t)",
+    "qtde_peso": "Peso líquido (kg)",
+    "qtde_pbrt": "Peso bruto (kg)",
     "qtde_vlr": "Valor (R$)",
 }
 
 
 def colunas():
-    """`[(apelido, sql, rotulo)]` — `contrato.COLUNAS_ARQUIVO`, na ordem."""
+    """`[(apelido, sql, rotulo)]` — `contrato.COLUNAS_ARQUIVO`, na ordem.
+
+    Usa `contrato.coluna_dw()` e não `f"f.{nome}"` cru: `pk_dw` é a exceção
+    que não é upper() do nosso nome (`PK_FATO_VOL_EST_CAT`), e só o arquivo
+    leva essa coluna — Matriz/planilha nunca selecionam `pk_dw`, por isso
+    esse bug (ORA-00904, medido em produção 04/set no transporte) não tinha
+    aparecido ainda aqui."""
     return [
-        (nome, f"f.{nome}", _ROTULO.get(nome, nome))
+        (nome, f"f.{contrato.coluna_dw(nome)}", _ROTULO.get(nome, nome))
         for nome in contrato.COLUNAS_ARQUIVO
     ]
 

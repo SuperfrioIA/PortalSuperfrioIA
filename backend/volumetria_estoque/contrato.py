@@ -117,9 +117,13 @@ CAMARA_SENTINELA_SQL = "SEM_CAMARA"  # só para agrupar/juntar no SQL — nunca 
 CAMARA_ROTULO_VAZIA = "sem câmara"
 
 # 5 lentes — QTDE_SKU fica de fora (é contagem, ver docstring).
+# "unidade" é só rótulo (o `fmt()` do frontend não converte nada, ao
+# contrário do catering) — o DW manda peso em kg, então o rótulo é "kg".
+# Corrigido em 04/set/2026: dizia "t" sem nenhuma conversão por trás, e o
+# número na tela era o kg cru mostrado como se já fosse tonelada.
 LENTES = {
-    "liq": {"nome": "Peso líquido", "unidade": "t", "coluna": "qtde_peso"},
-    "bru": {"nome": "Peso bruto", "unidade": "t", "coluna": "qtde_pbrt"},
+    "liq": {"nome": "Peso líquido", "unidade": "kg", "coluna": "qtde_peso"},
+    "bru": {"nome": "Peso bruto", "unidade": "kg", "coluna": "qtde_pbrt"},
     "pal": {"nome": "Pallets", "unidade": "UA", "coluna": "qtde_pallet"},
     "vol": {"nome": "Volumes", "unidade": "cx", "coluna": "qtde_vol"},
     "val": {"nome": "Valor", "unidade": "R$", "coluna": "qtde_vlr"},

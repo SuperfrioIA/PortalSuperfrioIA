@@ -304,6 +304,15 @@ def test_download_colunas_e_tela_mais_arquivo_na_ordem_do_contrato():
     assert nomes == list(contrato.COLUNAS_ARQUIVO)
 
 
+def test_download_pk_dw_usa_coluna_dw_e_nao_o_nome_cru():
+    # Mesma regressão do transporte (04/set/2026): `f.pk_dw` não existe no
+    # DW, o nome real é `PK_FATO_VOL_EST_CAT` (ORA-00904 em produção, só no
+    # download: Matriz/planilha nunca selecionam `pk_dw`).
+    sql = dict((c, s) for c, s, _r in download.colunas())
+    assert sql["pk_dw"] == f"f.{contrato.PK_DW}"
+    assert "f.pk_dw" not in sql["pk_dw"]
+
+
 def test_nome_do_arquivo_leva_o_periodo():
     f = recorte.Filtros(de="2026-08-25", ate="2026-09-03").validar()
     assert download.nome_do_arquivo(f, "csv") == "volumetria_estoque_2026-08-25_a_2026-09-03.csv"

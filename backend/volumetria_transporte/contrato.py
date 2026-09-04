@@ -204,8 +204,12 @@ PLACA_SENTINELA = ">>> SEM PLACA <<<"
 PLACA_ROTULO_VAZIA = "sem placa"
 
 LENTES = {
-    "liq": {"nome": "Peso líquido", "unidade": "t", "coluna": "qtde_peso"},
-    "bru": {"nome": "Peso bruto", "unidade": "t", "coluna": "qtde_pbrt"},
+    # "unidade" é só rótulo (o `fmt()` do frontend não converte nada, ao
+    # contrário do catering) — o DW manda peso em kg, então o rótulo é "kg".
+    # Corrigido em 04/set/2026: dizia "t" sem nenhuma conversão por trás, e o
+    # número na tela era o kg cru mostrado como se já fosse tonelada.
+    "liq": {"nome": "Peso líquido", "unidade": "kg", "coluna": "qtde_peso"},
+    "bru": {"nome": "Peso bruto", "unidade": "kg", "coluna": "qtde_pbrt"},
     "val": {"nome": "Valor", "unidade": "R$", "coluna": "qtde_vlr"},
 }
 
