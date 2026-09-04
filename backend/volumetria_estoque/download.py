@@ -41,8 +41,8 @@ _ROTULO = {
     "qtde_sku": "SKUs (contagem do dia)",
     "qtde_pallet": "Pallets (UA)",
     "qtde_vol": "Volumes (cx)",
-    "qtde_peso": "Peso líquido (t)",
-    "qtde_pbrt": "Peso bruto (t)",
+    "qtde_peso": "Peso líquido (kg)",
+    "qtde_pbrt": "Peso bruto (kg)",
     "qtde_vlr": "Valor (R$)",
 }
 

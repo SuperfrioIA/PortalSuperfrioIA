@@ -60,8 +60,8 @@ _ROTULO = {
     "num_nf": "Nota fiscal",
     "placa": "Placa",
     "data_programacao": "Data de programação",
-    "qtde_peso": "Peso líquido (t)",
-    "qtde_pbrt": "Peso bruto (t)",
+    "qtde_peso": "Peso líquido (kg)",
+    "qtde_pbrt": "Peso bruto (kg)",
     "qtde_vlr": "Valor (R$)",
 }
 

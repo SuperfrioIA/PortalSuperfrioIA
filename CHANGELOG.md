@@ -2,6 +2,10 @@
 
 ## [0.15.2] — 2026-09-03
 ### Corrigido
+- Peso líquido e peso bruto da Volumetria de Transporte e de Estoque estavam rotulados "(t)" —
+  na Matriz e no cabeçalho do CSV/Excel — mas o número mostrado é o kg cru do DW, sem nenhuma
+  conversão por trás (diferente do catering, que divide por 1000 quando a lente é "t"). Corrigido
+  o rótulo para "kg", que é o que a tela sempre mostrou de fato
 - `/opcoes` da Volumetria de Transporte varria a tabela inteira do DW a cada abertura de tela
   (9 `SELECT DISTINCT`/`MIN`/`MAX`, ~9,4s medidos) — agora tem cache de processo com TTL de 1h,
   compartilhado entre todo mundo que abre a tela. Cliente/unidade novo é raro (~1x/6 meses); só o
