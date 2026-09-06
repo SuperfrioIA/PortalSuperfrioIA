@@ -63,6 +63,27 @@ let OPCOES = null, ESTADO = {
 // AAAA-MM-DD -> DD/MM/AAAA. A API fala ISO; a tela fala como quem le.
 const dataBR = iso => iso.split('-').reverse().join('/');
 
+// AAAA-MM-DDTHH:MM:SS -> DD/MM/AAAA HH:MM. O frescor do DW vem com hora, e a
+// hora importa: "atualizado até 05/09 07:05" diz que a carga da manhã rodou.
+// Com fuso explícito (Z ou +00:00) converte para o horário local do navegador;
+// sem fuso, mostra como veio — é hora do DW, e o DW está no Brasil.
+const dataHoraBR = iso => {
+  if (!iso) return null;
+  const s = String(iso);
+  if (/[Zz]$|[+-]\d\d:\d\d$/.test(s)){
+    return new Date(s).toLocaleString('pt-BR',
+      {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+  }
+  const [data, hora] = s.split('T');
+  return dataBR(data) + (hora ? ' ' + hora.slice(0, 5) : '');
+};
+
+// Dias inteiros entre a data ISO e agora (relógio do navegador). Serve SÓ para
+// decidir se a tela avisa que o dado está velho — nunca para calcular número.
+const diasDesde = iso => iso
+  ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  : null;
+
 // Limpar volta para o MESMO padrao com que a tela abriu, e nao para o periodo
 // inteiro do banco: "limpar filtro" tem que devolver a tela que a pessoa
 // recebeu, senao o botao vira uma terceira coisa que ninguem pediu.
@@ -584,14 +605,36 @@ function paginacao(p){
   el.append(info, anterior, proxima);
 }
 
+/* "De quando é o dado" depende da FONTE (C4 do plano do DW).
+
+   Postgres: a lista de cargas — quando NÓS copiamos o dado. DW direto: não há
+   carga; cada tabela declara até quando o DW a atualizou, e os rótulos
+   (sigla, tipo, razão social) declaram quando foram recalculados — o atraso do
+   cache fica visível, não escondido. */
+function procedenciaHTML(){
+  if (OPCOES.fonte !== 'dw'){
+    const cargas = (OPCOES.cargas || []).map(c =>
+      `<li><code>${c.tabela}</code> — carga <strong>${c.fonte}</strong> concluída em ${c.quando}, ${Number(c.linhas).toLocaleString('pt-BR')} linhas</li>`
+    ).join('');
+    return '<li>Leitura: cópia no banco da nuvem-ia, alimentada por carga do DW 2x/dia.</li>'
+      + (cargas || '<li>Nenhuma carga concluída.</li>');
+  }
+  const a = OPCOES.atualizado_ate || {};
+  const tabela = (mov, nome) =>
+    `<li><code>${nome}</code> — atualizada no DW até <strong>${dataHoraBR(a[mov]) || 'sem data'}</strong></li>`;
+  return '<li>Leitura: <strong>direto do DW Oracle</strong>, a cada consulta, sem cópia '
+    + `intermediária. Quem atualiza as tabelas é o processo <code>${OPCOES.processo_dw || ''}</code>, `
+    + 'do lado do DW — se ele atrasar, esta tela mostra dado velho e diz que está velho.</li>'
+    + tabela('rec', 'FATO_VOL_REC_CAT_V01') + tabela('exp', 'FATO_VOL_EXP_CAT_V01')
+    + `<li>Rótulos (sigla exibida, tipo de estoque, razão social do cliente) calculados em `
+    + `${dataHoraBR(OPCOES.rotulos_calculados_em) || '—'}; recalculados a cada hora.</li>`;
+}
+
 function metodo(d){
-  const cargas = (OPCOES.cargas || []).map(c =>
-    `<li><code>${c.tabela}</code> — carga <strong>${c.fonte}</strong> concluída em ${c.quando}, ${Number(c.linhas).toLocaleString('pt-BR')} linhas</li>`
-  ).join('');
   $('#metodo').innerHTML = `
     <div>
       <strong>De quando é o dado</strong>
-      <ul>${cargas || '<li>Nenhuma carga concluída.</li>'}</ul>
+      <ul>${procedenciaHTML()}</ul>
     </div>
     <div>
       <strong>Como o número é somado</strong>
@@ -711,14 +754,48 @@ async function carregaPermissoes(){
   $('#baixar-xlsx').hidden = !PODE_EXPORTAR;
 }
 
-// A procedência no cabeçalho: de quando é o dado que está na tela. O detalhe
-// (tabela, fonte, linhas) fica em "Fontes & método"; aqui vai a última carga,
-// que é o que responde "isto está atualizado?" sem abrir nada.
+/* A procedência no cabeçalho: de quando é o dado que está na tela. O detalhe
+   fica em "Fontes & método"; aqui vai o que responde "isto está atualizado?"
+   sem abrir nada — e a resposta muda de significado com a fonte.
+
+   Postgres: "última carga", quando NÓS copiamos. DW direto: não há carga; a
+   pergunta é respondida na própria fonte, pelo MAX(DW_DATA_ALTERACAO) das duas
+   tabelas. É uma resposta melhor — e é a lição do incidente de 28/08/2026: a
+   tela dizia "última carga: 27/08 11:20" enquanto o DW estava parado desde
+   26/08, e a leitura foi "a carga quebrou" quando era a origem. Sem carga no
+   meio não há mais como confundir as duas coisas; mas o processo a montante
+   para de verdade, então quando o dado tem mais de DIAS_PARA_AVISAR dias a
+   pílula muda de cor e diz há quantos. Segunda de manhã mostra "dado de sexta"
+   — correto, não defeito: o processo do DW não roda no fim de semana. */
+const DIAS_PARA_AVISAR = 2;
+
+function frescorDW(){
+  const a = OPCOES.atualizado_ate || {};
+  const datas = [a.rec, a.exp].filter(Boolean).sort();
+  return datas.length ? datas[datas.length - 1] : null;
+}
+
 function mostraProcedencia(){
-  const cargas = OPCOES.cargas || [];
-  $('#procedencia').textContent = cargas.length
-    ? `Última carga: ${cargas[0].quando}`
-    : 'Nenhuma carga concluída';
+  const pill = $('#procedencia');
+  pill.classList.remove('atrasado');
+  if (OPCOES.fonte !== 'dw'){
+    const cargas = OPCOES.cargas || [];
+    pill.textContent = cargas.length
+      ? `Última carga: ${cargas[0].quando}`
+      : 'Nenhuma carga concluída';
+    return;
+  }
+  const ultimo = frescorDW();
+  if (!ultimo){
+    pill.textContent = 'DW sem data de atualização';
+    pill.classList.add('atrasado');
+    return;
+  }
+  const dias = diasDesde(ultimo);
+  const velho = dias !== null && dias > DIAS_PARA_AVISAR;
+  pill.textContent = `Dado do DW atualizado até ${dataHoraBR(ultimo)}`
+    + (velho ? ` · há ${dias} dias` : '');
+  if (velho) pill.classList.add('atrasado');
 }
 
 /* A trava do estado 3, e ela mora aqui de proposito (V3.7.3).

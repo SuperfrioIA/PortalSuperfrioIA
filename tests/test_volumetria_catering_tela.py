@@ -128,6 +128,25 @@ def test_os_tres_bloqueios_tem_mensagem_propria(js):
     assert "'/login'" not in js and '"/login"' not in js
 
 
+def test_a_tela_le_a_procedencia_da_fonte(js, html):
+    """C4 do plano do DW: com a fonte no DW não há carga. Se a tela continuasse
+    lendo só `cargas`, mostraria "Nenhuma carga concluída" para sempre — a
+    mentira que o incidente de 28/08 ensinou a não contar. Ela tem que ler
+    `fonte` e `atualizado_ate` do /opcoes, e ter a classe que grita dado velho."""
+    assert "OPCOES.fonte" in js
+    assert "atualizado_ate" in js
+    assert "rotulos_calculados_em" in js
+    assert "DIAS_PARA_AVISAR" in js
+    assert ".pa-date-pill.atrasado" in html
+
+
+def test_o_js_foi_versionado_junto_com_a_mudanca(html):
+    """Mudou o app.js? O `?v=` sobe junto, senão o cache do navegador serve o
+    asset velho depois do deploy (docs/TROUBLESHOOTING_APPS_IFRAME.md)."""
+    achado = re.search(r'<script src="app\.js\?v=(\d+)"></script>', html)
+    assert int(achado.group(1)) >= 2
+
+
 def test_o_html_embutido_nao_fica_em_cache_e_pode_ser_iframe(client):
     r = client.get(f"/{TELA.name}/")
     assert r.status_code == 200

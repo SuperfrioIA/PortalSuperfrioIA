@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.16.0] — 2026-09-06
+### Adicionado
+- Volumetria de Catering pode ler o **DW Oracle direto**, sem o banco intermediário da
+  nuvem-ia — atrás da chave `VOLUMETRIA_CATERING_FONTE` (`postgres`, o padrão e o que está em
+  produção, ou `dw`). Com a chave em `postgres` nada muda para quem usa a tela; virar é editar
+  o `.env` da VM e `docker compose up -d`, e voltar é o mesmo gesto, em segundos. Os dois
+  caminhos convivem até a limpeza (lote C6 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md`)
+- As três decisões da tela — sigla exibida (`RMSPV` → `RMSPIV`), tipo de estoque por
+  palavra-chave e razão social do cliente pela grafia de maior peso — passam a ser calculadas
+  pelo próprio Hub, em memória, na mesma varredura que monta as caixas de seleção; recalculadas
+  a cada hora, ou na hora por `POST /api/volumetria-catering/dimensoes/atualizar` (admin).
+  **Nenhum nome de cliente muda** em relação ao que a tela mostra hoje (decisão de 06/09)
+- Comparador só-admin: `GET /api/volumetria-catering/comparar/matriz` e `/comparar/opcoes`
+  rodam a mesma consulta nas duas fontes, cronometram cada uma e listam célula a célula o que
+  diverge. É o portão da virada — roda em produção, com dado real, antes de trocar a chave
+- `GET /api/volumetria-catering/diagnostico-dw` (admin): conecta no DW, confere o contrato das
+  duas tabelas coluna a coluna e diz qual fonte a tela está usando agora
+### Alterado
+- Com a fonte no DW, a procedência da tela deixa de ser "última carga" e passa a ser "dado do
+  DW atualizado até …" — o `MAX(DW_DATA_ALTERACAO)` de cada tabela —, com a pílula em amarelo
+  e "há N dias" quando isso foi há mais de dois dias. É a lição do incidente de 28/08, em que
+  a tela parecia atualizada e a origem estava parada. "Fontes & método" declara de qual caminho
+  o dado veio e quando os rótulos foram recalculados
+### Observações
+- Contra o Postgres a suíte continua provando o SQL num container real (`docs/EXECUCAO_LOCAL.md`
+  §3.1); contra o Oracle ela prova statement, binds e mapeamento com driver falso, sem conectar
+  no DW — a prova com dado real é o comparador, rodado na VM pela Maria
+- O lado Postgres (`conexao.py`, `recorte.py`, `planilha.py`, `download.py`) ficou intacto; só
+  `matriz.py` ganhou um `montar()` que recebe a consulta, sem mudança de comportamento
+
 ## [0.15.2] — 2026-09-03
 ### Corrigido
 - Download (CSV e Excel) da Volumetria de Transporte e de Estoque falhava com 500 —
