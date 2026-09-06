@@ -69,10 +69,14 @@ from backend.volumetria_catering import (
     conexao,
     conexao_dw,
     contrato,
+    dimensoes_dw,
     download,
+    download_dw,
     fonte,
     matriz,
+    matriz_dw,
     planilha,
+    planilha_dw,
     recorte,
     schema,
     schema_dw,
@@ -103,12 +107,41 @@ def require_ver(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-# ------------------------------------------------------------ banco externo
+# ------------------------------------------------------------ a fonte ativa
+def _usar_dw() -> bool:
+    """A chave, lida a cada request. Valor inválido é 503 NOMEANDO a variável:
+    cair no padrão em silêncio faria a Maria acreditar que virou."""
+    try:
+        return fonte.e_dw()
+    except fonte.FonteInvalida as erro:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
+
+
+def _erro_do_oracle(erro: BaseException) -> bool:
+    """Se a exceção veio do driver do Oracle — sem importar o `oracledb` aqui
+    (o import é preguiçoso de propósito, ver `conexao_dw._driver`). Erro de
+    rede no meio de uma consulta é `oracledb.Error`, e neste card ele tem que
+    virar 503, não 500."""
+    return type(erro).__module__.split(".")[0] == "oracledb"
+
+
 @contextmanager
 def _cursor():
-    """Cursor somente leitura no banco da nuvem-ia, com o contrato conferido.
+    """Cursor somente leitura na fonte ATIVA, com o contrato conferido.
 
-    Indisponibilidade e drift viram 503 aqui — um lugar só."""
+    Indisponibilidade e drift viram 503 aqui — um lugar só, para as duas
+    fontes. Quem chama não sabe (nem precisa saber) qual banco respondeu."""
+    if _usar_dw():
+        with _cursor_dw() as cur:
+            yield cur
+        return
+    with _cursor_postgres() as cur:
+        yield cur
+
+
+@contextmanager
+def _cursor_postgres():
+    """O `nuvem-db`, via `conexao.py`. Morre no C6."""
     try:
         conn = conexao.conectar()
     except conexao.VolumetriaIndisponivel as erro:
@@ -130,6 +163,43 @@ def _cursor():
             detail=(
                 "o banco da volumetria de catering falhou durante a consulta "
                 f"({type(erro).__name__}). O resto do Hub continua funcionando."
+            ),
+        )
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _cursor_dw():
+    """O DW Oracle, via `conexao_dw.py`. Mesmo desenho do transporte e do
+    estoque: `preparar_cursor` antes de tudo, drift conferido a cada 10 min."""
+    try:
+        conn = conexao_dw.conectar()
+    except conexao_dw.DWIndisponivel as erro:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
+    try:
+        with conn.cursor() as cur:
+            conexao_dw.preparar_cursor(cur)
+            try:
+                schema_dw.garantir(cur)
+            except schema_dw.ContratoDivergenteDW as erro:
+                logger.error("volumetria/DW: %s", erro)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro)
+                )
+            yield cur
+    except conexao_dw.DWIndisponivel as erro:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
+    except Exception as erro:
+        if not _erro_do_oracle(erro):
+            raise
+        logger.error("volumetria/DW: o DW falhou no meio da consulta: %s", type(erro).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"o DW falhou durante a consulta ({type(erro).__name__}). A "
+                "volumetria de catering lê o DW direto; o resto do Hub continua "
+                "funcionando."
             ),
         )
     finally:
@@ -192,6 +262,83 @@ def _ip(request: Request):
 
 
 # ------------------------------------------------------------------ opções
+def _opcoes_estaticas() -> dict:
+    """A parte do `/opcoes` que não vem do dado: tetos, lentes, faixas e os
+    movimentos da TELA. Uma cópia só, servida pelas duas fontes."""
+    return {
+        "teto_confirmacao": download.TETO_CONFIRMACAO,
+        "teto_xlsx": download.TETO_XLSX,
+        "lentes": [
+            {"chave": c, "nome": d["nome"], "unidade": d["unidade"],
+             "so_entrada": d["exp"] is None}
+            for c, d in contrato.LENTES.items()
+        ],
+        "faixas": [
+            {"chave": f, "rotulo": recorte.rotulo_faixa(f)} for f in contrato.FAIXAS
+        ],
+        # Os movimentos da TELA, e não os do dado: o terceiro é "as duas
+        # juntas", que não é tabela nem tipo de linha.
+        "movimentos": [
+            {"chave": "rec", "rotulo": "Entrada", "so_matriz": False},
+            {"chave": "exp", "rotulo": "Saída", "so_matriz": False},
+            {"chave": recorte.CONJUNTA, "rotulo": "Entrada + saída", "so_matriz": True},
+        ],
+    }
+
+
+def _abertura(hoje):
+    """A abertura da tela: janeiro do ano corrente até hoje (configurável). A
+    única trava é a da inversão, para uma abertura pinada no futuro não abrir
+    a tela com "período invertido"."""
+    try:
+        abertura_de = min(contrato.abertura_de(hoje), hoje)
+    except contrato.AberturaInvalida as erro:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
+    return {"de": abertura_de.isoformat(), "ate": hoje.isoformat()}
+
+
+def _opcoes_dw() -> dict:
+    """O `/opcoes` lido do DW: as listas vêm do retrato em cache
+    (`dimensoes_dw.obter`, TTL de 1 h), e a procedência muda de significado —
+    não existe carga, então "de quando é o dado" é o `MAX(DW_DATA_ALTERACAO)`
+    da própria fonte, e "de quando são os rótulos" é a hora da varredura."""
+    try:
+        contrato.fuso_exibicao()
+    except contrato.FusoInvalido as erro:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
+
+    with _cursor() as cur:
+        dim = dimensoes_dw.obter(cur)
+
+    # "Hoje" pelo relógio do processo no fuso de exibição — o DW é fonte de
+    # dado, não de hora (mesma decisão do transporte e do estoque).
+    hoje = dimensoes_dw.hoje_no_fuso()
+    primeiro, ultimo = dim.periodo
+    return {
+        "fonte": fonte.DW,
+        "unidades": dim.unidades_exibidas(),
+        "clientes": dim.clientes(),
+        "operacoes": dim.operacoes,
+        "tipos_estoque": dim.tipos(),
+        "periodo": {
+            "de": primeiro.isoformat() if primeiro else None,
+            "ate": ultimo.isoformat() if ultimo else None,
+        },
+        "abertura": _abertura(hoje),
+        **_opcoes_estaticas(),
+        # Não há carga: a procedência é a da fonte. `cargas` fica vazia para a
+        # tela antiga (que ainda lê essa chave) não quebrar até o C4 trocar o
+        # que ela mostra.
+        "cargas": [],
+        "atualizado_ate": {
+            m: (v.isoformat() if v else None) for m, v in dim.atualizado_em.items()
+        },
+        "rotulos_calculados_em": dim.calculado_em.isoformat(),
+        "processo_dw": contrato.PROCESSO_DW,
+        "contrato": contrato.ORIGEM,
+    }
+
+
 @router.get("/opcoes")
 def opcoes(_: dict = Depends(require_ver)):
     """O que existe para filtrar — lido do dado, não de lista fixa.
@@ -200,6 +347,9 @@ def opcoes(_: dict = Depends(require_ver)):
     Traz também a procedência (últimas cargas), o período que existe no dado, a
     abertura da tela e os tetos do download — do Python, para não existir uma
     segunda cópia deles no JavaScript."""
+    if _usar_dw():
+        return _opcoes_dw()
+
     # Configuração inválida é 503 nomeando a variável, não 500 genérico: a
     # mensagem do `contrato.py` existe para chegar em quem escreveu o .env.
     try:
@@ -280,38 +430,15 @@ def opcoes(_: dict = Depends(require_ver)):
             for t, f, q, n in cur.fetchall()
         ]
 
-    # A abertura da tela: janeiro do ano corrente até hoje (configurável). A
-    # única trava é a da inversão, para uma abertura pinada no futuro não abrir
-    # a tela com "período invertido".
-    try:
-        abertura_de = min(contrato.abertura_de(hoje), hoje)
-    except contrato.AberturaInvalida as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-
     return {
+        "fonte": fonte.POSTGRES,
         "unidades": unidades,
         "clientes": clientes,
         "operacoes": operacoes,
         "tipos_estoque": tipos,
         "periodo": {"de": periodo[0], "ate": periodo[1]},
-        "abertura": {"de": abertura_de.isoformat(), "ate": hoje.isoformat()},
-        "teto_confirmacao": download.TETO_CONFIRMACAO,
-        "teto_xlsx": download.TETO_XLSX,
-        "lentes": [
-            {"chave": c, "nome": d["nome"], "unidade": d["unidade"],
-             "so_entrada": d["exp"] is None}
-            for c, d in contrato.LENTES.items()
-        ],
-        "faixas": [
-            {"chave": f, "rotulo": recorte.rotulo_faixa(f)} for f in contrato.FAIXAS
-        ],
-        # Os movimentos da TELA, e não os do dado: o terceiro é "as duas
-        # juntas", que não é tabela nem tipo de linha.
-        "movimentos": [
-            {"chave": "rec", "rotulo": "Entrada", "so_matriz": False},
-            {"chave": "exp", "rotulo": "Saída", "so_matriz": False},
-            {"chave": recorte.CONJUNTA, "rotulo": "Entrada + saída", "so_matriz": True},
-        ],
+        "abertura": _abertura(hoje),
+        **_opcoes_estaticas(),
         "cargas": cargas,
         "contrato": contrato.ORIGEM,
     }
@@ -333,11 +460,16 @@ def api_matriz(
     dia: list[str] = Query(default=[], description="dia do MÊS, 1..31"),
     _: dict = Depends(require_ver),
 ):
-    """A Matriz do recorte."""
+    """A Matriz do recorte — da fonte ativa. O formato da resposta é o mesmo
+    nas duas, e é isso que o comparador confere."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
                        unidade, cliente, tipo_estoque, operacao, dia)
+    usar_dw = _usar_dw()
     with _cursor() as cur:
-        resultado = matriz.matriz(cur, filtros)
+        if usar_dw:
+            resultado = matriz_dw.matriz(cur, filtros, dimensoes_dw.obter(cur))
+        else:
+            resultado = matriz.matriz(cur, filtros)
     return _json(resultado)
 
 
@@ -360,8 +492,12 @@ def api_planilha(
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
                        unidade, cliente, tipo_estoque, operacao, dia)
     _um_movimento_por_vez(filtros, "A planilha")
+    usar_dw = _usar_dw()
     with _cursor() as cur:
-        resultado = planilha.planilha(cur, filtros)
+        if usar_dw:
+            resultado = planilha_dw.planilha(cur, filtros, dimensoes_dw.obter(cur))
+        else:
+            resultado = planilha.planilha(cur, filtros)
     return _json(resultado)
 
 
@@ -521,23 +657,28 @@ def api_download(
         ip=_ip(request), usuario=user.get("username"),
     )
 
-    nome = download.nome_do_arquivo(filtros, formato)
+    # O gerador do arquivo é da fonte ativa. Os dois módulos têm a MESMA
+    # superfície (`gerar_csv`, `gerar_xlsx`, `nome_do_arquivo`,
+    # `DownloadGrandeDemais`), e o arquivo que sai tem que ser igual.
+    gerador = download_dw if _usar_dw() else download
+
+    nome = gerador.nome_do_arquivo(filtros, formato)
     cabecalhos = {"Content-Disposition": f'attachment; filename="{nome}"'}
 
     if formato == "csv":
         # o gerador é dono da conexão: o corpo dele roda DEPOIS de a resposta
         # começar, quando um `with` daqui já teria fechado tudo
         return StreamingResponse(
-            download.gerar_csv(filtros, registro),
+            gerador.gerar_csv(filtros, registro),
             media_type="text/csv; charset=utf-8",
             headers=cabecalhos,
         )
 
     try:
-        conteudo = download.gerar_xlsx(filtros, registro)
+        conteudo = gerador.gerar_xlsx(filtros, registro)
     except download.DownloadGrandeDemais as erro:
         raise HTTPException(status_code=400, detail=str(erro)) from None
-    except conexao.VolumetriaIndisponivel as erro:
+    except (conexao.VolumetriaIndisponivel, conexao_dw.DWIndisponivel) as erro:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
     except psycopg.OperationalError as erro:
         # banco caiu no meio do xlsx: a auditoria já marcou `erro`; aqui é só
@@ -545,6 +686,13 @@ def api_download(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"o banco da volumetria falhou durante o download ({type(erro).__name__}).",
+        )
+    except Exception as erro:
+        if not _erro_do_oracle(erro):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"o DW falhou durante o download ({type(erro).__name__}).",
         )
     return Response(
         content=conteudo,
@@ -598,6 +746,7 @@ def api_diagnostico_dw(_: dict = Depends(require_admin)):
     senha, nunca), e repassa a mensagem crua do Oracle, que é o que faz o
     diagnóstico valer e não é leitura de todo mundo.
     """
+    em_cache = dimensoes_dw.em_cache()
     resposta = {
         "fonte_da_tela": _fonte_declarada(),
         "dsn": conexao_dw.dsn(),
@@ -607,6 +756,9 @@ def api_diagnostico_dw(_: dict = Depends(require_admin)):
             "configurada": conexao_dw.configurado(),
         },
         "contrato": contrato.ORIGEM,
+        # O retrato das dimensões que está servindo a tela agora, sem tocar no
+        # DW para isso. `None` = ainda não houve varredura neste processo.
+        "dimensoes_em_cache": em_cache.como_dict() if em_cache else None,
         "conectou": False,
         "movimentos": [],
         "ok": False,
@@ -649,3 +801,27 @@ def api_diagnostico_dw(_: dict = Depends(require_admin)):
             "; ".join(p for m in resposta["movimentos"] for p in m["problemas"]),
         )
     return resposta
+
+
+# ------------------------------------------------- as dimensões (só admin)
+@router.get("/dimensoes")
+def api_dimensoes(_: dict = Depends(require_admin)):
+    """O retrato das dimensões em cache — sigla, tipos, clientes canonizados,
+    período, frescor — SEM tocar no DW. Vazio se ainda não houve varredura
+    neste processo. Só admin: nomeia cliente."""
+    dim = dimensoes_dw.em_cache()
+    return {"em_cache": dim is not None, "dimensoes": dim.como_dict() if dim else None}
+
+
+@router.post("/dimensoes/atualizar")
+def api_dimensoes_atualizar(_: dict = Depends(require_admin)):
+    """"Atualizar agora": varre o DW e substitui o cache, sem esperar o TTL de
+    1 h. É o botão que o plano previa para não depender de job para testar —
+    e o que a Maria aperta no dia da virada depois de conferir o diagnóstico.
+
+    Lê o DW independentemente da chave de fonte: o cache é do lado Oracle, e
+    aquecê-lo ANTES de virar a chave é justamente o uso."""
+    with _cursor_dw() as cur:
+        dim = dimensoes_dw.atualizar(cur)
+    logger.info("volumetria/DW: dimensões atualizadas por admin — %s", dim.como_dict())
+    return dim.como_dict()
