@@ -42,6 +42,7 @@ from decimal import Decimal
 import pytest
 
 from backend.volumetria_catering import (
+    comparador,
     conexao_dw,
     contrato,
     dimensoes_dw,
@@ -1575,3 +1576,193 @@ def test_nenhum_alter_session_e_emitido(com_credencial, monkeypatch):
     monkeypatch.setattr(conexao_dw, "_driver", lambda: DriverFalso(conexao=conexao))
     conexao_dw.conectar()
     assert conexao.executados == [], "conectar() não emite comando nenhum"
+
+
+# ================================================================ comparador
+def _no(chave, rotulo, nivel, valor, filhos=()):
+    return {"chave": chave, "rotulo": rotulo, "nivel": nivel,
+            "valores": {"2026-01": valor}, "filhos": list(filhos)}
+
+
+def _matriz_sintetica(sanca=Decimal("150.000"), rotulo_cliente="CONVIDA", com_rmspii=True,
+                      total_linhas=4):
+    """Uma Matriz no formato de `matriz.matriz()`: duas unidades, um cliente e
+    uma operação em cada, um mês."""
+    linhas = []
+    if com_rmspii:
+        linhas.append(_no("RMSPII", "RMSPII", "unidade", Decimal("10.000"), [
+            _no("12345678", "SAPORE", "cliente", Decimal("10.000"), [
+                _no("OP B", "OP B", "operacao", Decimal("10.000")),
+            ]),
+        ]))
+    linhas.append(_no("RMSPIV", "RMSPIV", "unidade", sanca, [
+        _no("67945071", rotulo_cliente, "cliente", sanca, [
+            _no("OP A", "OP A", "operacao", sanca),
+        ]),
+    ]))
+    total = sanca + (Decimal("10.000") if com_rmspii else 0)
+    return {
+        "linhas": linhas, "total": {"2026-01": total}, "total_linhas": total_linhas,
+        "paginacao": {"total_unidades": len(linhas)}, "avisos": [],
+    }
+
+
+def test_achatar_percorre_a_arvore_por_chave_e_guarda_o_total():
+    valores, rotulos = comparador.achatar(_matriz_sintetica())
+    assert valores[(("RMSPIV",), "2026-01")] == Decimal("150.000")
+    assert valores[(("RMSPIV", "67945071"), "2026-01")] == Decimal("150.000")
+    assert valores[(("RMSPIV", "67945071", "OP A"), "2026-01")] == Decimal("150.000")
+    assert valores[((comparador.TOTAL,), "2026-01")] == Decimal("160.000")
+    assert rotulos[("RMSPIV", "67945071")] == "CONVIDA"
+
+
+def test_comparar_matriz_bate_quando_tudo_e_igual_mesmo_com_escala_e_tipo_diferentes():
+    """`SUM(integer)` vem `int` do Postgres e `Decimal` do Oracle; `150.000` e
+    `150` são o mesmo número. Nada disso é diferença."""
+    a = _matriz_sintetica(sanca=Decimal("150.000"))
+    b = _matriz_sintetica(sanca=Decimal("150"))
+    b["total"]["2026-01"] = 160  # int, como o Postgres devolveria para volume
+    resultado = comparador.comparar_matriz(a, b)
+    assert resultado["bate"] is True
+    assert resultado["diferencas"] == []
+    assert resultado["celulas_comparadas"] == 7  # 3 níveis x 2 unidades + total
+
+
+def test_comparar_matriz_aponta_a_celula_o_mes_e_os_dois_valores():
+    a = _matriz_sintetica(sanca=Decimal("150.000"))
+    b = _matriz_sintetica(sanca=Decimal("149.5"))
+    resultado = comparador.comparar_matriz(a, b)
+    assert resultado["bate"] is False
+    caminhos = {d["caminho"] for d in resultado["diferencas"]}
+    # a diferença aparece em todo nó do caminho e no total — é assim que se
+    # localiza ONDE ela nasce (a operação) e o quanto ela propaga
+    assert caminhos == {"RMSPIV", "RMSPIV › 67945071", "RMSPIV › 67945071 › OP A", comparador.TOTAL}
+    sanca = next(d for d in resultado["diferencas"] if d["caminho"] == "RMSPIV")
+    assert sanca == {"caminho": "RMSPIV", "mes": "2026-01", "postgres": "150.000", "dw": "149.5"}
+
+
+def test_rotulo_divergente_e_reportado_mas_nao_derruba_o_bate():
+    """Número diferente é bug de SQL; rótulo diferente é a camada de decisões
+    dizendo outra coisa. Saem separados, com diagnósticos separados."""
+    a = _matriz_sintetica(rotulo_cliente="CONVIDA")
+    b = _matriz_sintetica(rotulo_cliente="NOVITA")
+    resultado = comparador.comparar_matriz(a, b)
+    assert resultado["bate"] is True
+    assert resultado["rotulos_divergentes"] == [
+        {"caminho": "RMSPIV › 67945071", "postgres": "CONVIDA", "dw": "NOVITA"},
+    ]
+
+
+def test_caminho_que_so_existe_numa_fonte_e_diferenca():
+    a = _matriz_sintetica(com_rmspii=True)
+    b = _matriz_sintetica(com_rmspii=False)
+    resultado = comparador.comparar_matriz(a, b)
+    assert resultado["bate"] is False
+    assert "RMSPII" in resultado["caminhos_so_no_postgres"]
+    assert resultado["caminhos_so_no_dw"] == []
+    assert resultado["total_unidades"] == {"postgres": 2, "dw": 1}
+    ausente = next(d for d in resultado["diferencas"] if d["caminho"] == "RMSPII")
+    assert ausente["dw"] == "(ausente)"
+
+
+def test_none_e_zero_sao_diferentes_e_total_linhas_conta():
+    a = _matriz_sintetica(sanca=Decimal("0"))
+    b = _matriz_sintetica(sanca=Decimal("0"))
+    b["linhas"][1]["valores"]["2026-01"] = None
+    assert comparador.comparar_matriz(a, b)["bate"] is False
+    c = _matriz_sintetica(total_linhas=5)
+    resultado = comparador.comparar_matriz(_matriz_sintetica(), c)
+    assert resultado["bate"] is False and resultado["diferencas"] == []
+    assert resultado["total_linhas"] == {"postgres": 4, "dw": 5}
+
+
+def test_comparar_opcoes_lista_o_que_so_existe_num_lado():
+    pg = {
+        "unidades": ["RMRJ", "RMSPII", "RMSPIV"],
+        "clientes": [{"chave": "1", "rotulo": "CONVIDA"}, {"chave": "2", "rotulo": "SAPORE"}],
+        "tipos_estoque": ["CONGELADO", "SECO"],
+        "operacoes": {"rec": ["A"], "exp": ["B"]},
+        "periodo": {"de": "2023-01-01", "ate": "2026-09-05"},
+    }
+    dw = {
+        **pg,
+        "clientes": [{"chave": "1", "rotulo": "NOVITA"}, {"chave": "2", "rotulo": "SAPORE"}],
+        "tipos_estoque": ["CONGELADO", "SECO", "RESFRIADO"],
+    }
+    resultado = comparador.comparar_opcoes(pg, dw)
+    assert resultado["bate"] is False
+    assert resultado["unidades"]["bate"] is True
+    assert resultado["clientes"] == {"bate": False, "so_no_postgres": ["1=CONVIDA"], "so_no_dw": ["1=NOVITA"]}
+    assert resultado["tipos_estoque"]["so_no_dw"] == ["RESFRIADO"]
+    assert resultado["operacoes"]["rec"]["bate"] and resultado["periodo"]["bate"]
+    assert comparador.comparar_opcoes(pg, dict(pg))["bate"] is True
+
+
+def test_comparar_e_so_admin(client, operador_headers, analista_headers):
+    for headers in (operador_headers, analista_headers):
+        assert client.get(f"{BASE}/comparar/matriz", params=JAN, headers=headers).status_code == 403
+        assert client.get(f"{BASE}/comparar/opcoes", headers=headers).status_code == 403
+
+
+def test_comparar_matriz_relata_cada_lado_mesmo_quando_um_falha(
+    client, admin_headers, com_credencial, monkeypatch
+):
+    """Nesta suíte não há Postgres: o lado dele reporta o 503 como erro, o lado
+    DW responde, e a comparação fica `None` — sem o endpoint cair. Em produção
+    os dois respondem, e é aí que a comparação existe."""
+    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
+    aquecer(dim_falsa())
+    _conexao(monkeypatch, resultados=_fila_da_matriz_rec())
+
+    r = client.get(f"{BASE}/comparar/matriz", params={**JAN, "movimento": "rec"}, headers=admin_headers)
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["fonte_da_tela"] == "postgres"
+    assert corpo["postgres"]["ok"] is False
+    assert "VOLUMETRIA_DB_URL" in corpo["postgres"]["erro"]
+    assert corpo["dw"]["ok"] is True
+    assert isinstance(corpo["dw"]["ms"], int)
+    assert corpo["dw"]["resultado"]["total_linhas"] == 4
+    assert corpo["dw"]["resultado"]["total"] == {"2026-01": "160.000"}
+    assert corpo["comparacao"] is None
+    assert corpo["filtros"]["movimento"] == "rec"
+
+
+def test_comparar_le_as_duas_fontes_independentemente_da_chave(
+    client, admin_headers, fonte_dw, monkeypatch
+):
+    """Com a chave em `dw`, o comparador CONTINUA tentando o Postgres — é para
+    ser rodado depois da virada também, enquanto o `nuvem-db` estiver de pé."""
+    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
+    aquecer(dim_falsa())
+    _conexao(monkeypatch, resultados=_fila_da_matriz_rec())
+    corpo = client.get(f"{BASE}/comparar/matriz", params=JAN, headers=admin_headers).json()
+    assert corpo["fonte_da_tela"] == "dw"
+    assert corpo["postgres"]["ok"] is False and corpo["dw"]["ok"] is True
+
+
+def test_comparar_opcoes_endpoint_relata_cada_lado(client, admin_headers, com_credencial, monkeypatch):
+    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
+    conexao = _conexao(monkeypatch, resultados=_fila_da_varredura())
+    r = client.get(f"{BASE}/comparar/opcoes", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["postgres"]["ok"] is False
+    assert corpo["dw"]["ok"] is True
+    assert corpo["dw"]["resultado"]["unidades"] == ["RMRJ", "RMSPII", "RMSPIV"]
+    assert corpo["comparacao"] is None
+    assert conexao.fechada
+
+
+def test_comparar_recusa_filtro_invalido_antes_de_tocar_em_qualquer_fonte(
+    client, admin_headers, com_credencial, monkeypatch
+):
+    conexao = _conexao(monkeypatch)
+    r = client.get(f"{BASE}/comparar/matriz", params={**JAN, "lente": "kg"}, headers=admin_headers)
+    assert r.status_code == 400
+    assert conexao.executados == []
+
+
+def test_cronometrar_devolve_o_resultado_e_milissegundos_inteiros():
+    resultado, ms = comparador.cronometrar(lambda: 42)
+    assert resultado == 42 and isinstance(ms, int) and ms >= 0

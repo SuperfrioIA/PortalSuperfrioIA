@@ -66,6 +66,7 @@ from backend.core.database import db
 from backend.usuarios import service as usuarios_service
 from backend.volumetria_catering import (
     auditoria,
+    comparador,
     conexao,
     conexao_dw,
     contrato,
@@ -307,7 +308,9 @@ def _opcoes_dw() -> dict:
     except contrato.FusoInvalido as erro:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
 
-    with _cursor() as cur:
+    # `_cursor_dw()` e não `_cursor()`: esta função é chamada também pelo
+    # comparador, que quer o lado DW independentemente da chave.
+    with _cursor_dw() as cur:
         dim = dimensoes_dw.obter(cur)
 
     # "Hoje" pelo relógio do processo no fuso de exibição — o DW é fonte de
@@ -339,17 +342,10 @@ def _opcoes_dw() -> dict:
     }
 
 
-@router.get("/opcoes")
-def opcoes(_: dict = Depends(require_ver)):
-    """O que existe para filtrar — lido do dado, não de lista fixa.
-
-    Unidade nova, cliente novo ou operação nova aparecem no filtro sozinhos.
-    Traz também a procedência (últimas cargas), o período que existe no dado, a
-    abertura da tela e os tetos do download — do Python, para não existir uma
-    segunda cópia deles no JavaScript."""
-    if _usar_dw():
-        return _opcoes_dw()
-
+def _opcoes_postgres() -> dict:
+    """O `/opcoes` lido do `nuvem-db`: cinco varreduras mais a procedência em
+    `cat_cargas`. `_cursor_postgres()` explícito, pelo mesmo motivo do lado DW:
+    o comparador chama os dois lados independentemente da chave. Morre no C6."""
     # Configuração inválida é 503 nomeando a variável, não 500 genérico: a
     # mensagem do `contrato.py` existe para chegar em quem escreveu o .env.
     try:
@@ -357,7 +353,7 @@ def opcoes(_: dict = Depends(require_ver)):
     except contrato.FusoInvalido as erro:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
 
-    with _cursor() as cur:
+    with _cursor_postgres() as cur:
         cur.execute(
             """
             SELECT DISTINCT COALESCE(u.sigla, f.nk_wms_filial)
@@ -442,6 +438,17 @@ def opcoes(_: dict = Depends(require_ver)):
         "cargas": cargas,
         "contrato": contrato.ORIGEM,
     }
+
+
+@router.get("/opcoes")
+def opcoes(_: dict = Depends(require_ver)):
+    """O que existe para filtrar — lido do dado, não de lista fixa.
+
+    Unidade nova, cliente novo ou operação nova aparecem no filtro sozinhos.
+    Traz também a procedência (última carga, ou o frescor do DW), o período que
+    existe no dado, a abertura da tela e os tetos do download — do Python, para
+    não existir uma segunda cópia deles no JavaScript. Da fonte ativa."""
+    return _opcoes_dw() if _usar_dw() else _opcoes_postgres()
 
 
 # ------------------------------------------------------------------ consulta
@@ -825,3 +832,101 @@ def api_dimensoes_atualizar(_: dict = Depends(require_admin)):
         dim = dimensoes_dw.atualizar(cur)
     logger.info("volumetria/DW: dimensões atualizadas por admin — %s", dim.como_dict())
     return dim.como_dict()
+
+
+# --------------------------------------------- o comparador (só admin, C3)
+def _lado(nome: str, buscar) -> dict:
+    """Roda `buscar()` numa fonte e devolve `{fonte, ok, ms, resultado, erro}`.
+
+    Erro de UMA fonte não derruba o endpoint: o trabalho dele é RELATAR —
+    inclusive "o Postgres não respondeu e o DW sim", que é informação. Só o
+    503 do `_cursor_*` é capturado; bug de código continua sendo 500, porque
+    esconder isso atrás de "não bateu" seria pior que o bug."""
+    try:
+        resultado, ms = comparador.cronometrar(buscar)
+    except HTTPException as erro:
+        return {"fonte": nome, "ok": False, "ms": None, "resultado": None, "erro": erro.detail}
+    return {"fonte": nome, "ok": True, "ms": ms, "resultado": resultado, "erro": None}
+
+
+def _matriz_postgres(filtros):
+    with _cursor_postgres() as cur:
+        return matriz.matriz(cur, filtros)
+
+
+def _matriz_dw(filtros):
+    with _cursor_dw() as cur:
+        return matriz_dw.matriz(cur, filtros, dimensoes_dw.obter(cur))
+
+
+@router.get("/comparar/matriz")
+def api_comparar_matriz(
+    de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
+    ate: str = Query(..., description="último dia, AAAA-MM-DD (inclusivo)"),
+    movimento: str = Query("rec"),
+    lente: str = Query("liq"),
+    faixa: str = Query("solicitado"),
+    pagina: int = Query(1, ge=1),
+    unidade: list[str] = Query(default=[]),
+    cliente: list[str] = Query(default=[]),
+    tipo_estoque: list[str] = Query(default=[]),
+    operacao: list[str] = Query(default=[]),
+    dia: list[str] = Query(default=[], description="dia do MÊS, 1..31"),
+    _: dict = Depends(require_admin),
+):
+    """A MESMA Matriz nas duas fontes, lado a lado, célula a célula — o portão
+    da virada (C3 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md`).
+
+    Lê o Postgres E o DW **independentemente da chave de fonte**: é para ser
+    rodado em produção, com dado real, antes de virar a chave — e depois, se
+    um número parecer estranho, enquanto o `nuvem-db` estiver de pé. Devolve
+    as duas Matrizes inteiras (para olhar), o tempo de cada uma (o número que o
+    D0 pediu, agora medido com a consulta de verdade) e a comparação de
+    `comparador.py`. Número diferente é bug de tradução do SQL; rótulo
+    diferente é a camada de decisões — e os dois saem separados.
+
+    Só admin: é diagnóstico, dobra o custo de uma consulta, e nomeia cliente.
+    """
+    filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
+                       unidade, cliente, tipo_estoque, operacao, dia)
+    postgres = _lado(fonte.POSTGRES, lambda: _matriz_postgres(filtros))
+    dw = _lado(fonte.DW, lambda: _matriz_dw(filtros))
+    comparacao = None
+    if postgres["ok"] and dw["ok"]:
+        comparacao = comparador.comparar_matriz(postgres["resultado"], dw["resultado"])
+        logger.info(
+            "volumetria/comparador: matriz %s — bate=%s, %d diferença(s), "
+            "postgres %s ms, dw %s ms",
+            filtros.como_dict(), comparacao["bate"], len(comparacao["diferencas"]),
+            postgres["ms"], dw["ms"],
+        )
+    return _json({
+        "filtros": filtros.como_dict(),
+        "fonte_da_tela": _fonte_declarada(),
+        "postgres": postgres,
+        "dw": dw,
+        "comparacao": comparacao,
+    })
+
+
+@router.get("/comparar/opcoes")
+def api_comparar_opcoes(_: dict = Depends(require_admin)):
+    """O `/opcoes` nas duas fontes: unidades exibidas, clientes com rótulo,
+    tipos, operações e período. É a prova direta da CAMADA DE DECISÕES (sigla,
+    tipo, razão social canonizada), que a Matriz só prova por tabela. Custa a
+    varredura completa nas duas fontes — só admin, e só quando se quer saber."""
+    postgres = _lado(fonte.POSTGRES, _opcoes_postgres)
+    dw = _lado(fonte.DW, _opcoes_dw)
+    comparacao = None
+    if postgres["ok"] and dw["ok"]:
+        comparacao = comparador.comparar_opcoes(postgres["resultado"], dw["resultado"])
+        logger.info(
+            "volumetria/comparador: opcoes — bate=%s, postgres %s ms, dw %s ms",
+            comparacao["bate"], postgres["ms"], dw["ms"],
+        )
+    return _json({
+        "fonte_da_tela": _fonte_declarada(),
+        "postgres": postgres,
+        "dw": dw,
+        "comparacao": comparacao,
+    })
