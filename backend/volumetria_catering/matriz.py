@@ -269,9 +269,22 @@ _rotulo_faixa = recorte.rotulo_faixa
 
 
 def matriz(cur, filtros: Filtros) -> dict:
-    """A Matriz do recorte. Devolve valor CRU, na unidade da fonte (kg para
-    peso, R$ para valor) -- converter para tonelada e trabalho da tela, e o
-    download quer o numero cru."""
+    """A Matriz do recorte, lida do Postgres. Devolve valor CRU, na unidade da
+    fonte (kg para peso, R$ para valor) -- converter para tonelada e trabalho da
+    tela, e o download quer o numero cru."""
+    return montar(cur, filtros, _consultar)
+
+
+def montar(cur, filtros: Filtros, consultar) -> dict:
+    """Monta a Matriz a partir de quem sabe CONSULTAR um movimento.
+
+    `consultar(cur, filtros, movimento, niveis, medidas)` devolve
+    `(linhas, total_linhas)` no formato de `_consultar`. E o unico ponto em que
+    o dialeto do banco entra: o Postgres passa `_consultar` daqui, o DW passa o
+    dele (`matriz_dw.py`). Tudo abaixo -- hierarquia, arvore, ordenacao, avisos,
+    paginacao -- e independente da fonte e existe uma vez so, de proposito: as
+    duas telas tem que dizer a MESMA coisa sobre o mesmo recorte, e dois textos
+    de aviso divergiriam em silencio."""
     filtros.validar()
     movimento = filtros.movimento
     conjunta = movimento == recorte.CONJUNTA
@@ -304,12 +317,12 @@ def matriz(cur, filtros: Filtros) -> dict:
     if conjunta:
         linhas, total_linhas = [], 0
         for concreto in recorte.movimentos_do_recorte(movimento):
-            parte, quantas = _consultar(
+            parte, quantas = consultar(
                 cur, filtros, concreto, niveis, medidas[concreto])
             linhas.extend(parte)
             total_linhas += quantas
     else:
-        linhas, total_linhas = _consultar(
+        linhas, total_linhas = consultar(
             cur, filtros, movimento, niveis, medidas)
 
     raiz = _arvore(linhas, niveis, medidas, filtros.faixa if FAIXA in niveis else "")
