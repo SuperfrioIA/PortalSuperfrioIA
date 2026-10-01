@@ -21,6 +21,9 @@ from backend.core.limiter import limiter
 from backend.core.scheduler import agendar_diario
 from backend.core.scheduler import iniciar as iniciar_agendador
 from backend.core.scheduler import parar as parar_agendador
+from backend.ia import dominios as ia_dominios
+from backend.ia import retencao as ia_retencao
+from backend.ia.router import router as ia_router
 from backend.integracao_in_out.router import router as integracao_in_out_router
 from backend.permissoes import carregar as carregar_permissoes
 from backend.portal.router import router as portal_router
@@ -51,6 +54,10 @@ async def lifespan(_app: FastAPI):
     # Catálogo primeiro: a matriz da tela de Administração precisa dele completo,
     # inclusive de módulos cujo router não seja importado aqui.
     carregar_permissoes()
+    # Contratos do SuperfrioIA: validados contra o código real MESMO com a chave
+    # `IA_HABILITADO` desligada. Contrato inconsistente derruba a subida com uma
+    # mensagem que nomeia o erro — melhor no deploy do que na primeira pergunta.
+    ia_dominios.carregar()
     init_db()
     seed_initial()
 
@@ -59,6 +66,9 @@ async def lifespan(_app: FastAPI):
     iniciar_agendador()
     agendar_diario(executar_as_0805, hora=8, minuto=5, job_id="processos_abertos_ftp_0805")
     agendar_diario(executar_as_0830_retry, hora=8, minuto=30, job_id="processos_abertos_ftp_0830_retry")
+    # Retenção do SuperfrioIA (DD-25): roda mesmo com a chave desligada, porque dado
+    # retido sem uso continua sendo dado.
+    agendar_diario(ia_retencao.job, hora=3, minuto=30, job_id=ia_retencao.JOB_ID)
 
     yield
     parar_agendador()
@@ -225,6 +235,10 @@ app.include_router(volumetria_catering_router)
 # (docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md).
 app.include_router(volumetria_transporte_router)
 app.include_router(volumetria_estoque_router)
+# SuperfrioIA (Lote 2). Sempre registrado: com a chave `IA_HABILITADO` desligada
+# cada rota responde 404 (ver backend/ia/router.py), então ligar e desligar não
+# exige reiniciar o processo para as rotas, só para o seed do card.
+app.include_router(ia_router)
 
 
 @app.get("/api/health")

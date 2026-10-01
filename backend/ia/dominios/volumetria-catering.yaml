@@ -1,0 +1,122 @@
+# Contrato de dados do domínio "Volumetria de Catering" (modo A: indicador pronto).
+#
+# Fonte de verdade humana: docs/CONTRATO_IA_VOLUMETRIA_CATERING.md (local). Este arquivo é
+# a versão que o CÓDIGO lê, e é validado no boot contra o código real: métrica, faixa,
+# filtro, movimento ou permissão que não existem derrubam a subida do Hub com uma
+# mensagem que nomeia o erro (backend/ia/dominios/__init__.py).
+#
+# Nada aqui cria fórmula. A IA chama a função que a tela já chama e repete o número.
+dominio: volumetria-catering
+nome: Volumetria de Catering
+area: Operações / Catering
+adaptador: volumetria_catering
+app_hub: volumetria-catering
+classificacao: interno-agregado
+modo: A
+
+responsavel:
+  contrato: "Maria Eduarda Watanabe"          # DD-12, durante a PoC
+  tecnico: "Maria Eduarda Watanabe"
+  acesso: "volumetria-catering:administrar"    # DD-13: quem aprova concessões
+  definicao_metrica: "time do DW"
+  # DD-19: a definição de negócio de Valor, Pallets e Volumes ainda não foi validada
+  # por uma pessoa de negócio. Não bloqueia a PoC; BLOQUEIA o piloto (gate do Lote 4).
+  validacao_negocio: {situacao: pendente, escopo: [val, pal, vol], nome: null}
+
+fonte:
+  tipo: modulo_hub
+  modulo: backend.volumetria_catering.service
+  origem_dw: [DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01, DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01]
+  processo_dw: catering_to_dw_volumetry_v01
+  atualizado_em: "atualizado_ate por movimento = MAX(DW_DATA_ALTERACAO) da própria tabela do DW"
+  rotulo: "Volumetria de Catering · DW"
+
+escopo_usuario:
+  tipo: nenhum
+  justificativa: >
+    A tela de volumetria não filtra por usuário: quem tem volumetria-catering:ver vê todas
+    as unidades e todos os clientes. A IA não amplia isso (exige concessão própria, DD-2) e
+    não restringe mais do que a tela. Registrado como escopo integral.
+
+regras:
+  grao: mensal
+  movimentos: [rec, exp, amb]
+  filtros_permitidos: [de, ate, movimento, lente, faixa, unidades, clientes, tipos_estoque, operacoes, dias]
+  operacoes_em_amb: proibido                   # recorte.py: FiltroInvalido
+  faixa_padrao: atendido                       # DD-15
+  faixa_padrao_dizer: "atendido pelo estoque"
+  faixa_padrao_nao_e: "confirmação de embarque ou saída física"
+  top_n: {padrao: 10, teto: 20}                # DD-28
+  detalhes_permitidos: [total, unidade, cliente, faixa]
+
+limites:
+  consultas_por_pergunta: 3                    # DD-16; o contrato só pode APERTAR o limite de config
+
+metricas:
+  liq: {nome: "Peso líquido", exibicao: t}
+  bru: {nome: "Peso bruto", exibicao: t}
+  pal: {nome: "Pallets", exibicao: UA, so_entrada: true}
+  vol: {nome: "Volumes", exibicao: cx}
+  val: {nome: "Valor", exibicao: "R$"}
+metrica_padrao: liq                            # "quanto entrou/saiu" sem lente = peso líquido
+
+faixas:
+  solicitado: "Solicitado pelo cliente"
+  atendido: "Atendido pelo estoque"
+  separado: "Separado fisicamente"
+
+capacidades:
+  - nome: matriz
+    funcao: service.matriz
+    descricao: >
+      Total do recorte por mês e, se pedido, o detalhamento por unidade, por cliente de uma
+      unidade ou por faixa. Grão mensal.
+    parametros: [de, ate, movimento, lente, faixa, unidades, clientes, tipos_estoque, operacoes, dias, detalhe, limite, derivacao]
+  - nome: opcoes
+    funcao: service.opcoes
+    descricao: Unidades, clientes, tipos de estoque, operações, período do dado e frescor.
+    parametros: []
+
+derivacoes:                                    # o Hub calcula, o modelo nunca (DD-9, DD-11)
+  - {nome: variacao_percentual, arquivo: backend/ia/derivacoes.py}
+  - {nome: total_do_periodo, arquivo: backend/ia/derivacoes.py}      # DD-22
+  - {nome: ranking, arquivo: backend/ia/derivacoes.py}               # DD-20
+  - {nome: conversao_kg_para_t, arquivo: backend/ia/derivacoes.py}   # DD-18
+
+limitacoes:                                    # a IA repete quando relevante
+  - "A entrada não traz guia cancelada: só carrega guia confirmada."
+  - "Na saída, guia cancelada tem peso apenas na faixa solicitado (cerca de 3% daquele número é pedido que não saiu); atendido e separado zeram isso."
+  - "Agrega pela data do movimento, não pela data da solicitação."
+  - "O filtro de dia do mês corta dentro de todos os meses do período."
+  - "Grão mensal: não existe série diária."
+
+nao_atendidas:                                 # a IA recusa e explica (DD-10)
+  - serie_diaria
+  - corte_por_dia_da_semana
+  - linha_crua_guia_download
+  - previsao_meta_comparacao_outro_indicador
+  - participacao_percentual_media_mensal
+  - agrupamento_fora_da_arvore
+  - ranking_de_cliente_entre_unidades          # DD-21
+  - uma_pergunta_com_mais_de_3_consultas       # DD-16
+  - dado_de_pessoa
+
+sinonimos:
+  unidade: [filial, armazém, CD]
+  entrada: [recebimento, recebido, entrou]
+  saida: [expedição, expedido, saiu]            # "embarque" fora: o dado não confirma embarque (DD-15)
+  peso: [peso líquido, tonelada, kg]
+  cliente: [empresa, razão social]
+
+exemplos:
+  responde:
+    - "Quanto de peso líquido entrou em agosto de 2026?"
+    - "Quais os maiores clientes de entrada da unidade X em agosto?"
+    - "Qual unidade mais recebeu em agosto?"
+    - "Qual foi a variação percentual da entrada entre julho e agosto?"
+    - "Quanto de peso líquido foi expedido (atendido pelo estoque) em agosto?"
+  nao_responde:
+    - "Qual o peso por dia da semana?"
+    - "Quem baixou o relatório?"
+
+revisao_lgpd: {data: null, responsavel: null, granularidade: "unidade x cliente x operação x mês", classificacao: interno-agregado}

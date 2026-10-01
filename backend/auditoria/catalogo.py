@@ -69,6 +69,18 @@ _registrar("projeto", "projeto.rollout.remover", "Remoção de filial do rollout
 _registrar("acao", "processos-abertos.editar", "Envio de semana no histórico de Processos Abertos")
 _registrar("acao", "integracao-in-out.editar", "Envio de base no painel Integração In/Out")
 
+_registrar("ia", "ia.conversa.criar", "SuperfrioIA: conversa aberta")
+_registrar("ia", "ia.pergunta", "SuperfrioIA: pergunta aceita pelas políticas (hash e tamanho, nunca o texto)")
+_registrar("ia", "ia.consulta", "SuperfrioIA: indicador consultado pela ferramenta, com o que foi lido de fato")
+_registrar("ia", "ia.resposta", "SuperfrioIA: resposta entregue")
+_registrar("ia", "ia.bloqueio", "SuperfrioIA: pergunta ou consulta recusada pelas políticas ou pelo contrato")
+_registrar("ia", "ia.erro", "SuperfrioIA: falha técnica (nunca o texto do driver)")
+_registrar("ia", "ia.concessao.pedida", "SuperfrioIA: pedido de acesso a um domínio")
+_registrar("ia", "ia.concessao.aprovada", "SuperfrioIA: concessão de uso de um domínio aprovada")
+_registrar("ia", "ia.concessao.negada", "SuperfrioIA: pedido de acesso negado")
+_registrar("ia", "ia.concessao.revogada", "SuperfrioIA: concessão revogada")
+_registrar("ia", "ia.retencao.executada", "SuperfrioIA: rotina de retenção apagou dados vencidos (só contagens)")
+
 _registrar("auditoria", "auditoria.consultar", "Consulta à trilha de auditoria")
 _registrar("auditoria", "auditoria.exportar", "Exportação da trilha de auditoria em CSV")
 

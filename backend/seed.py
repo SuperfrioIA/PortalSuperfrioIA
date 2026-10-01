@@ -4,6 +4,7 @@ Idempotente: cada módulo insere apenas o que não existe. A ordem importa
 (usuários referenciam apps via roles → portal primeiro). O catálogo de filiais
 não depende de ninguém e nada depende dele no boot.
 """
+import backend.ia  # noqa: F401  registra a chave do card do SuperfrioIA no portal
 from backend.core.database import db, init_db
 from backend.portal import seed as portal_seed
 from backend.projetos_ia import seed as projetos_ia_seed

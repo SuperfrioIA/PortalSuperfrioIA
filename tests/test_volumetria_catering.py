@@ -65,14 +65,15 @@ def test_permissao_exportar_esta_no_catalogo():
     assert p.acao == "exportar"
     assert p.modulo == "Volumetria de Catering"
     assert p.descricao
-    # só `exportar`: consultar é `ver`, que é implícita
-    assert catalogo.acoes_por_app()[APP_SLUG] == ["exportar"]
+    # `exportar` e `administrar` (esta, do SuperfrioIA, DD-13): consultar é `ver`,
+    # que é implícita
+    assert catalogo.acoes_por_app()[APP_SLUG] == ["exportar", "administrar"]
 
 
 def test_app_esta_no_seed_e_a_matriz_tem_a_celula_exportar(client, admin_headers):
     m = client.get("/api/admin/matriz", headers=admin_headers).json()
     apps = {a["slug"]: a for s in m["secoes"] for a in s["apps"]}
-    assert apps[APP_SLUG]["acoes"] == ["ver", "exportar"]
+    assert apps[APP_SLUG]["acoes"] == ["ver", "exportar", "administrar"]
     assert m["orfas"] == []
 
 
