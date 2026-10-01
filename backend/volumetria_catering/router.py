@@ -67,10 +67,10 @@ from backend.volumetria_catering import (
     dimensoes_dw,
     download,
     download_dw,
-    matriz_dw,
     planilha_dw,
     recorte,
     schema_dw,
+    service,
     ticket as ticket_mod,
 )
 from backend.volumetria_catering.permissoes import APP_SLUG, EXPORTAR
@@ -98,49 +98,27 @@ def require_ver(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-def _erro_do_oracle(erro: BaseException) -> bool:
-    """Se a exceção veio do driver do Oracle — sem importar o `oracledb` aqui
-    (o import é preguiçoso de propósito, ver `conexao_dw._driver`). Erro de
-    rede no meio de uma consulta é `oracledb.Error`, e neste card ele tem que
-    virar 503, não 500."""
-    return type(erro).__module__.split(".")[0] == "oracledb"
+@contextmanager
+def _como_503():
+    """A indisponibilidade do serviço (DW fora, credencial ausente, contrato
+    divergente, configuração inválida) vira **503 com a causa** — a mensagem é a
+    que o serviço levantou. Só o card sente; o resto do Hub continua de pé."""
+    try:
+        yield
+    except service.VolumetriaIndisponivel as erro:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro)
+        ) from None
 
 
 @contextmanager
 def _cursor():
-    """O DW Oracle, via `conexao_dw.py`. Mesmo desenho do transporte e do
-    estoque: `preparar_cursor` antes de tudo, drift conferido a cada 10 min."""
-    try:
-        conn = conexao_dw.conectar()
-    except conexao_dw.DWIndisponivel as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-    try:
-        with conn.cursor() as cur:
-            conexao_dw.preparar_cursor(cur)
-            try:
-                schema_dw.garantir(cur)
-            except schema_dw.ContratoDivergenteDW as erro:
-                logger.error("volumetria/DW: %s", erro)
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro)
-                )
+    """O cursor do DW, aberto pelo serviço (`service.cursor`), com a
+    indisponibilidade traduzida em 503. Os endpoints que ainda leem direto
+    (planilha, download, dimensões) passam por aqui."""
+    with _como_503():
+        with service.cursor() as cur:
             yield cur
-    except conexao_dw.DWIndisponivel as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-    except Exception as erro:
-        if not _erro_do_oracle(erro):
-            raise
-        logger.error("volumetria/DW: o DW falhou no meio da consulta: %s", type(erro).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"o DW falhou durante a consulta ({type(erro).__name__}). A "
-                "volumetria de catering lê o DW direto; o resto do Hub continua "
-                "funcionando."
-            ),
-        )
-    finally:
-        conn.close()
 
 
 def _filtros(de, ate, movimento, lente, faixa, pagina,
@@ -149,15 +127,14 @@ def _filtros(de, ate, movimento, lente, faixa, pagina,
 
     Filtro inválido é **400**, não 500. `dia` entra como texto de propósito:
     com `int` o FastAPI recusaria antes com 422 e o recorte passaria a ter duas
-    linguagens de erro. `recorte.dias_do_filtro()` converte e recusa em 400."""
-    filtros = recorte.Filtros(
-        de=de, ate=ate, movimento=movimento, lente=lente, faixa=faixa,
-        pagina=pagina, unidades=tuple(unidade), clientes=tuple(cliente),
-        tipos_estoque=tuple(tipo_estoque), operacoes=tuple(operacao),
-        dias=tuple(dia),
-    )
+    linguagens de erro. `recorte.dias_do_filtro()` converte e recusa em 400. A
+    montagem em si é do serviço (`service.filtros_de`); aqui só se traduz o erro."""
     try:
-        return filtros.validar()
+        return service.filtros_de(
+            de=de, ate=ate, movimento=movimento, lente=lente, faixa=faixa,
+            pagina=pagina, unidades=unidade, clientes=cliente,
+            tipos_estoque=tipo_estoque, operacoes=operacao, dias=dia,
+        )
     except recorte.FiltroInvalido as erro:
         raise HTTPException(status_code=400, detail=str(erro)) from None
 
@@ -199,78 +176,6 @@ def _ip(request: Request):
 
 
 # ------------------------------------------------------------------ opções
-def _opcoes_estaticas() -> dict:
-    """A parte do `/opcoes` que não vem do dado: tetos, lentes, faixas e os
-    movimentos da TELA."""
-    return {
-        "teto_confirmacao": download.TETO_CONFIRMACAO,
-        "teto_xlsx": download.TETO_XLSX,
-        "lentes": [
-            {"chave": c, "nome": d["nome"], "unidade": d["unidade"],
-             "so_entrada": d["exp"] is None}
-            for c, d in contrato.LENTES.items()
-        ],
-        "faixas": [
-            {"chave": f, "rotulo": recorte.rotulo_faixa(f)} for f in contrato.FAIXAS
-        ],
-        # Os movimentos da TELA, e não os do dado: o terceiro é "as duas
-        # juntas", que não é tabela nem tipo de linha.
-        "movimentos": [
-            {"chave": "rec", "rotulo": "Entrada", "so_matriz": False},
-            {"chave": "exp", "rotulo": "Saída", "so_matriz": False},
-            {"chave": recorte.CONJUNTA, "rotulo": "Entrada + saída", "so_matriz": True},
-        ],
-    }
-
-
-def _abertura(hoje):
-    """A abertura da tela: janeiro do ano corrente até hoje (configurável). A
-    única trava é a da inversão, para uma abertura pinada no futuro não abrir
-    a tela com "período invertido"."""
-    try:
-        abertura_de = min(contrato.abertura_de(hoje), hoje)
-    except contrato.AberturaInvalida as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-    return {"de": abertura_de.isoformat(), "ate": hoje.isoformat()}
-
-
-def _opcoes_dw() -> dict:
-    """O `/opcoes` lido do DW: as listas vêm do retrato em cache
-    (`dimensoes_dw.obter`, TTL de 1 h), e a procedência é o
-    `MAX(DW_DATA_ALTERACAO)` da própria fonte — "de quando são os rótulos" é a
-    hora da varredura."""
-    try:
-        contrato.fuso_exibicao()
-    except contrato.FusoInvalido as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-
-    with _cursor() as cur:
-        dim = dimensoes_dw.obter(cur)
-
-    # "Hoje" pelo relógio do processo no fuso de exibição — o DW é fonte de
-    # dado, não de hora (mesma decisão do transporte e do estoque).
-    hoje = dimensoes_dw.hoje_no_fuso()
-    primeiro, ultimo = dim.periodo
-    return {
-        "unidades": dim.unidades_exibidas(),
-        "clientes": dim.clientes(),
-        "operacoes": dim.operacoes,
-        "tipos_estoque": dim.tipos(),
-        "periodo": {
-            "de": primeiro.isoformat() if primeiro else None,
-            "ate": ultimo.isoformat() if ultimo else None,
-        },
-        "abertura": _abertura(hoje),
-        **_opcoes_estaticas(),
-        "atualizado_ate": {
-            m: (v.isoformat() if v else None) for m, v in dim.atualizado_em.items()
-        },
-        "rotulos_calculados_em": dim.calculado_em.isoformat(),
-        "processo_dw": contrato.PROCESSO_DW,
-        "contrato": contrato.ORIGEM,
-    }
-
-
 @router.get("/opcoes")
 def opcoes(_: dict = Depends(require_ver)):
     """O que existe para filtrar — lido do dado, não de lista fixa.
@@ -279,7 +184,8 @@ def opcoes(_: dict = Depends(require_ver)):
     Traz também a procedência (o frescor do DW), o período que existe no dado,
     a abertura da tela e os tetos do download — do Python, para não existir uma
     segunda cópia deles no JavaScript."""
-    return _opcoes_dw()
+    with _como_503():
+        return service.opcoes()
 
 
 # ------------------------------------------------------------------ consulta
@@ -301,8 +207,8 @@ def api_matriz(
     """A Matriz do recorte, lida do DW."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
                        unidade, cliente, tipo_estoque, operacao, dia)
-    with _cursor() as cur:
-        resultado = matriz_dw.matriz(cur, filtros, dimensoes_dw.obter(cur))
+    with _como_503():
+        resultado = service.matriz(filtros)
     return _json(resultado)
 
 
@@ -507,7 +413,7 @@ def api_download(
     except Exception as erro:
         # DW caiu no meio do xlsx: a auditoria já marcou `erro`; aqui é só o
         # status HTTP honesto (o CSV, em streaming, não tem mais como avisar)
-        if not _erro_do_oracle(erro):
+        if not service.erro_do_oracle(erro):
             raise
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
