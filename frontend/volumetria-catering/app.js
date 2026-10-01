@@ -605,20 +605,10 @@ function paginacao(p){
   el.append(info, anterior, proxima);
 }
 
-/* "De quando é o dado" depende da FONTE (C4 do plano do DW).
-
-   Postgres: a lista de cargas — quando NÓS copiamos o dado. DW direto: não há
-   carga; cada tabela declara até quando o DW a atualizou, e os rótulos
-   (sigla, tipo, razão social) declaram quando foram recalculados — o atraso do
-   cache fica visível, não escondido. */
+/* "De quando é o dado": não há carga; cada tabela declara até quando o DW a
+   atualizou, e os rótulos (sigla, tipo, razão social) declaram quando foram
+   recalculados — o atraso do cache fica visível, não escondido. */
 function procedenciaHTML(){
-  if (OPCOES.fonte !== 'dw'){
-    const cargas = (OPCOES.cargas || []).map(c =>
-      `<li><code>${c.tabela}</code> — carga <strong>${c.fonte}</strong> concluída em ${c.quando}, ${Number(c.linhas).toLocaleString('pt-BR')} linhas</li>`
-    ).join('');
-    return '<li>Leitura: cópia no banco da nuvem-ia, alimentada por carga do DW 2x/dia.</li>'
-      + (cargas || '<li>Nenhuma carga concluída.</li>');
-  }
   const a = OPCOES.atualizado_ate || {};
   const tabela = (mov, nome) =>
     `<li><code>${nome}</code> — atualizada no DW até <strong>${dataHoraBR(a[mov]) || 'sem data'}</strong></li>`;
@@ -690,7 +680,7 @@ function parametrosDownload(formato){
      hub no topo (`target="_top"`), que é onde o login existe;
    - **403** é falta de acesso ao app (a coluna Ver da matriz) e a mensagem do
      backend já diz o que pedir a um administrador;
-   - **503** é o banco da nuvem-ia fora do ar ou o contrato divergindo do schema
+   - **503** é o DW fora do ar ou o contrato divergindo do schema
      (a falha graciosa do desenho): degrada só este card, e a mensagem diz isso
      para ninguém achar que o Hub caiu. */
 class RespostaRecusada extends Error {}
@@ -756,16 +746,15 @@ async function carregaPermissoes(){
 
 /* A procedência no cabeçalho: de quando é o dado que está na tela. O detalhe
    fica em "Fontes & método"; aqui vai o que responde "isto está atualizado?"
-   sem abrir nada — e a resposta muda de significado com a fonte.
+   sem abrir nada.
 
-   Postgres: "última carga", quando NÓS copiamos. DW direto: não há carga; a
-   pergunta é respondida na própria fonte, pelo MAX(DW_DATA_ALTERACAO) das duas
-   tabelas. É uma resposta melhor — e é a lição do incidente de 28/08/2026: a
-   tela dizia "última carga: 27/08 11:20" enquanto o DW estava parado desde
-   26/08, e a leitura foi "a carga quebrou" quando era a origem. Sem carga no
-   meio não há mais como confundir as duas coisas; mas o processo a montante
-   para de verdade, então quando o dado tem mais de DIAS_PARA_AVISAR dias a
-   pílula muda de cor e diz há quantos. Segunda de manhã mostra "dado de sexta"
+   Não há carga: a pergunta é respondida na própria fonte, pelo
+   MAX(DW_DATA_ALTERACAO) das duas tabelas. É a lição do incidente de
+   28/08/2026: a tela dizia "última carga: 27/08 11:20" enquanto o DW estava
+   parado desde 26/08, e a leitura foi "a carga quebrou" quando era a origem.
+   Sem carga no meio não há como confundir as duas coisas; mas o processo a
+   montante para de verdade, então quando o dado tem mais de DIAS_PARA_AVISAR
+   dias a pílula muda de cor e diz há quantos. Segunda de manhã mostra "dado de sexta"
    — correto, não defeito: o processo do DW não roda no fim de semana. */
 const DIAS_PARA_AVISAR = 2;
 
@@ -778,13 +767,6 @@ function frescorDW(){
 function mostraProcedencia(){
   const pill = $('#procedencia');
   pill.classList.remove('atrasado');
-  if (OPCOES.fonte !== 'dw'){
-    const cargas = OPCOES.cargas || [];
-    pill.textContent = cargas.length
-      ? `Última carga: ${cargas[0].quando}`
-      : 'Nenhuma carga concluída';
-    return;
-  }
   const ultimo = frescorDW();
   if (!ultimo){
     pill.textContent = 'DW sem data de atualização';
@@ -961,8 +943,8 @@ async function carregaPlanilha(){
 
 async function inicia(){
   // As opções vêm primeiro: sem elas a tela não tem o que montar, e é este
-  // pedido que descobre sessão expirada, falta de acesso ao app ou banco da
-  // nuvem-ia fora do ar. Nesses casos `busca()` pinta a mensagem e para aqui.
+  // pedido que descobre sessão expirada, falta de acesso ao app ou DW fora do
+  // ar. Nesses casos `busca()` pinta a mensagem e para aqui.
   OPCOES = await (await busca(API + '/opcoes')).json();
   // Antes de `desenhaBotoes()`, que já consulta `PODE_EXPORTAR`.
   await carregaPermissoes();
@@ -974,7 +956,7 @@ async function inicia(){
   abreNoPadrao();
   $('#dica-periodo').textContent = OPCOES.periodo.de
     ? `${dataBR(OPCOES.periodo.de)} a ${dataBR(OPCOES.periodo.ate)}`
-    : 'nenhuma carga ainda';
+    : 'sem dado no DW ainda';
   opcoesSelect('#unidade', OPCOES.unidades);
   opcoesSelect('#cliente', OPCOES.clientes);
   opcoesSelect('#tipo', OPCOES.tipos_estoque);

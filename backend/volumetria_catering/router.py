@@ -23,8 +23,8 @@ Admin passa por cima de tudo (regra do `usuario_pode`); nada de `if is_admin`.
 
 ## Falha graciosa, só neste card
 
-`VOLUMETRIA_DB_URL` ausente, banco fora do ar ou contrato divergente do schema
-viram **503 com a causa** — e nada mais no Hub sente. O startup não toca aqui.
+Credencial do DW ausente, DW fora do ar ou contrato divergente do schema viram
+**503 com a causa** — e nada mais no Hub sente. O startup não toca aqui.
 
 ## Comportamentos da V3 preservados
 
@@ -33,25 +33,21 @@ viram **503 com a causa** — e nada mais no Hub sente. O startup não toca aqui
 - filtro inválido é **400**, não 500 (`_filtros`);
 - `pagina` **não entra** no download;
 - `entrada + saída` é **só da Matriz**: planilha e download recusam com 400;
-- a tela mostra a **procedência** (última carga) lendo `cat_cargas`.
+- a tela mostra a **procedência**: até quando o DW atualizou cada tabela
+  (`MAX(DW_DATA_ALTERACAO)`).
 
-## Duas fontes ao mesmo tempo, escolhidas por uma chave
+## Uma fonte só: o DW Oracle
 
-Desde o lote C1 do plano revisado (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`, 06/set)
-este arquivo fala com dois bancos: o `nuvem-db` (`conexao.py`) e o DW Oracle
-(`conexao_dw.py`). Quem decide qual deles serve a tela é a chave
-`VOLUMETRIA_CATERING_FONTE` (`fonte.py`), com padrão `postgres` — então nenhum
-destes lotes muda o que a tela mostra até a Maria virar a chave no `.env` da VM.
-Não é indecisão: é o que permite comparar as duas fontes em produção, com dado
-real, antes de virar — e voltar em segundos se precisar. O C6 apaga o lado
-Postgres e a chave.
+O módulo lê o DW direto (`conexao_dw.py`), sem cópia intermediária. Até o lote C6
+do plano (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`) existiu também o `nuvem-db`,
+escolhido por uma chave de fonte; a virada foi em 07/set/2026 e o C6 apagou o
+lado Postgres, a chave e o comparador.
 """
 
 import logging
 from contextlib import contextmanager
 from decimal import Decimal
 
-import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
@@ -66,20 +62,14 @@ from backend.core.database import db
 from backend.usuarios import service as usuarios_service
 from backend.volumetria_catering import (
     auditoria,
-    comparador,
-    conexao,
     conexao_dw,
     contrato,
     dimensoes_dw,
     download,
     download_dw,
-    fonte,
-    matriz,
     matriz_dw,
-    planilha,
     planilha_dw,
     recorte,
-    schema,
     schema_dw,
     ticket as ticket_mod,
 )
@@ -108,16 +98,6 @@ def require_ver(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-# ------------------------------------------------------------ a fonte ativa
-def _usar_dw() -> bool:
-    """A chave, lida a cada request. Valor inválido é 503 NOMEANDO a variável:
-    cair no padrão em silêncio faria a Maria acreditar que virou."""
-    try:
-        return fonte.e_dw()
-    except fonte.FonteInvalida as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-
-
 def _erro_do_oracle(erro: BaseException) -> bool:
     """Se a exceção veio do driver do Oracle — sem importar o `oracledb` aqui
     (o import é preguiçoso de propósito, ver `conexao_dw._driver`). Erro de
@@ -128,50 +108,6 @@ def _erro_do_oracle(erro: BaseException) -> bool:
 
 @contextmanager
 def _cursor():
-    """Cursor somente leitura na fonte ATIVA, com o contrato conferido.
-
-    Indisponibilidade e drift viram 503 aqui — um lugar só, para as duas
-    fontes. Quem chama não sabe (nem precisa saber) qual banco respondeu."""
-    if _usar_dw():
-        with _cursor_dw() as cur:
-            yield cur
-        return
-    with _cursor_postgres() as cur:
-        yield cur
-
-
-@contextmanager
-def _cursor_postgres():
-    """O `nuvem-db`, via `conexao.py`. Morre no C6."""
-    try:
-        conn = conexao.conectar()
-    except conexao.VolumetriaIndisponivel as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-    try:
-        with conn.cursor() as cur:
-            try:
-                schema.garantir(cur)
-            except schema.ContratoDivergente as erro:
-                logger.error("volumetria: %s", erro)
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro)
-                )
-            yield cur
-    except psycopg.OperationalError as erro:
-        logger.error("volumetria: banco falhou no meio da consulta: %s", type(erro).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "o banco da volumetria de catering falhou durante a consulta "
-                f"({type(erro).__name__}). O resto do Hub continua funcionando."
-            ),
-        )
-    finally:
-        conn.close()
-
-
-@contextmanager
-def _cursor_dw():
     """O DW Oracle, via `conexao_dw.py`. Mesmo desenho do transporte e do
     estoque: `preparar_cursor` antes de tudo, drift conferido a cada 10 min."""
     try:
@@ -265,7 +201,7 @@ def _ip(request: Request):
 # ------------------------------------------------------------------ opções
 def _opcoes_estaticas() -> dict:
     """A parte do `/opcoes` que não vem do dado: tetos, lentes, faixas e os
-    movimentos da TELA. Uma cópia só, servida pelas duas fontes."""
+    movimentos da TELA."""
     return {
         "teto_confirmacao": download.TETO_CONFIRMACAO,
         "teto_xlsx": download.TETO_XLSX,
@@ -300,17 +236,15 @@ def _abertura(hoje):
 
 def _opcoes_dw() -> dict:
     """O `/opcoes` lido do DW: as listas vêm do retrato em cache
-    (`dimensoes_dw.obter`, TTL de 1 h), e a procedência muda de significado —
-    não existe carga, então "de quando é o dado" é o `MAX(DW_DATA_ALTERACAO)`
-    da própria fonte, e "de quando são os rótulos" é a hora da varredura."""
+    (`dimensoes_dw.obter`, TTL de 1 h), e a procedência é o
+    `MAX(DW_DATA_ALTERACAO)` da própria fonte — "de quando são os rótulos" é a
+    hora da varredura."""
     try:
         contrato.fuso_exibicao()
     except contrato.FusoInvalido as erro:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
 
-    # `_cursor_dw()` e não `_cursor()`: esta função é chamada também pelo
-    # comparador, que quer o lado DW independentemente da chave.
-    with _cursor_dw() as cur:
+    with _cursor() as cur:
         dim = dimensoes_dw.obter(cur)
 
     # "Hoje" pelo relógio do processo no fuso de exibição — o DW é fonte de
@@ -318,7 +252,6 @@ def _opcoes_dw() -> dict:
     hoje = dimensoes_dw.hoje_no_fuso()
     primeiro, ultimo = dim.periodo
     return {
-        "fonte": fonte.DW,
         "unidades": dim.unidades_exibidas(),
         "clientes": dim.clientes(),
         "operacoes": dim.operacoes,
@@ -329,10 +262,6 @@ def _opcoes_dw() -> dict:
         },
         "abertura": _abertura(hoje),
         **_opcoes_estaticas(),
-        # Não há carga: a procedência é a da fonte. `cargas` fica vazia para a
-        # tela antiga (que ainda lê essa chave) não quebrar até o C4 trocar o
-        # que ela mostra.
-        "cargas": [],
         "atualizado_ate": {
             m: (v.isoformat() if v else None) for m, v in dim.atualizado_em.items()
         },
@@ -342,113 +271,15 @@ def _opcoes_dw() -> dict:
     }
 
 
-def _opcoes_postgres() -> dict:
-    """O `/opcoes` lido do `nuvem-db`: cinco varreduras mais a procedência em
-    `cat_cargas`. `_cursor_postgres()` explícito, pelo mesmo motivo do lado DW:
-    o comparador chama os dois lados independentemente da chave. Morre no C6."""
-    # Configuração inválida é 503 nomeando a variável, não 500 genérico: a
-    # mensagem do `contrato.py` existe para chegar em quem escreveu o .env.
-    try:
-        fuso = contrato.fuso_exibicao()
-    except contrato.FusoInvalido as erro:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-
-    with _cursor_postgres() as cur:
-        cur.execute(
-            """
-            SELECT DISTINCT COALESCE(u.sigla, f.nk_wms_filial)
-            FROM (SELECT nk_wms_filial FROM cat_fato_recebimento
-                  UNION SELECT nk_wms_filial FROM cat_fato_expedicao) f
-            LEFT JOIN cat_unidades u ON u.sigla_fonte = f.nk_wms_filial
-            ORDER BY 1
-            """
-        )
-        unidades = [linha[0] for linha in cur.fetchall()]
-
-        cur.execute(
-            """
-            SELECT f.nk_cliente, COALESCE(c.razao_social, f.nk_cliente)
-            FROM (SELECT DISTINCT nk_cliente FROM cat_fato_recebimento
-                  UNION SELECT DISTINCT nk_cliente FROM cat_fato_expedicao) f
-            LEFT JOIN cat_clientes c ON c.raiz_cnpj = f.nk_cliente
-            ORDER BY 2
-            """
-        )
-        clientes = [{"chave": k, "rotulo": r} for k, r in cur.fetchall()]
-
-        cur.execute(
-            """
-            SELECT DISTINCT descr_oper_wms, movimento FROM (
-                SELECT descr_oper_wms, 'rec' AS movimento FROM cat_fato_recebimento
-                UNION SELECT descr_oper_wms, 'exp' FROM cat_fato_expedicao
-            ) t ORDER BY 1
-            """
-        )
-        operacoes = {"rec": [], "exp": []}
-        for nome, movimento in cur.fetchall():
-            operacoes[movimento].append(nome)
-
-        cur.execute("SELECT DISTINCT tipo FROM cat_tipos_estoque ORDER BY 1")
-        tipos = [linha[0] for linha in cur.fetchall()]
-
-        # O período que EXISTE no dado: a dica de alcance ("o dado vai de X a
-        # Y"), para quem não sabe que 2023 está no banco poder filtrar para trás.
-        cur.execute(
-            """
-            SELECT to_char(min(nk_calendario), 'YYYY-MM-DD'),
-                   to_char(max(nk_calendario), 'YYYY-MM-DD')
-            FROM (SELECT nk_calendario FROM cat_fato_recebimento
-                  UNION ALL SELECT nk_calendario FROM cat_fato_expedicao) t
-            """
-        )
-        periodo = cur.fetchone()
-
-        # "Hoje" vem do POSTGRES, no fuso de exibição, e não do relógio do
-        # processo: o container roda em UTC, e as 21h de Brasília já são o dia
-        # seguinte lá. O fuso entra por BIND, nunca concatenado.
-        cur.execute("SELECT (now() AT TIME ZONE %s)::date", (fuso,))
-        hoje = cur.fetchone()[0]
-
-        # Procedência: de quando é o dado que a tela está mostrando. O Hub
-        # enxerga se a carga falhou sem ser quem a roda.
-        cur.execute(
-            """
-            SELECT tabela_origem, fonte,
-                   to_char(terminada_em AT TIME ZONE %s, 'DD/MM/YYYY HH24:MI'),
-                   linhas_lidas
-            FROM cat_cargas WHERE status = 'ok'
-            ORDER BY id DESC LIMIT 2
-            """,
-            (fuso,),
-        )
-        cargas = [
-            {"tabela": t, "fonte": f, "quando": q, "linhas": n}
-            for t, f, q, n in cur.fetchall()
-        ]
-
-    return {
-        "fonte": fonte.POSTGRES,
-        "unidades": unidades,
-        "clientes": clientes,
-        "operacoes": operacoes,
-        "tipos_estoque": tipos,
-        "periodo": {"de": periodo[0], "ate": periodo[1]},
-        "abertura": _abertura(hoje),
-        **_opcoes_estaticas(),
-        "cargas": cargas,
-        "contrato": contrato.ORIGEM,
-    }
-
-
 @router.get("/opcoes")
 def opcoes(_: dict = Depends(require_ver)):
     """O que existe para filtrar — lido do dado, não de lista fixa.
 
     Unidade nova, cliente novo ou operação nova aparecem no filtro sozinhos.
-    Traz também a procedência (última carga, ou o frescor do DW), o período que
-    existe no dado, a abertura da tela e os tetos do download — do Python, para
-    não existir uma segunda cópia deles no JavaScript. Da fonte ativa."""
-    return _opcoes_dw() if _usar_dw() else _opcoes_postgres()
+    Traz também a procedência (o frescor do DW), o período que existe no dado,
+    a abertura da tela e os tetos do download — do Python, para não existir uma
+    segunda cópia deles no JavaScript."""
+    return _opcoes_dw()
 
 
 # ------------------------------------------------------------------ consulta
@@ -467,16 +298,11 @@ def api_matriz(
     dia: list[str] = Query(default=[], description="dia do MÊS, 1..31"),
     _: dict = Depends(require_ver),
 ):
-    """A Matriz do recorte — da fonte ativa. O formato da resposta é o mesmo
-    nas duas, e é isso que o comparador confere."""
+    """A Matriz do recorte, lida do DW."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
                        unidade, cliente, tipo_estoque, operacao, dia)
-    usar_dw = _usar_dw()
     with _cursor() as cur:
-        if usar_dw:
-            resultado = matriz_dw.matriz(cur, filtros, dimensoes_dw.obter(cur))
-        else:
-            resultado = matriz.matriz(cur, filtros)
+        resultado = matriz_dw.matriz(cur, filtros, dimensoes_dw.obter(cur))
     return _json(resultado)
 
 
@@ -499,12 +325,8 @@ def api_planilha(
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
                        unidade, cliente, tipo_estoque, operacao, dia)
     _um_movimento_por_vez(filtros, "A planilha")
-    usar_dw = _usar_dw()
     with _cursor() as cur:
-        if usar_dw:
-            resultado = planilha_dw.planilha(cur, filtros, dimensoes_dw.obter(cur))
-        else:
-            resultado = planilha.planilha(cur, filtros)
+        resultado = planilha_dw.planilha(cur, filtros, dimensoes_dw.obter(cur))
     return _json(resultado)
 
 
@@ -664,37 +486,27 @@ def api_download(
         ip=_ip(request), usuario=user.get("username"),
     )
 
-    # O gerador do arquivo é da fonte ativa. Os dois módulos têm a MESMA
-    # superfície (`gerar_csv`, `gerar_xlsx`, `nome_do_arquivo`,
-    # `DownloadGrandeDemais`), e o arquivo que sai tem que ser igual.
-    gerador = download_dw if _usar_dw() else download
-
-    nome = gerador.nome_do_arquivo(filtros, formato)
+    nome = download_dw.nome_do_arquivo(filtros, formato)
     cabecalhos = {"Content-Disposition": f'attachment; filename="{nome}"'}
 
     if formato == "csv":
         # o gerador é dono da conexão: o corpo dele roda DEPOIS de a resposta
         # começar, quando um `with` daqui já teria fechado tudo
         return StreamingResponse(
-            gerador.gerar_csv(filtros, registro),
+            download_dw.gerar_csv(filtros, registro),
             media_type="text/csv; charset=utf-8",
             headers=cabecalhos,
         )
 
     try:
-        conteudo = gerador.gerar_xlsx(filtros, registro)
+        conteudo = download_dw.gerar_xlsx(filtros, registro)
     except download.DownloadGrandeDemais as erro:
         raise HTTPException(status_code=400, detail=str(erro)) from None
-    except (conexao.VolumetriaIndisponivel, conexao_dw.DWIndisponivel) as erro:
+    except conexao_dw.DWIndisponivel as erro:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(erro))
-    except psycopg.OperationalError as erro:
-        # banco caiu no meio do xlsx: a auditoria já marcou `erro`; aqui é só
-        # o status HTTP honesto (o CSV, em streaming, não tem mais como avisar)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"o banco da volumetria falhou durante o download ({type(erro).__name__}).",
-        )
     except Exception as erro:
+        # DW caiu no meio do xlsx: a auditoria já marcou `erro`; aqui é só o
+        # status HTTP honesto (o CSV, em streaming, não tem mais como avisar)
         if not _erro_do_oracle(erro):
             raise
         raise HTTPException(
@@ -720,25 +532,13 @@ def api_auditoria(
 
 
 # --------------------------------------------------------- diagnóstico do DW
-def _fonte_declarada() -> str:
-    """A fonte que a tela usa agora, para o diagnóstico dizer. Valor inválido
-    vira texto, não 503: o diagnóstico existe para RELATAR, e uma chave escrita
-    errada é justamente o que se quer ver escrito aqui."""
-    try:
-        return fonte.ativa()
-    except fonte.FonteInvalida as erro:
-        return f"inválida — {erro}"
-
-
 @router.get("/diagnostico-dw")
 def api_diagnostico_dw(_: dict = Depends(require_admin)):
-    """Conectei no DW, vi as duas tabelas, o contrato bate? E qual fonte a tela
-    está usando agora?
+    """Conectei no DW, vi as duas tabelas, o contrato bate?
 
     É o aceite do lote C1 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md`: a IA não
     conecta no DW, então a única prova possível é a Maria abrir isto na VM.
-    Nada da tela passa por aqui — os endpoints de consulta seguem a chave
-    `VOLUMETRIA_CATERING_FONTE`, que este endpoint apenas relata.
+    Nada da tela passa por aqui.
 
     **Não lê dado.** As duas conferências são o `SELECT` do contrato com
     `WHERE 1=0` (compila e resolve privilégio sem ler bloco) e o
@@ -755,7 +555,6 @@ def api_diagnostico_dw(_: dict = Depends(require_admin)):
     """
     em_cache = dimensoes_dw.em_cache()
     resposta = {
-        "fonte_da_tela": _fonte_declarada(),
         "dsn": conexao_dw.dsn(),
         "credencial": {
             "usuario": conexao_dw.ENV_USUARIO,
@@ -823,110 +622,8 @@ def api_dimensoes(_: dict = Depends(require_admin)):
 @router.post("/dimensoes/atualizar")
 def api_dimensoes_atualizar(_: dict = Depends(require_admin)):
     """"Atualizar agora": varre o DW e substitui o cache, sem esperar o TTL de
-    1 h. É o botão que o plano previa para não depender de job para testar —
-    e o que a Maria aperta no dia da virada depois de conferir o diagnóstico.
-
-    Lê o DW independentemente da chave de fonte: o cache é do lado Oracle, e
-    aquecê-lo ANTES de virar a chave é justamente o uso."""
-    with _cursor_dw() as cur:
+    1 h. É o botão para não depender do TTL depois de uma mudança no DW."""
+    with _cursor() as cur:
         dim = dimensoes_dw.atualizar(cur)
     logger.info("volumetria/DW: dimensões atualizadas por admin — %s", dim.como_dict())
     return dim.como_dict()
-
-
-# --------------------------------------------- o comparador (só admin, C3)
-def _lado(nome: str, buscar) -> dict:
-    """Roda `buscar()` numa fonte e devolve `{fonte, ok, ms, resultado, erro}`.
-
-    Erro de UMA fonte não derruba o endpoint: o trabalho dele é RELATAR —
-    inclusive "o Postgres não respondeu e o DW sim", que é informação. Só o
-    503 do `_cursor_*` é capturado; bug de código continua sendo 500, porque
-    esconder isso atrás de "não bateu" seria pior que o bug."""
-    try:
-        resultado, ms = comparador.cronometrar(buscar)
-    except HTTPException as erro:
-        return {"fonte": nome, "ok": False, "ms": None, "resultado": None, "erro": erro.detail}
-    return {"fonte": nome, "ok": True, "ms": ms, "resultado": resultado, "erro": None}
-
-
-def _matriz_postgres(filtros):
-    with _cursor_postgres() as cur:
-        return matriz.matriz(cur, filtros)
-
-
-def _matriz_dw(filtros):
-    with _cursor_dw() as cur:
-        return matriz_dw.matriz(cur, filtros, dimensoes_dw.obter(cur))
-
-
-@router.get("/comparar/matriz")
-def api_comparar_matriz(
-    de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
-    ate: str = Query(..., description="último dia, AAAA-MM-DD (inclusivo)"),
-    movimento: str = Query("rec"),
-    lente: str = Query("liq"),
-    faixa: str = Query("solicitado"),
-    pagina: int = Query(1, ge=1),
-    unidade: list[str] = Query(default=[]),
-    cliente: list[str] = Query(default=[]),
-    tipo_estoque: list[str] = Query(default=[]),
-    operacao: list[str] = Query(default=[]),
-    dia: list[str] = Query(default=[], description="dia do MÊS, 1..31"),
-    _: dict = Depends(require_admin),
-):
-    """A MESMA Matriz nas duas fontes, lado a lado, célula a célula — o portão
-    da virada (C3 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md`).
-
-    Lê o Postgres E o DW **independentemente da chave de fonte**: é para ser
-    rodado em produção, com dado real, antes de virar a chave — e depois, se
-    um número parecer estranho, enquanto o `nuvem-db` estiver de pé. Devolve
-    as duas Matrizes inteiras (para olhar), o tempo de cada uma (o número que o
-    D0 pediu, agora medido com a consulta de verdade) e a comparação de
-    `comparador.py`. Número diferente é bug de tradução do SQL; rótulo
-    diferente é a camada de decisões — e os dois saem separados.
-
-    Só admin: é diagnóstico, dobra o custo de uma consulta, e nomeia cliente.
-    """
-    filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
-                       unidade, cliente, tipo_estoque, operacao, dia)
-    postgres = _lado(fonte.POSTGRES, lambda: _matriz_postgres(filtros))
-    dw = _lado(fonte.DW, lambda: _matriz_dw(filtros))
-    comparacao = None
-    if postgres["ok"] and dw["ok"]:
-        comparacao = comparador.comparar_matriz(postgres["resultado"], dw["resultado"])
-        logger.info(
-            "volumetria/comparador: matriz %s — bate=%s, %d diferença(s), "
-            "postgres %s ms, dw %s ms",
-            filtros.como_dict(), comparacao["bate"], len(comparacao["diferencas"]),
-            postgres["ms"], dw["ms"],
-        )
-    return _json({
-        "filtros": filtros.como_dict(),
-        "fonte_da_tela": _fonte_declarada(),
-        "postgres": postgres,
-        "dw": dw,
-        "comparacao": comparacao,
-    })
-
-
-@router.get("/comparar/opcoes")
-def api_comparar_opcoes(_: dict = Depends(require_admin)):
-    """O `/opcoes` nas duas fontes: unidades exibidas, clientes com rótulo,
-    tipos, operações e período. É a prova direta da CAMADA DE DECISÕES (sigla,
-    tipo, razão social canonizada), que a Matriz só prova por tabela. Custa a
-    varredura completa nas duas fontes — só admin, e só quando se quer saber."""
-    postgres = _lado(fonte.POSTGRES, _opcoes_postgres)
-    dw = _lado(fonte.DW, _opcoes_dw)
-    comparacao = None
-    if postgres["ok"] and dw["ok"]:
-        comparacao = comparador.comparar_opcoes(postgres["resultado"], dw["resultado"])
-        logger.info(
-            "volumetria/comparador: opcoes — bate=%s, postgres %s ms, dw %s ms",
-            comparacao["bate"], postgres["ms"], dw["ms"],
-        )
-    return _json({
-        "fonte_da_tela": _fonte_declarada(),
-        "postgres": postgres,
-        "dw": dw,
-        "comparacao": comparacao,
-    })

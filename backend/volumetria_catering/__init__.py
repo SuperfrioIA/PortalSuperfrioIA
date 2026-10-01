@@ -1,22 +1,23 @@
-"""Volumetria de catering — consulta SOMENTE LEITURA sobre o banco da nuvem-ia.
+"""Volumetria de catering — consulta SOMENTE LEITURA sobre o DW Oracle.
 
 Módulo de consulta (Receita 2 do CONTRIBUTING.md, com a fonte de dados num banco
 externo). A tela da V3 do projeto nuvem-ia entra no Hub para ganhar o SSO, a
-matriz de permissões (`exportar`) e o log de acesso — sem mover o dado.
+matriz de permissões (`exportar`) e o log de acesso — e, desde o lote C6 do
+plano (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`), lê o DW direto, sem o Postgres
+intermediário da nuvem-ia.
 
-O que este módulo NÃO é dono de, e por quê (docs/PLANO_VOLUMETRIA_CATERING.md):
+O que este módulo NÃO é dono de, e por quê:
 
-- **do schema `cat_*`**: as tabelas e a cadeia de migrations (0019–0024+) ficam
-  no repositório nuvem-ia. Aqui vive uma CÓPIA do contrato de colunas
-  (`contrato.py`) e uma verificação de drift (`schema.py`) que falha nomeando a
-  coluna quando a cópia e o banco divergirem. Mudança de schema é sempre duas
-  PRs coordenadas — migration lá, contrato aqui;
-- **da escrita**: a carga do DW Oracle roda no cron da VM da nuvem-ia. O Hub
-  conecta com um role próprio (`hub_leitura`, só SELECT) e, por cima, abre toda
-  conexão com `default_transaction_read_only=on` (`conexao.py`). Um UPDATE
-  escrito por engano é recusado pelo banco, não por promessa;
-- **do startup do Hub**: a conexão é por request. `VOLUMETRIA_DB_URL` ausente
-  ou banco fora do ar degradam SÓ este card (503 com mensagem clara); lifespan e
+- **do schema do DW**: as tabelas `FATO_VOL_*_CAT_V01` e o processo que as
+  alimenta são do lado do DW. Aqui vive uma CÓPIA do contrato de colunas
+  (`contrato.py`) e uma verificação de drift (`schema_dw.py`) que falha nomeando
+  a coluna quando a cópia e o DW divergirem;
+- **da escrita**: o Hub conecta com um usuário de leitura (`DW_LEITURA_USUARIO`)
+  e nunca emite comando que não seja `SELECT` (`conexao_dw.py`, com a guarda
+  estática e a de runtime nos testes). Escrita impedida de verdade é o GRANT do
+  lado do DW;
+- **do startup do Hub**: a conexão é por request. Credencial ausente ou DW fora
+  do ar degradam SÓ este card (503 com mensagem clara); lifespan e
   `/api/health` não dependem daqui.
 
 A única tabela que este módulo escreve é a dele, no banco do Hub:

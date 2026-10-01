@@ -30,23 +30,15 @@ services:
       FTP_PORT: ${FTP_PORT:-21}
       FTP_USER: ${FTP_USER:-}
       FTP_PASSWORD: ${FTP_PASSWORD:-}
-      # Volumetria de catering: leitura SOMENTE do banco da nuvem-ia (nuvem-db),
-      # com o role `hub_leitura`. Vazio = módulo desligado (o card responde 503,
-      # o resto do Hub não sente). Formato libpq, não SQLAlchemy:
-      #   postgresql://hub_leitura:senha@nuvem-db:5432/nuvem
-      # A rede Docker compartilhada que faz `nuvem-db` resolver é o lote H3.
-      VOLUMETRIA_DB_URL: ${VOLUMETRIA_DB_URL:-}
+      # Volumetria: fuso de exibição (as três telas) e primeiro dia com que a
+      # tela do catering abre (transporte e estoque têm a abertura própria).
       VOLUMETRIA_FUSO_EXIBICAO: ${VOLUMETRIA_FUSO_EXIBICAO:-America/Sao_Paulo}
       VOLUMETRIA_ABERTURA_DE: ${VOLUMETRIA_ABERTURA_DE:-ano-corrente}
-      # A chave da virada (docs/PLANO_VOLUMETRIA_DW_DIRETO.md): `postgres` lê o
-      # nuvem-db acima, `dw` lê o DW Oracle abaixo. Trocar no .env + `up -d`
-      # vira sem rebuild; voltar é trocar de novo.
-      VOLUMETRIA_CATERING_FONTE: ${VOLUMETRIA_CATERING_FONTE:-postgres}
-      # DW Oracle — fonte direta de volumetria_transporte e volumetria_estoque
-      # (docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md), e do catering quando a
-      # chave acima está em `dw`. Credencial de SOMENTE LEITURA, só no .env da
-      # VM. Host/porta/serviço têm padrão no código e só entram aqui para
-      # poderem ser trocados sem rebuild.
+      # DW Oracle — fonte direta de volumetria_catering, volumetria_transporte e
+      # volumetria_estoque (docs/PLANO_VOLUMETRIA_DW_DIRETO.md e
+      # docs/PLANO_VOLUMETRIA_TRANSPORTE_ESTOQUE.md). Credencial de SOMENTE
+      # LEITURA, só no .env da VM. Host/porta/serviço têm padrão no código e só
+      # entram aqui para poderem ser trocados sem rebuild.
       DW_LEITURA_USUARIO: ${DW_LEITURA_USUARIO:-}
       DW_LEITURA_SENHA: ${DW_LEITURA_SENHA:-}
       DW_HOST: ${DW_HOST:-}
@@ -67,14 +59,6 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
-    # `default` continua (é por ela que o hub fala com o `db` deste compose);
-    # `hub-nuvem` é a rede compartilhada com o compose da nuvem-ia, onde só o
-    # `nuvem-db` entra — é assim que `VOLUMETRIA_DB_URL` resolve `nuvem-db` sem
-    # publicar porta nenhuma. Declarar `networks` num serviço DESLIGA a adesão
-    # automática à `default`, por isso ela precisa estar listada aqui.
-    networks:
-      - default
-      - hub-nuvem
 
   db:
     image: postgres:16-alpine
@@ -97,12 +81,3 @@ services:
 
 volumes:
   pgdata:
-
-networks:
-  # Criada UMA vez na VM, à mão: `docker network create hub-nuvem` (lote H3 de
-  # docs/PLANO_VOLUMETRIA_CATERING.md). `external: true` = o compose não cria
-  # nem apaga; sem ela existir, `docker compose up` falha nomeando a rede — que
-  # é o comportamento certo, e não subir sem o banco da volumetria em silêncio.
-  # O outro lado (o `nuvem-db`) entra nela pelo compose da nuvem-ia.
-  hub-nuvem:
-    external: true

@@ -133,6 +133,5 @@ def _consultar_com(dim):
 
 
 def matriz(cur, filtros: recorte.Filtros, dim: dimensoes_dw.Dimensoes) -> dict:
-    """A Matriz do recorte, lida do DW. Mesmo formato de resposta do
-    `matriz.matriz()` do Postgres — é isso que o comparador (C3) confere."""
+    """A Matriz do recorte, lida do DW. Valor cru, na unidade da fonte."""
     return montar(cur, filtros, _consultar_com(dim))

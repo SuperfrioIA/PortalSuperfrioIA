@@ -4,12 +4,12 @@ Lote C1 do plano revisado (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`). É a versão d
 **duas tabelas** (rec/exp) do mesmo desenho que `volumetria_transporte` e
 `volumetria_estoque` rodam em produção com uma tabela só.
 
-## Por que este arquivo é MENOR que o `schema.py`
+## Por que este arquivo é pequeno
 
-O `schema.py` existe para uma dívida de coordenação: o schema das `cat_*` é
-governado pelas migrations da nuvem-ia, este repositório tem uma CÓPIA do
-contrato, e a regra "toda mudança de schema são duas PRs coordenadas" é promessa
-sem trava. Lendo o DW direto, essa dívida **deixa de existir** — não há mais
+Antes do C6 existiu um `schema.py` irmão, para uma dívida de coordenação: o schema
+das `cat_*` era governado pelas migrations da nuvem-ia, este repositório tinha uma
+CÓPIA do contrato, e a regra "toda mudança de schema são duas PRs coordenadas" era
+promessa sem trava. Lendo o DW direto, essa dívida **deixou de existir** — não há
 cópia intermediária divergindo de nada. Sobra a pergunta que continua valendo: *o
 DW ainda tem a forma que este contrato descreve?*
 

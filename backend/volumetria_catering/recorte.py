@@ -1,27 +1,21 @@
-"""O recorte: filtros, periodo e o `WHERE` -- **uma definicao so**.
+"""O recorte: filtros e periodo -- **uma definicao so**.
 
-Porte de `catering/consulta/recorte.py` da nuvem-ia (main, 27/ago/2026). A unica
-mudanca e o import do contrato; a logica e a mesma, de proposito -- a tela do Hub
-e a tela antiga precisam responder sobre o MESMO conjunto de linhas enquanto
-convivem (H2 -> H4).
+Porte de `catering/consulta/recorte.py` da nuvem-ia (main, 27/ago/2026). Aqui
+mora so a DEFINICAO do recorte, sem banco: `Filtros` e sua validacao, a semantica
+de periodo e de dia do mes, os rotulos de mes parcial, as medidas por lente e
+faixa e a visao conjunta. A montagem do `WHERE` e do DW, em `recorte_dw.py`, que
+reexporta daqui o que for definicao.
 
 ## Por que este modulo existe
 
-A Matriz (V3.2), a planilha e o download (V3.3) tem que responder sobre
-**exatamente o mesmo conjunto de linhas**. Se cada uma montasse o seu proprio
-`WHERE`, o dia em que um filtro mudasse de comportamento numa e nao na outra a
-tela passaria a mostrar uma coisa e a baixar outra -- e ninguem descobriria por
-um bom tempo, porque os dois numeros parecem plausiveis sozinhos.
+A Matriz, a planilha e o download tem que responder sobre **exatamente o mesmo
+conjunto de linhas**. Se cada uma validasse o seu proprio filtro, o dia em que um
+mudasse de comportamento numa e nao na outra a tela passaria a mostrar uma coisa
+e a baixar outra -- e ninguem descobriria por um bom tempo, porque os dois
+numeros parecem plausiveis sozinhos.
 
-Entao o recorte e definido aqui e usado pelas tres. O aceite do V3.3 fixa isso
-por medicao: somando as paginas da planilha tem que dar o total da Matriz.
-
-## Sem FK, entao LEFT JOIN com queda para a fonte
-
-As dimensoes nao tem FK vindo do fato, de proposito (V3.0). Isso obriga
-`LEFT JOIN` + `COALESCE`: unidade, cliente ou nome de estoque que ainda nao
-entrou na dimensao **nao pode fazer a linha desaparecer**. Desaparecer em
-silencio e o pior desfecho -- o numero fica menor e ninguem ve.
+Entao o recorte e definido aqui e usado pelas tres. O aceite fixa isso por
+medicao: somando as paginas da planilha tem que dar o total da Matriz.
 
 ## Duas coisas diferentes com a palavra "dia"
 
@@ -53,8 +47,6 @@ from datetime import date
 
 from backend.volumetria_catering import contrato
 
-TABELA = {"rec": "cat_fato_recebimento", "exp": "cat_fato_expedicao"}
-
 # O terceiro movimento da TELA (V3.7.2). Ele NAO entra em `contrato.MOVIMENTOS`,
 # e a separacao e o ponto: aquele e o conjunto do DADO. "Entrada + saida" nao e
 # uma terceira tabela nem um terceiro tipo de linha: e um jeito de LER as duas.
@@ -67,19 +59,6 @@ def movimentos_do_recorte(movimento):
     if movimento == CONJUNTA:
         return ("rec", "exp")
     return (movimento,)
-
-# As tres dimensoes de decisao, juntadas na leitura. Ver docstring.
-JUNCOES = (
-    "LEFT JOIN cat_unidades u ON u.sigla_fonte = f.nk_wms_filial\n"
-    "LEFT JOIN cat_clientes c ON c.raiz_cnpj = f.nk_cliente\n"
-    "LEFT JOIN cat_tipos_estoque t ON t.nome_estoque = f.nome_estoque"
-)
-
-# Expressoes reusadas por Matriz, planilha e download -- para o rotulo da tela
-# e o do arquivo nunca divergirem.
-SIGLA = "COALESCE(u.sigla, f.nk_wms_filial)"
-CLIENTE_ROTULO = "COALESCE(c.razao_social, f.raz_social)"
-TIPO_ESTOQUE = "COALESCE(t.tipo, 'NAO_CLASSIFICADO')"
 
 
 class FiltroInvalido(Exception):
@@ -260,61 +239,6 @@ def aviso_dos_dias(dias):
         "Filtro de dia do mês ativo: o recorte leva apenas os dias "
         f"{rotulo_dos_dias(dias)} de cada mês, não o mês inteiro."
     )
-
-
-def onde(filtros: Filtros):
-    """`(clausulas, params)` do recorte. **A unica definicao de filtro.**"""
-    # Intervalo FECHADO nas duas pontas: `nk_calendario` e DATE (meia-noite
-    # sempre), entao `<= ate` e exato -- e "03/08 a 05/09" inclui o dia 05.
-    clausulas = ["f.nk_calendario >= %(de)s", "f.nk_calendario <= %(ate)s"]
-    params = {
-        "de": data_do_recorte(filtros.de, "de"),
-        "ate": data_do_recorte(filtros.ate, "ate"),
-    }
-    # Dia do mes: recorta DENTRO de cada mes do periodo. Nao usa indice (e
-    # expressao sobre a coluna) e nao faz falta -- quem estreita e o intervalo
-    # de datas acima, que usa o indice da 0019.
-    if filtros.dias:
-        clausulas.append("EXTRACT(DAY FROM f.nk_calendario) = ANY(%(dias)s)")
-        params["dias"] = list(filtros.dias)
-    if filtros.unidades:
-        clausulas.append(f"{SIGLA} = ANY(%(unidades)s)")
-        params["unidades"] = list(filtros.unidades)
-    if filtros.clientes:
-        clausulas.append("f.nk_cliente = ANY(%(clientes)s)")
-        params["clientes"] = list(filtros.clientes)
-    if filtros.tipos_estoque:
-        clausulas.append(f"{TIPO_ESTOQUE} = ANY(%(tipos)s)")
-        params["tipos"] = list(filtros.tipos_estoque)
-    if filtros.operacoes:
-        clausulas.append("f.descr_oper_wms = ANY(%(operacoes)s)")
-        params["operacoes"] = list(filtros.operacoes)
-    return clausulas, params
-
-
-def de_para_where(filtros: Filtros, movimento=None):
-    """`(sql_from_where, params)` -- o pedaco comum das tres consultas.
-
-    O `movimento` explicito existe para a visao conjunta (V3.7.2), que roda UMA
-    consulta por tabela e soma depois, em Python.
-
-    Sem ele, `movimento=amb` **levanta** em vez de escolher uma tabela por conta
-    propria: escolher em silencio daria um numero que parece certo e e a metade.
-    A planilha e o download chamam esta funcao SEM o argumento -- entao a trava
-    aqui e o que garante que eles nunca passem a responder so pelo recebimento
-    sem ninguem notar."""
-    escolhido = movimento or filtros.movimento
-    if escolhido == CONJUNTA:
-        raise FiltroInvalido(
-            "recorte de dois movimentos: esta consulta le uma tabela por vez"
-        )
-    clausulas, params = onde(filtros)
-    sql = (
-        f"FROM {TABELA[escolhido]} f\n"
-        f"{JUNCOES}\n"
-        f"WHERE {' AND '.join(clausulas)}"
-    )
-    return sql, params
 
 
 def medida(movimento, lente, faixa):

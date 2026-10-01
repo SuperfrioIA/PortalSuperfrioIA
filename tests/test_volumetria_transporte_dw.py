@@ -6,14 +6,12 @@ conexão com o DW Oracle.
 **Nenhum teste daqui conecta no DW.** Tudo roda contra `CursorFalso`/
 `ConexaoFalsa`, no mesmo padrão de `tests/test_volumetria_catering_dw.py`.
 
-**Diferença importante em relação ao catering**: lá, `matriz.py`/`planilha.py`/
-`download.py` ainda leem o Postgres (`nuvem-db`), e por isso têm suíte própria
-contra um container real (`test_volumetria_catering_postgres.py`). Aqui não —
-este módulo nasce lendo o DW direto, sem o D3 do outro plano (que provaria a
-tradução do SQL comparando Postgres × Oracle). Por isso as consultas de
-Matriz/planilha/download são testadas **contra cursor falso**: prova o SQL, os
-binds e o mapeamento de linha, não prova que o DW aceita o statement. O
-aceite de dado real é `/diagnostico-dw` na VM (mesmo texto do D1).
+**Mesmo desenho do catering, que depois da limpeza do C6 também lê só o DW**: as
+consultas de Matriz/planilha/download são testadas **contra cursor falso** —
+prova o SQL, os binds e o mapeamento de linha, não prova que o DW aceita o
+statement. (Durante a transição o catering teve uma suíte contra um Postgres
+real, apagada no C6; este módulo nunca teve Postgres intermediário.) O aceite de
+dado real é `/diagnostico-dw` na VM (mesmo texto do D1).
 
 ## Duas guardas de somente leitura
 
