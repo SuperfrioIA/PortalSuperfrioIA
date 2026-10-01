@@ -3,14 +3,13 @@
 `tests/test_auditoria.py` já prova o trigger no SQLite (dialeto usado pela
 suíte padrão do Hub). Este arquivo prova só a metade que o SQLite não pode:
 o mesmo trigger, compilado como função PL/pgSQL, recusando UPDATE e DELETE
-num Postgres de verdade — mesmo raciocínio e mesmo banco de
-`tests/test_volumetria_catering_postgres.py` (pulado inteiro, sem falhar,
-quando o container não responde).
+num Postgres de verdade. Pulado inteiro, sem falhar, quando o container não
+responde (o mesmo desenho da suíte Postgres da volumetria de catering, apagada
+no lote C6 de `docs/PLANO_VOLUMETRIA_DW_DIRETO.md`).
 
 Usa o `superfrio-teste-db` (porta 5434, ver docs/EXECUCAO_LOCAL.md) só como
 servidor: roda as migrations do Hub até head num banco próprio
-(`auditoria_teste`) dentro dele, para não disputar o schema `public` com a
-suíte da volumetria, que o zera a cada teste.
+(`auditoria_teste`) dentro dele, sem tocar o schema `public`.
 """
 import os
 import socket
@@ -33,9 +32,9 @@ def _partes_servidor():
 
 
 def _alcancavel() -> bool:
-    """Mesma checagem em duas etapas de `test_volumetria_catering_postgres.py`:
-    socket cru antes do driver, porque o relay de porta do WSL pode aceitar o
-    TCP e nunca responder depois que a distro encerra sozinha."""
+    """Checagem em duas etapas: socket cru antes do driver, porque o relay de
+    porta do WSL pode aceitar o TCP e nunca responder depois que a distro
+    encerra sozinha."""
     try:
         host, porta = _partes_servidor()
         with socket.create_connection((host, porta), timeout=2):
@@ -63,7 +62,7 @@ def _url_banco_teste() -> str:
 @pytest.fixture
 def pg():
     """`auditoria_teste` recriado do zero e migrado até head a cada teste —
-    banco próprio, não o `public` que a volumetria disputa."""
+    banco próprio, não o `public`."""
     with psycopg.connect(_URL_SERVIDOR, autocommit=True) as admin:
         with admin.cursor() as cur:
             cur.execute(f"DROP DATABASE IF EXISTS {_BANCO_TESTE}")

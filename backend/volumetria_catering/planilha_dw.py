@@ -5,8 +5,7 @@ Lote C2 do plano revisado (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`).
 ## Mesmas colunas, mesmo recorte, outro banco
 
 As colunas que a tela mostra e seus rótulos vêm de `planilha.py` (`colunas()`,
-`_colunas_de_medida()`), sem cópia — a planilha do DW e a do Postgres têm que
-ter o MESMO cabeçalho. O recorte vem de `recorte_dw.de_para_where()`, o mesmo
+`_colunas_de_medida()`). O recorte vem de `recorte_dw.de_para_where()`, o mesmo
 `FROM`/`WHERE` da Matriz do DW: somando as páginas tem que dar o total da
 Matriz, e isso é estrutura, não disciplina.
 
@@ -80,8 +79,7 @@ def _linha_da_tela(registro: dict, medidas, dim: dimensoes_dw.Dimensoes) -> dict
 
 
 def planilha(cur, filtros, dim: dimensoes_dw.Dimensoes) -> dict:
-    """Uma página de linhas cruas do recorte, mais o total de linhas. Mesmo
-    formato de resposta do `planilha.planilha()` do Postgres."""
+    """Uma página de linhas cruas do recorte, mais o total de linhas."""
     filtros.validar()
     medidas = _colunas_de_medida(filtros)
     total = contar(cur, filtros, dim)

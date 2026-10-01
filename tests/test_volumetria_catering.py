@@ -1,21 +1,20 @@
-"""Volumetria de catering — o que se prova SEM o banco da nuvem-ia.
+"""Volumetria de catering — o que se prova SEM o DW.
 
-Este arquivo roda na suíte normal (SQLite, sem Postgres). Cobre:
+Este arquivo roda na suíte normal (SQLite, sem container e sem Oracle). Cobre:
 
 - o contrato do módulo com o Hub: permissão no catálogo, app no seed (a célula
   `exportar` da matriz existe), router registrado, migration 0007 sobe e desce;
 - as guardas: 401 sem login, 403 sem `ver`, 403 sem `exportar` — provadas SEM
   banco externo, porque a guarda vem antes da conexão;
-- a falha graciosa: sem `VOLUMETRIA_DB_URL` (ou com banco fora do ar) o card
+- a falha graciosa: sem credencial do DW (ou com o DW fora do ar) o card
   responde 503 e `/api/health` continua 200;
 - filtro inválido é 400 antes de qualquer conexão;
 - a lógica pura portada da nuvem-ia (recorte, rótulos, contrato, formatação do
-  CSV) e a comparação de drift (`schema.comparar`, que é pura de propósito);
+  CSV);
 - a auditoria no banco do Hub.
 
-O SQL de verdade (Matriz, planilha, download, drift contra `information_schema`)
-está em `test_volumetria_catering_postgres.py`, que exige o Postgres de teste
-(ver docs/EXECUCAO_LOCAL.md) e é pulado quando ele não existe.
+O SQL do Oracle (Matriz, planilha, download, drift) está em
+`test_volumetria_catering_dw.py`, contra driver falso.
 """
 from datetime import date, datetime
 from decimal import Decimal
@@ -29,11 +28,12 @@ from backend.usuarios import service as usuarios_service
 from backend.core.database import _alembic_config, db, engine
 from backend.volumetria_catering import (
     auditoria,
-    conexao,
+    conexao_dw,
     contrato,
+    dimensoes_dw,
     download,
     recorte,
-    schema,
+    schema_dw,
     ticket,
 )
 from backend.volumetria_catering.permissoes import APP_SLUG, EXPORTAR
@@ -43,13 +43,17 @@ JAN = {"de": "2026-01-01", "ate": "2026-01-31"}
 
 
 @pytest.fixture(autouse=True)
-def _sem_banco_externo(monkeypatch):
-    """Nenhum teste daqui fala com Postgres: a variável sai do ambiente e o
-    cache do contrato é zerado, para um teste não herdar estado de outro."""
-    monkeypatch.delenv(conexao.ENV_URL, raising=False)
-    schema.invalidar()
+def _sem_dw(monkeypatch):
+    """Nenhum teste daqui fala com o DW: a credencial sai do ambiente e os
+    caches (drift e dimensões) são zerados, para um teste não herdar estado de
+    outro."""
+    monkeypatch.delenv(conexao_dw.ENV_USUARIO, raising=False)
+    monkeypatch.delenv(conexao_dw.ENV_SENHA, raising=False)
+    schema_dw.invalidar()
+    dimensoes_dw.invalidar()
     yield
-    schema.invalidar()
+    schema_dw.invalidar()
+    dimensoes_dw.invalidar()
 
 
 # ============ Contrato com o Hub: catálogo, seed, router ============
@@ -104,28 +108,53 @@ def test_migration_0007_sobe_e_desce(tmp_path):
 
 # ============ Falha graciosa: só o card degrada ============
 
-def test_sem_url_o_card_responde_503_e_o_hub_continua(client, admin_headers):
+class _DriverQueRecusa:
+    """O `oracledb` de mentira que não abre sessão: `fetch_decimals` e um
+    `connect` que estoura com texto carregado de usuário e endereço, para provar
+    que isso não chega à tela."""
+
+    class _Defaults:
+        fetch_decimals = False
+
+    def __init__(self):
+        self.defaults = self._Defaults()
+
+    def connect(self, **_kwargs):
+        raise OSError("recusou 10.9.8.7 senha=segredo")
+
+
+@pytest.fixture
+def dw_fora_do_ar(monkeypatch):
+    """Credencial no ambiente e um driver que não conecta — o estado de uma rota
+    caída até o DW, sem tocar em rede nenhuma."""
+    monkeypatch.setenv(conexao_dw.ENV_USUARIO, "hub_leitura_dw")
+    monkeypatch.setenv(conexao_dw.ENV_SENHA, "segredo")
+    monkeypatch.setattr(conexao_dw, "_driver", lambda: _DriverQueRecusa())
+
+
+def test_sem_credencial_o_card_responde_503_e_o_hub_continua(client, admin_headers):
     r = client.get(f"{BASE}/opcoes", headers=admin_headers)
     assert r.status_code == 503
-    assert conexao.ENV_URL in r.json()["detail"]
+    assert conexao_dw.ENV_USUARIO in r.json()["detail"]
     assert client.get("/api/health").status_code == 200
 
 
-def test_banco_fora_do_ar_e_503_sem_vazar_a_url(client, admin_headers, monkeypatch):
-    # porta 1: recusa imediata, não depende de nada instalado
-    monkeypatch.setenv(conexao.ENV_URL, "postgresql://u:segredo@127.0.0.1:1/x")
+def test_dw_fora_do_ar_e_503_sem_vazar_credencial_nem_endereco(
+    client, admin_headers, dw_fora_do_ar
+):
     r = client.get(f"{BASE}/matriz", params=JAN, headers=admin_headers)
     assert r.status_code == 503
     detail = r.json()["detail"]
     assert "não respondeu" in detail
-    assert "segredo" not in detail and "127.0.0.1" not in detail
+    assert "segredo" not in detail and "10.9.8.7" not in detail
     assert client.get("/api/health").status_code == 200
 
 
-def test_download_nao_abre_auditoria_quando_o_banco_esta_fora(client, admin_headers, monkeypatch):
-    """A conferência do banco vem ANTES de abrir a auditoria: registro de
+def test_download_nao_abre_auditoria_quando_o_dw_esta_fora(
+    client, admin_headers, dw_fora_do_ar
+):
+    """A conferência do DW vem ANTES de abrir a auditoria: registro de
     download que não saiu é ruído na trilha."""
-    monkeypatch.setenv(conexao.ENV_URL, "postgresql://u:s@127.0.0.1:1/x")
     antes = len(auditoria.listar(1000))
     r = client.get(f"{BASE}/download", params=JAN, headers=admin_headers)
     assert r.status_code == 503
@@ -255,19 +284,10 @@ def test_data_do_recorte_e_estrita():
         recorte.data_do_recorte("2026-02-30")
 
 
-def test_recorte_de_dois_movimentos_nao_escolhe_tabela_em_silencio():
-    filtros = recorte.Filtros(**JAN, movimento=recorte.CONJUNTA).validar()
-    with pytest.raises(recorte.FiltroInvalido):
-        recorte.de_para_where(filtros)
-    assert "cat_fato_recebimento" in recorte.de_para_where(filtros, "rec")[0]
-    assert "cat_fato_expedicao" in recorte.de_para_where(filtros, "exp")[0]
-
-
 def test_o_terceiro_movimento_e_da_tela_e_nao_do_dado():
     assert recorte.CONJUNTA not in contrato.MOVIMENTOS
     assert set(contrato.MOVIMENTOS) < set(recorte.MOVIMENTOS_DA_TELA)
     assert recorte.movimentos_do_recorte(recorte.CONJUNTA) == ("rec", "exp")
-    assert recorte.CONJUNTA not in recorte.TABELA
 
 
 def test_medida_confere_contra_o_contrato():
@@ -277,18 +297,6 @@ def test_medida_confere_contra_o_contrato():
     assert recorte.medidas_da_lente("exp", "pal") == {}
     assert recorte.medidas_da_lente("rec", "vol") == {"": "qtde_vol2"}
     assert list(recorte.medidas_da_lente("exp", "val")) == list(contrato.FAIXAS)
-
-
-def test_todo_valor_de_filtro_vai_parametrizado():
-    filtros = recorte.Filtros(
-        **JAN, unidades=("RMSPII'; DROP TABLE x; --",), clientes=("1",),
-        tipos_estoque=("SECO",), operacoes=("OP",), dias=("5",),
-    ).validar()
-    sql, params = recorte.de_para_where(filtros)
-    assert "DROP TABLE" not in sql
-    assert params["unidades"] == ["RMSPII'; DROP TABLE x; --"]
-    assert params["dias"] == [5]
-    assert params["de"] == date(2026, 1, 1)
 
 
 def test_contrato_tem_36_e_46_colunas():
@@ -337,84 +345,10 @@ def test_para_csv_e_excel_first():
 
 
 def test_download_leva_derivadas_e_o_contrato_inteiro():
-    apelidos = [a for a, _s, _r in download.colunas("rec")]
+    apelidos = [a for a, _r in download.colunas("rec")]
     assert apelidos[:4] == ["dia", "unidade", "cliente", "tipo_estoque"]
     assert apelidos[4:] == [n for n, _t, _n in contrato.COLUNAS_REC]
     assert len(download.colunas("exp")) == 4 + 46
-
-
-# ============ Drift: a comparação é pura e nomeia a coluna ============
-
-_TIPO = {
-    "INTEGER": ("integer", None, None),
-    "SMALLINT": ("smallint", None, None),
-    "TEXT": ("text", None, None),
-    "DATE": ("date", None, None),
-    "TIMESTAMP": ("timestamp without time zone", None, None),
-    "NUMERIC(18,3)": ("numeric", 18, 3),
-}
-
-
-def _retrato_fiel():
-    """Um `information_schema` sintético exatamente como o contrato descreve."""
-    reais = {}
-    for movimento, tabela in schema.TABELA_FATO.items():
-        colunas = {
-            "id": ("bigint", False, 64, 0),
-            "carga_id": ("integer", False, 32, 0),
-        }
-        for nome, tipo, nulavel in contrato.colunas(movimento):
-            dt, p, e = _TIPO[tipo]
-            colunas[nome] = (dt, nulavel, p, e)
-        reais[tabela] = colunas
-    for tabela, colunas in schema.COLUNAS_DE_APOIO.items():
-        reais[tabela] = {c: ("text", True, None, None) for c in colunas}
-    return reais
-
-
-def test_retrato_fiel_nao_tem_drift():
-    assert schema.comparar(_retrato_fiel()) == []
-
-
-def test_drift_coluna_faltando_nomeia_tabela_e_coluna():
-    reais = _retrato_fiel()
-    del reais["cat_fato_recebimento"]["qtde_pbrt2"]
-    problemas = schema.comparar(reais)
-    assert problemas == ["cat_fato_recebimento.qtde_pbrt2: coluna do contrato não existe no banco"]
-
-
-def test_drift_coluna_a_mais_e_drift():
-    """Coluna nova na nuvem-ia sem contrato aqui é justamente o que o download
-    deixaria de levar — tem que gritar."""
-    reais = _retrato_fiel()
-    reais["cat_fato_expedicao"]["qtde_nova"] = ("integer", True, 32, 0)
-    assert schema.comparar(reais) == [
-        "cat_fato_expedicao.qtde_nova: coluna existe no banco e não está no contrato copiado"
-    ]
-
-
-def test_drift_tipo_precisao_e_nulabilidade():
-    reais = _retrato_fiel()
-    reais["cat_fato_recebimento"]["qtde_sku"] = ("bigint", True, 64, 0)
-    reais["cat_fato_recebimento"]["qtde_vlr"] = ("numeric", True, 12, 2)
-    reais["cat_fato_recebimento"]["nk_cliente"] = ("text", True, None, None)
-    problemas = schema.comparar(reais)
-    assert "cat_fato_recebimento.qtde_sku: tipo esperado INTEGER, banco tem bigint" in problemas
-    assert "cat_fato_recebimento.qtde_vlr: esperado NUMERIC(18,3), banco tem NUMERIC(12,2)" in problemas
-    assert "cat_fato_recebimento.nk_cliente: contrato diz NOT NULL, banco diz nulável" in problemas
-    assert len(problemas) == 3
-
-
-def test_drift_tabela_de_apoio_sumiu_ou_sem_grant():
-    """`information_schema` esconde tabela em que o role não tem SELECT, então
-    GRANT faltando no `hub_leitura` (lote H3) aparece igual a tabela ausente —
-    a mensagem tem que nomear as duas causas."""
-    reais = _retrato_fiel()
-    del reais["cat_cargas"]
-    del reais["cat_unidades"]["sigla"]
-    problemas = schema.comparar(reais)
-    assert "cat_cargas: tabela não existe ou o role da conexão não tem SELECT nela" in problemas
-    assert "cat_unidades.sigla: coluna usada pela consulta não existe" in problemas
 
 
 def test_configuracao_invalida_e_503_nomeando_a_variavel(client, admin_headers, monkeypatch):
@@ -427,17 +361,9 @@ def test_configuracao_invalida_e_503_nomeando_a_variavel(client, admin_headers, 
     assert "America/SaoPaulo" in r.json()["detail"]
 
 
-def test_url_malformada_e_503_e_nao_500(client, admin_headers, monkeypatch):
-    monkeypatch.setenv(conexao.ENV_URL, "isto nao e uma url")
-    r = client.get(f"{BASE}/opcoes", headers=admin_headers)
-    assert r.status_code == 503
-    assert "não respondeu" in r.json()["detail"]
-
-
 def test_contrato_divergente_aponta_para_a_correcao():
-    erro = schema.ContratoDivergente(["cat_fato_recebimento.x: sumiu"])
-    assert "cat_fato_recebimento.x" in str(erro)
-    assert contrato.ORIGEM in str(erro)
+    erro = schema_dw.ContratoDivergenteDW(["FATO_VOL_REC_CAT_V01.X: sumiu"])
+    assert "FATO_VOL_REC_CAT_V01.X" in str(erro)
     assert "contrato.py" in str(erro)
 
 

@@ -118,7 +118,7 @@ def test_a_tela_baixa_pelo_ticket_e_nao_pelo_header(js):
 
 def test_os_tres_bloqueios_tem_mensagem_propria(js):
     """401, 403 e 503 não podem cair no "Recorte recusado", que manda a pessoa
-    mexer nos filtros para resolver sessão expirada ou banco fora do ar."""
+    mexer nos filtros para resolver sessão expirada ou DW fora do ar."""
     for status in ("401", "403", "503"):
         assert status in js
     assert "mostraBloqueio" in js
@@ -129,11 +129,12 @@ def test_os_tres_bloqueios_tem_mensagem_propria(js):
 
 
 def test_a_tela_le_a_procedencia_da_fonte(js, html):
-    """C4 do plano do DW: com a fonte no DW não há carga. Se a tela continuasse
-    lendo só `cargas`, mostraria "Nenhuma carga concluída" para sempre — a
-    mentira que o incidente de 28/08 ensinou a não contar. Ela tem que ler
-    `fonte` e `atualizado_ate` do /opcoes, e ter a classe que grita dado velho."""
-    assert "OPCOES.fonte" in js
+    """Com a fonte no DW não há carga. Se a tela voltasse a ler `cargas`,
+    mostraria "Nenhuma carga concluída" para sempre — a mentira que o incidente
+    de 28/08 ensinou a não contar. Ela tem que ler `atualizado_ate` do /opcoes
+    (a chave `cargas` e a `fonte` saíram no C6), e ter a classe que grita dado
+    velho."""
+    assert "OPCOES.cargas" not in js and "OPCOES.fonte" not in js
     assert "atualizado_ate" in js
     assert "rotulos_calculados_em" in js
     assert "DIAS_PARA_AVISAR" in js
@@ -144,7 +145,7 @@ def test_o_js_foi_versionado_junto_com_a_mudanca(html):
     """Mudou o app.js? O `?v=` sobe junto, senão o cache do navegador serve o
     asset velho depois do deploy (docs/TROUBLESHOOTING_APPS_IFRAME.md)."""
     achado = re.search(r'<script src="app\.js\?v=(\d+)"></script>', html)
-    assert int(achado.group(1)) >= 2
+    assert int(achado.group(1)) >= 3
 
 
 def test_o_html_embutido_nao_fica_em_cache_e_pode_ser_iframe(client):

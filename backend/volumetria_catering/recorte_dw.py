@@ -1,18 +1,20 @@
-"""O recorte no dialeto do Oracle — a mesma definição de filtro, outro `WHERE`.
+"""O recorte no dialeto do Oracle — a definição de filtro de `recorte.py`, mais o `WHERE`.
 
 Lote C2 do plano revisado (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`).
 
-## O que é reaproveitado e o que é traduzido
+## O que é reaproveitado e o que mora aqui
 
 Tudo o que em `recorte.py` é **definição** — `Filtros` e sua validação, a
 semântica de período e de dia do mês, os rótulos de mês parcial, as medidas por
-lente e faixa, a visão conjunta — é importado daqui **sem cópia**: a tela do
-Postgres e a do DW têm que aceitar e recusar exatamente os mesmos filtros, e um
+lente e faixa, a visão conjunta — é reexportado daqui **sem cópia**: a Matriz, a
+planilha e o download aceitam e recusam exatamente os mesmos filtros, e um
 segundo `Filtros` divergiria em silêncio.
 
-O que é traduzido é só a montagem do `WHERE`:
+A montagem do `WHERE` mora só aqui. Até o C6 existia uma irmã para o Postgres em
+`recorte.py` (`onde()` e `de_para_where()`); a tabela abaixo é a tradução que
+ela serviu de origem:
 
-| Postgres (`recorte.py`) | Oracle (aqui) |
+| Postgres (apagado no C6) | Oracle (aqui) |
 |---|---|
 | `%(x)s` | `:x` |
 | `coluna = ANY(%(lista)s)` | `coluna IN (:p0, :p1, ...)` — um bind por item |

@@ -7,13 +7,10 @@ Porte de `nuvem-ia catering/carga/fonte_oracle.py`, que roda em produção desde
 aqui foi provado três vezes, não inventado agora. É a terceira cópia deste
 arquivo, por decisão da Maria (06/set: "cópia nº 3 agora, extrair depois").
 
-## O que este arquivo NÃO é
+## Fonte única
 
-Ele não substitui o `conexao.py`. Os dois existem lado a lado: `conexao.py`
-fala com o `nuvem-db` (Postgres) e `conexao_dw.py` fala com o DW. Quem escolhe
-qual serve a tela é a chave `VOLUMETRIA_CATERING_FONTE` (`fonte.py`) — e
-enquanto ela estiver em `postgres`, este arquivo serve só o diagnóstico e o
-comparador. O C6 apaga o `conexao.py`.
+Desde o lote C6 (01/out/2026) este é o único caminho de leitura da volumetria de
+catering: o módulo que falava com o `nuvem-db` (Postgres) foi apagado.
 
 ## A premissa que este arquivo rompe
 
@@ -49,8 +46,8 @@ Três camadas, e é honesto dizer de quem é cada uma:
    por concatenação, o de runtime não vê caminho que o teste não exercita.
 
 O que deliberadamente **não** fazemos é emitir `ALTER SESSION SET TRANSACTION
-READ ONLY`, o equivalente Oracle do `default_transaction_read_only` que o
-`conexao.py` usa no Postgres. Dois motivos: ele abre uma transação com snapshot
+READ ONLY`, o equivalente Oracle do `default_transaction_read_only` do
+Postgres. Dois motivos: ele abre uma transação com snapshot
 próprio, e transação longa numa conexão de tela é pior que o problema que
 resolveria; e ele obrigaria este módulo a emitir um comando que começa com
 `ALTER`, furando as duas guardas acima em troca de uma proteção que o GRANT já
@@ -58,7 +55,7 @@ dá. Trocar uma trava que funciona por uma que parece bem é mau negócio.
 
 ## Por request, sem pool, nada aberto no startup
 
-Mesmo raciocínio do `conexao.py`: um card de leitura, uso interno, sem
+Um card de leitura, uso interno, sem
 concorrência que justifique pool. E é o que permite a **falha graciosa** — o Hub
 não abre nada no startup, então DW fora do ar não impede o Hub de subir nem
 derruba `/api/health`. Degrada só este card.
@@ -116,7 +113,7 @@ class CredencialAusente(DWIndisponivel):
 
     Subclasse de `DWIndisponivel` de propósito: quem trata "o card está fora"
     não precisa saber a diferença, e quem quer distinguir configuração de rede
-    ainda pode. É o mesmo desenho do `VolumetriaIndisponivel` no Postgres."""
+    ainda pode."""
 
 
 def _driver():
@@ -189,7 +186,7 @@ def configurado() -> bool:
 
 
 def conectar():
-    """Sessão nova no DW. Quem chama fecha (`conexao.close()`).
+    """Sessão nova no DW. Quem chama fecha (`conn.close()`).
 
     Nunca guarda nem loga a credencial: o log do Hub fica em arquivo na VM, e
     metade de uma credencial já é informação demais para um arquivo de log."""

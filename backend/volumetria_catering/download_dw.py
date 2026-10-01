@@ -2,27 +2,25 @@
 
 Lote C2 do plano revisado (`docs/PLANO_VOLUMETRIA_DW_DIRETO.md`).
 
-## O mesmo arquivo, com outra fonte
+## Cabeçalho e formato
 
 Cabeçalho, ordem de colunas, formato Excel-first (`;`, BOM, vírgula decimal,
 `DD/MM/AAAA`), o zero à esquerda protegido no xlsx, o teto de 150 mil linhas e
-o nome do arquivo são os de `download.py`, reaproveitados — não copiados. A
-pessoa que baixa o mesmo recorte das duas fontes tem que receber dois arquivos
-iguais, e é assim que o C3 vai conferir isso.
+o nome do arquivo são os de `download.py`: este módulo só tem o que é de banco.
 
-## O que muda
+## Como lê
 
 - sem cursor nomeado (o oracledb não tem esse conceito): `preparar_cursor()`
-  (`arraysize`/`prefetchrows`) já faz o driver entregar em blocos, e iterar
-  `for linha in cur` nunca segura o resultado inteiro na memória. O gerador
-  continua **dono da própria conexão**, pelo mesmo motivo do Postgres: o corpo
-  roda depois de a resposta HTTP começar;
+  (`arraysize`/`prefetchrows`) faz o driver entregar em blocos, e iterar
+  `for linha in cur` nunca segura o resultado inteiro na memória. O gerador é
+  **dono da própria conexão**: o corpo roda depois de a resposta HTTP começar,
+  quando qualquer `with` do chamador já fechou;
 - as quatro colunas DERIVADAS (dia, unidade exibida, cliente canonizado, tipo de
   estoque) não saem de `LEFT JOIN`: saem das colunas cruas da própria linha,
   resolvidas em Python pelo retrato de `dimensoes_dw` — um lookup por linha;
 - toda coluna que o contrato declara `DATE` sai como `date`, e não como o
   `datetime` com hora zero que o Oracle entrega — senão o CSV ganharia um
-  `00:00:00` que o Postgres nunca escreveu, e os dois arquivos deixariam de bater;
+  `00:00:00` que nunca esteve no formato do arquivo (`DD/MM/AAAA`);
 - `pk_dw` é selecionado por `contrato.coluna_dw()`, que devolve
   `PK_FATO_VOL_*_CAT`. Selecionar `f.pk_dw` cru foi o `ORA-00904` que o
   transporte levou em produção em 04/set — e só no download, porque a Matriz e
@@ -135,7 +133,7 @@ def gerar_csv(filtros, registro=None):
             dim = dimensoes_dw.obter(cur)
             sql, params = _sql(filtros, dim)
             cur.execute(sql, params)
-            escritor.writerow([rotulo for _a, _s, rotulo in nomes])
+            escritor.writerow([rotulo for _a, rotulo in nomes])
             yield BOM + despejar()
             for bruta in cur:
                 linha = _linha_do_arquivo(bruta, indice, normalizadores, dim)
@@ -186,12 +184,12 @@ def gerar_xlsx(filtros, registro=None) -> bytes:
 
             livro = Workbook(write_only=True)
             aba = livro.create_sheet("volumetria")
-            aba.append([rotulo for _a, _s, rotulo in nomes])
+            aba.append([rotulo for _a, rotulo in nomes])
 
             # as colunas que TÊM que sair como texto, para o zero à esquerda
             # sobreviver. A lista sai do contrato, não da memória de ninguém.
             como_texto = {
-                i for i, (apelido, _s, _r) in enumerate(nomes)
+                i for i, (apelido, _r) in enumerate(nomes)
                 if apelido in contrato.IDENTIFICADORES_TEXTO
             }
 

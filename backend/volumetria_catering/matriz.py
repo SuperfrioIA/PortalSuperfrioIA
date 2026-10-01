@@ -1,9 +1,10 @@
 """A Matriz: hierarquia nas linhas, mes nas colunas.
 
-Porte de `catering/consulta/matriz.py` da nuvem-ia (main, 27/ago/2026), so com
-os imports trocados. O aceite celula a celula contra os CSVs do DW foi feito la
-(V3.2); aqui os testes provam que a soma da planilha bate com a Matriz no mesmo
-recorte, que e a invariante que este modulo precisa manter.
+Porte de `catering/consulta/matriz.py` da nuvem-ia (main, 27/ago/2026). O que
+ficou aqui e a parte que nao conhece banco: hierarquia, arvore, ordenacao,
+avisos e paginacao. A consulta do DW esta em `matriz_dw.py`, que entrega as
+linhas a `montar()`. Os testes provam que a soma da planilha bate com a Matriz
+no mesmo recorte, que e a invariante que este modulo precisa manter.
 
 ## A regra que define o formato
 
@@ -46,9 +47,10 @@ A planilha e o download continuam pedindo um movimento por vez: a Matriz
 
 ## Injecao de SQL
 
-Nome de coluna de medida e interpolado na string. Ele NUNCA vem do usuario: sai
-de `contrato.LENTES` / `contrato.coluna_exp()`, e `_medida()` confere contra o
-contrato antes de usar. Todo VALOR de filtro vai como parametro.
+Nome de coluna de medida e interpolado na string do SQL (em `matriz_dw.py`). Ele
+NUNCA vem do usuario: sai de `contrato.LENTES` / `contrato.coluna_exp()`, e
+`_medida()` confere contra o contrato antes de usar. Todo VALOR de filtro vai
+como parametro.
 """
 
 from backend.volumetria_catering import contrato, recorte
@@ -58,33 +60,6 @@ from backend.volumetria_catering.recorte import (  # reexportados: a API deste m
     meses_do_periodo,
     rotulos_dos_meses,
 )
-
-TABELA = recorte.TABELA
-
-# O nivel da arvore -> como ele sai do SQL. `rotulo` e o que a tela mostra;
-# `chave` e o que identifica a linha (e o que o filtro usa).
-NIVEL = {
-    "unidade": {
-        # a sigla EXIBIDA (a RMSPV do DW aparece como RMSPIV), com queda para a
-        # sigla da fonte se a unidade ainda nao esta em cat_unidades
-        "chave": recorte.SIGLA,
-        "rotulo": recorte.SIGLA,
-    },
-    "cliente": {
-        # chave = raiz do CNPJ; rotulo = razao social canonizada pela grafia de
-        # maior peso (cat_clientes), com queda para a grafia da propria linha
-        "chave": "f.nk_cliente",
-        "rotulo": recorte.CLIENTE_ROTULO,
-    },
-    "operacao": {
-        "chave": "f.descr_oper_wms",
-        "rotulo": "f.descr_oper_wms",
-    },
-    "tipo_estoque": {
-        "chave": recorte.TIPO_ESTOQUE,
-        "rotulo": recorte.TIPO_ESTOQUE,
-    },
-}
 
 # Trocar o terceiro nivel e mudar aqui, e so aqui. Ver docstring.
 FAIXA = "faixa"
@@ -117,78 +92,6 @@ UNIDADES_POR_PAGINA = 12
 # MESMA definicao de medida e de filtro. Duas copias derivariam em silencio.
 _medida = recorte.medida
 _medidas_da_consulta = recorte.medidas_da_lente
-
-
-def _sql(movimento, niveis, medidas, filtros):
-    """Monta a consulta. Identificador vem do contrato; valor vai parametrizado.
-
-    O `FROM`/`WHERE` sai de `recorte.de_para_where()` -- e o mesmo pedaco que a
-    planilha e o download usam."""
-    grupos = [NIVEL[n]["chave"] for n in niveis if n not in FORA_DO_SQL]
-    rotulos = [NIVEL[n]["rotulo"] for n in niveis if n not in FORA_DO_SQL]
-
-    selecoes = []
-    for i, (chave, rotulo) in enumerate(zip(grupos, rotulos)):
-        selecoes.append(f"{chave} AS chave_{i}")
-        if rotulo != chave:
-            selecoes.append(f"{rotulo} AS rotulo_{i}")
-    selecoes.append("to_char(date_trunc('month', f.nk_calendario), 'YYYY-MM') AS mes")
-
-    # Tudo o que entrou ate aqui e chave de agrupamento; o que vem depois e
-    # agregado.
-    agrupamento = ", ".join(str(i + 1) for i in range(len(selecoes)))
-
-    for apelido, coluna in medidas.items():
-        selecoes.append(f"SUM(f.{coluna}) AS medida_{apelido or 'unica'}")
-    # Quantas LINHAS do fato entraram em cada grupo. Somando os grupos da o
-    # total de linhas do recorte -- e o numero que a tela precisa para avisar
-    # antes de um download grande. Tem que bater com o `total_linhas` da
-    # planilha, que conta o MESMO recorte por outro caminho.
-    selecoes.append("count(*) AS linhas")
-
-    # O movimento vai EXPLICITO: na visao conjunta, `filtros.movimento` e `amb`
-    # e nao nomeia tabela nenhuma. Ver `recorte.de_para_where`.
-    de_para_where, params = recorte.de_para_where(filtros, movimento)
-    sql = "\n".join((
-        f"SELECT {', '.join(selecoes)}",
-        de_para_where,
-        f"GROUP BY {agrupamento}",
-    ))
-    return sql, params
-
-
-def _consultar(cur, filtros, movimento, niveis, medidas):
-    """Roda a consulta de UM movimento e devolve `(linhas, total_de_linhas)`."""
-    sql, params = _sql(movimento, niveis, medidas, filtros)
-    cur.execute(sql, params)
-    colunas = [d[0] for d in cur.description]
-    concretos = [n for n in niveis if n not in FORA_DO_SQL]
-
-    linhas = []
-    total_linhas = 0
-    for bruta in cur.fetchall():
-        registro = dict(zip(colunas, bruta))
-        total_linhas += registro["linhas"]
-        chaves = [registro[f"chave_{i}"] for i in range(len(concretos))]
-        rotulos = [
-            registro.get(f"rotulo_{i}", registro[f"chave_{i}"]) or registro[f"chave_{i}"]
-            for i in range(len(concretos))
-        ]
-        if MOVIMENTO in niveis:
-            # Entra no FIM, depois dos niveis que vieram do SQL, para `_inserir`
-            # poder trata-lo como qualquer outro nivel concreto.
-            chaves.append(movimento)
-            rotulos.append(ROTULO_MOVIMENTO[movimento])
-        linhas.append({
-            "chaves": chaves,
-            "rotulos": rotulos,
-            "mes": registro["mes"],
-            "medidas": {
-                apelido: registro[f"medida_{apelido or 'unica'}"]
-                for apelido in medidas
-            },
-        })
-    return linhas, total_linhas
 
 
 def _medidas_da_conjunta(lente, faixa):
@@ -268,23 +171,15 @@ def _arvore(linhas, niveis, medidas, faixa_escolhida):
 _rotulo_faixa = recorte.rotulo_faixa
 
 
-def matriz(cur, filtros: Filtros) -> dict:
-    """A Matriz do recorte, lida do Postgres. Devolve valor CRU, na unidade da
-    fonte (kg para peso, R$ para valor) -- converter para tonelada e trabalho da
-    tela, e o download quer o numero cru."""
-    return montar(cur, filtros, _consultar)
-
-
 def montar(cur, filtros: Filtros, consultar) -> dict:
     """Monta a Matriz a partir de quem sabe CONSULTAR um movimento.
 
     `consultar(cur, filtros, movimento, niveis, medidas)` devolve
-    `(linhas, total_linhas)` no formato de `_consultar`. E o unico ponto em que
-    o dialeto do banco entra: o Postgres passa `_consultar` daqui, o DW passa o
-    dele (`matriz_dw.py`). Tudo abaixo -- hierarquia, arvore, ordenacao, avisos,
-    paginacao -- e independente da fonte e existe uma vez so, de proposito: as
-    duas telas tem que dizer a MESMA coisa sobre o mesmo recorte, e dois textos
-    de aviso divergiriam em silencio."""
+    `(linhas, total_linhas)`: cada linha e `{"chaves", "rotulos", "mes",
+    "medidas"}` -- um grupo do SQL por mes, ja com a chave e o rotulo de cada
+    nivel concreto da hierarquia. E o unico ponto em que o dialeto do banco
+    entra: hoje e o `consultar` do DW (`matriz_dw.py`). Tudo abaixo --
+    hierarquia, arvore, ordenacao, avisos, paginacao -- nao conhece banco."""
     filtros.validar()
     movimento = filtros.movimento
     conjunta = movimento == recorte.CONJUNTA

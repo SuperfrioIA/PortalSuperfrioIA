@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0] — 2026-10-01
+### Removido
+- Volumetria de Catering lê só o DW Oracle — o caminho antigo pelo banco intermediário da
+  nuvem-ia foi desmontado: a chave de fonte (`VOLUMETRIA_CATERING_FONTE`), a conexão
+  `VOLUMETRIA_DB_URL`, a rede `hub-nuvem` e o comparador só-admin
+  (`/api/volumetria-catering/comparar/*`) saem do Hub. Para quem usa a tela nada muda: ela já
+  lia o DW desde a virada de 07/09
+### Alterado
+- Respostas da API de Volumetria de Catering mais enxutas — `GET /api/volumetria-catering/opcoes`
+  deixa de devolver `fonte` e `cargas`, e `GET /api/volumetria-catering/diagnostico-dw` deixa de
+  devolver `fonte_da_tela`: com uma fonte só, não há o que escolher nem carga para listar. Sem
+  dado no DW, a dica de período da tela diz "sem dado no DW ainda"
+### Observações
+- O `.env` da VM pode perder `VOLUMETRIA_DB_URL` e `VOLUMETRIA_CATERING_FONTE`; o Hub as ignora
+  se ficarem lá
+
 ## [0.16.0] — 2026-09-06
 ### Adicionado
 - Volumetria de Catering pode ler o **DW Oracle direto**, sem o banco intermediário da

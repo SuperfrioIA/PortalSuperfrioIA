@@ -12,8 +12,8 @@ Duas defesas obrigatórias, decididas em 27/ago/2026:
 
 1. **mudança de schema é sempre duas PRs coordenadas** — migration lá, esta
    cópia aqui (regra a registrar nos dois CLAUDE.md no lote H4);
-2. `schema.py` compara este contrato com as colunas reais do banco
-   (`information_schema`) e **falha nomeando a coluna** quando divergirem.
+2. `schema_dw.py` compara este contrato com as colunas reais do DW
+   (`ALL_TAB_COLUMNS`) e **falha nomeando a coluna** quando divergirem.
 
 ## A premissa que caiu em 02/set/2026
 
@@ -27,11 +27,10 @@ Continua fora o que pertence só à carga: o piso de período (`ano_minimo()`,
 `piso_do_periodo()`) e o prefixo de instância. A tela recorta por período pelo
 filtro de quem está olhando, e escopo de instância é assunto da carga.
 
-Enquanto a chave `VOLUMETRIA_CATERING_FONTE` (`fonte.py`) não vira para `dw` em
-produção, este contrato descreve **duas** formas do mesmo dado — as `cat_*` do
-Postgres (que morrem no C6) e as `FATO_VOL_*` do DW —, e há uma conferência de
-drift para cada uma: `schema.py` contra o `information_schema` do Postgres,
-`schema_dw.py` contra o `ALL_TAB_COLUMNS` do Oracle.
+Até o C6 (01/out/2026) este contrato descrevia **duas** formas do mesmo dado —
+as `cat_*` do Postgres da nuvem-ia e as `FATO_VOL_*` do DW. Sobrou a do DW; os
+nomes de coluna continuam minúsculos porque nasceram no Postgres, e
+`coluna_dw()` faz a ponte.
 
 ## O que a medição da nuvem-ia decidiu, e este módulo herda
 
@@ -115,9 +114,9 @@ def tabela(movimento: str) -> str:
 
 
 # --------------------------------------------------------- fuso de exibição
-# `cat_cargas.terminada_em` é `timestamptz` (UTC). O `to_char` renderiza no fuso
-# da SESSÃO do Postgres, que no container é UTC — sem isto uma carga das 09h45
-# aparece como 12h45. Configurável para haver UM lugar para mexer.
+# O container roda em UTC. Sem um fuso de exibição explícito, a hora que o DW
+# devolve (`MAX(DW_DATA_ALTERACAO)`) e o "hoje" da tela sairiam deslocados.
+# Configurável para haver UM lugar para mexer.
 FUSO_EXIBICAO_PADRAO = "America/Sao_Paulo"
 ENV_FUSO_EXIBICAO = "VOLUMETRIA_FUSO_EXIBICAO"
 
@@ -130,7 +129,7 @@ def fuso_exibicao() -> str:
     """O fuso em que data e hora aparecem na tela, do ambiente ou do padrão.
 
     Valida na LEITURA: fuso escrito errado (`America/SaoPaulo`, `BRT`) falha
-    nomeando a variável, em vez de o Postgres estourar no meio de uma consulta."""
+    nomeando a variável, em vez de estourar no meio de uma consulta."""
     nome = (os.environ.get(ENV_FUSO_EXIBICAO) or "").strip()
     if not nome:
         return FUSO_EXIBICAO_PADRAO
@@ -150,7 +149,7 @@ def fuso_exibicao() -> str:
 # 2023 filtra para trás. `ano-corrente` é rolante; pinar é escrever a data.
 #
 # `hoje` entra como argumento: o relógio do container é UTC, e quem chama pega o
-# dia no fuso de exibição pelo Postgres.
+# dia no fuso de exibição (`dimensoes_dw.hoje_no_fuso`).
 ABERTURA_ANO_CORRENTE = "ano-corrente"
 ABERTURA_PADRAO = ABERTURA_ANO_CORRENTE
 ENV_ABERTURA_DE = "VOLUMETRIA_ABERTURA_DE"

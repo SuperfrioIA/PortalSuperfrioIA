@@ -1,5 +1,6 @@
-"""Volumetria de catering — o lado Oracle: conexão com o DW, contrato, a chave
-de fonte, a camada de decisões em memória e o SQL traduzido (C1 + C2).
+"""Volumetria de catering — o lado Oracle (hoje o único): conexão com o DW,
+contrato, a camada de decisões em memória e o SQL traduzido (C1 + C2; C6 apagou
+o lado Postgres, a chave de fonte e o comparador).
 
 ## O limite desta suíte, dito antes de qualquer coisa
 
@@ -12,14 +13,15 @@ normal — sem container, sem Postgres, e sem o `oracledb` instalado.
 O que se prova aqui: o **statement** que sai, os **binds**, a tradução dos
 filtros de decisão (sigla exibida -> sigla da fonte, tipo -> nomes de estoque),
 o mapeamento de linha (sigla, rótulo canônico, `DATE` -> `date`), a leitura do
-ambiente, a conferência de contrato, a chave de fonte, o cache das dimensões, e
-que nenhum caminho emite comando de escrita.
+ambiente, a conferência de contrato, o cache das dimensões, e que nenhum
+caminho emite comando de escrita.
 
 O que **não** se prova: que o Oracle de verdade aceita os statements, que as
 tabelas se chamam assim, que o usuário de leitura tem privilégio, e que os
-NÚMEROS batem com o Postgres. Os três primeiros a Maria prova abrindo
-`/api/volumetria-catering/diagnostico-dw` na VM; o último é o comparador do C3,
-rodado em produção com as duas fontes de pé.
+NÚMEROS estão certos. Os três primeiros a Maria prova abrindo
+`/api/volumetria-catering/diagnostico-dw` na VM; os números foram provados na
+virada de 07/set/2026 (7.052 células conferidas contra o Postgres, zero
+diferença) e, depois do C6, só a tela com dado real mostra.
 
 ## Duas guardas de somente leitura, e não uma
 
@@ -28,8 +30,8 @@ rodado em produção com as duas fontes de pé.
   `commit`/`rollback`/`executemany`. Pega o código que nenhum teste exercitou;
 - **de runtime**, no cursor falso: todo `execute` que não comece por `SELECT`
   estoura. Pega o comando montado por concatenação, que a estática não veria —
-  e cobre os endpoints do router, que a estática não varre (o router tem SQL
-  das duas fontes, e varrê-lo por palavra daria falso positivo eterno).
+  e cobre os endpoints do router, que a estática não varre (o router tem
+  mensagens em prosa, e varrê-lo por palavra daria falso positivo eterno).
 """
 
 import ast
@@ -42,13 +44,11 @@ from decimal import Decimal
 import pytest
 
 from backend.volumetria_catering import (
-    comparador,
     conexao_dw,
     contrato,
     dimensoes_dw,
     download,
     download_dw,
-    fonte,
     matriz_dw,
     planilha,
     planilha_dw,
@@ -256,11 +256,11 @@ def _fila_da_matriz_rec():
 
 @pytest.fixture(autouse=True)
 def _ambiente_limpo(monkeypatch):
-    """Nenhum teste daqui herda credencial, chave de fonte nem nome de tabela do
-    ambiente, e os dois caches (drift e dimensões) são zerados nas duas pontas."""
+    """Nenhum teste daqui herda credencial nem nome de tabela do ambiente, e os
+    dois caches (drift e dimensões) são zerados nas duas pontas."""
     for var in (
         conexao_dw.ENV_USUARIO, conexao_dw.ENV_SENHA, conexao_dw.ENV_HOST,
-        conexao_dw.ENV_PORTA, conexao_dw.ENV_SERVICO, fonte.ENV_FONTE,
+        conexao_dw.ENV_PORTA, conexao_dw.ENV_SERVICO,
         "DW_TABELA_REC", "DW_TABELA_EXP",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -278,12 +278,6 @@ def com_credencial(monkeypatch):
 
 
 @pytest.fixture
-def fonte_dw(monkeypatch, com_credencial):
-    """A chave virada para o DW, com credencial — o estado da VM depois do C5."""
-    monkeypatch.setenv(fonte.ENV_FONTE, "dw")
-
-
-@pytest.fixture
 def driver(monkeypatch):
     """Injeta o driver falso no lugar do import preguiçoso."""
     falso = DriverFalso()
@@ -298,50 +292,14 @@ def _conexao(monkeypatch, **kwargs) -> ConexaoFalsa:
     return conexao
 
 
-# ======================================================== a chave de fonte
-def test_a_fonte_padrao_e_o_postgres_que_esta_em_producao():
-    """Sem a variável, nada muda para quem usa a tela hoje."""
-    assert fonte.ativa() == fonte.POSTGRES
-    assert not fonte.e_dw()
-
-
-def test_a_chave_vira_para_o_dw(monkeypatch):
-    monkeypatch.setenv(fonte.ENV_FONTE, "dw")
-    assert fonte.ativa() == fonte.DW
-    assert fonte.e_dw()
-    # maiúscula e espaço não fazem a virada falhar por descuido de digitação
-    monkeypatch.setenv(fonte.ENV_FONTE, " DW ")
-    assert fonte.e_dw()
-
-
-def test_valor_invalido_nomeia_a_variavel_e_nao_cai_no_padrao(monkeypatch):
-    """`oracle` parece certo e não é. Cair no padrão em silêncio faria a Maria
-    acreditar que virou enquanto a tela continua no Postgres."""
-    monkeypatch.setenv(fonte.ENV_FONTE, "oracle")
-    with pytest.raises(fonte.FonteInvalida) as erro:
-        fonte.ativa()
-    assert fonte.ENV_FONTE in str(erro.value)
-    assert "postgres" in str(erro.value) and "dw" in str(erro.value)
-
-
-def test_com_a_chave_em_postgres_a_tela_nao_depende_do_dw(client, admin_headers, monkeypatch):
-    """A tela continua no `nuvem-db` e continua 503 sem `VOLUMETRIA_DB_URL`,
-    mesmo com a credencial do DW no ambiente — é o que faz os lotes C1–C4 irem
-    para produção sem mudar nada para quem usa."""
-    monkeypatch.setenv(conexao_dw.ENV_USUARIO, "hub_leitura_dw")
-    monkeypatch.setenv(conexao_dw.ENV_SENHA, "senha-de-mentira")
-    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
-    r = client.get(f"{BASE}/opcoes", headers=admin_headers)
-    assert r.status_code == 503
-    assert "VOLUMETRIA_DB_URL" in r.json()["detail"]
-
-
-def test_chave_invalida_e_503_nomeando_a_variavel_em_toda_rota(client, admin_headers, monkeypatch):
-    monkeypatch.setenv(fonte.ENV_FONTE, "oracle")
+# ================================================ sem credencial, o card cai sozinho
+def test_sem_credencial_toda_rota_e_503_nomeando_a_variavel(client, admin_headers):
+    """O ambiente da suíte não tem `DW_LEITURA_*` (a fixture autouse as tira):
+    nenhuma rota de consulta vira 500, e o resto do Hub não sente."""
     for rota, params in (("/opcoes", {}), ("/matriz", JAN), ("/planilha", JAN)):
         r = client.get(f"{BASE}{rota}", params=params, headers=admin_headers)
         assert r.status_code == 503, rota
-        assert fonte.ENV_FONTE in r.json()["detail"]
+        assert conexao_dw.ENV_USUARIO in r.json()["detail"]
     assert client.get("/api/health").status_code == 200
 
 
@@ -1106,15 +1064,6 @@ def test_planilha_dw_devolve_as_mesmas_colunas_e_aplica_as_decisoes_por_linha():
 
 
 # ================================================================ download_dw
-def test_download_dw_tem_o_mesmo_cabecalho_do_postgres():
-    """A pessoa que baixa o mesmo recorte das duas fontes tem que receber dois
-    arquivos iguais. As colunas e os rótulos são literalmente os mesmos."""
-    for movimento in contrato.MOVIMENTOS:
-        assert download_dw.colunas(movimento) == download.colunas(movimento)
-    assert download_dw.nome_do_arquivo is download.nome_do_arquivo
-    assert download_dw.TETO_XLSX == download.TETO_XLSX
-
-
 def test_download_dw_seleciona_a_pk_pelo_nome_do_dw():
     """Regressão do transporte (04/set): `f.pk_dw` não existe no DW; o nome é
     `PK_FATO_VOL_*_CAT`. Só o download seleciona a PK — Matriz e planilha nunca
@@ -1163,7 +1112,7 @@ def test_download_dw_csv_e_excel_first_com_as_derivadas_e_o_date_sem_hora(monkey
     linhas = [l for l in conteudo.split("\r\n") if l]
 
     assert conteudo.startswith(download.BOM)
-    assert linhas[0].lstrip(download.BOM) == ";".join(r for _a, _s, r in download.colunas("rec"))
+    assert linhas[0].lstrip(download.BOM) == ";".join(r for _a, r in download.colunas("rec"))
     campos = linhas[1].split(";")
     # as quatro derivadas, na ordem: dia, unidade exibida, cliente canônico, tipo
     assert campos[:4] == ["05/01/2026", "RMSPIV", "CONVIDA", "CONGELADO"]
@@ -1198,8 +1147,8 @@ def test_download_dw_xlsx_escreve_identificador_como_texto(monkeypatch):
     aba = livro["volumetria"]
     cabecalho = [c.value for c in aba[1]]
     linha = [c for c in aba[2]]
-    assert cabecalho == [r for _a, _s, r in download.colunas("rec")]
-    posicao = {apelido: i for i, (apelido, _s, _r) in enumerate(download.colunas("rec"))}
+    assert cabecalho == [r for _a, r in download.colunas("rec")]
+    posicao = {apelido: i for i, (apelido, _r) in enumerate(download.colunas("rec"))}
     guia = linha[posicao["num_gem"]]
     assert guia.value == "0000000001" and guia.number_format == "@"
     assert linha[posicao["unidade"]].value == "RMSPIV"
@@ -1207,14 +1156,95 @@ def test_download_dw_xlsx_escreve_identificador_como_texto(monkeypatch):
     assert linha[posicao["dia"]].value == datetime(2026, 1, 5)  # openpyxl guarda date como datetime
 
 
+def test_download_dw_csv_fecha_a_auditoria_com_a_contagem_real(client, monkeypatch):
+    """A trilha de auditoria diz quem baixou o que E quantas linhas saíram. Era
+    provado na suíte Postgres do catering (apagada no C6); sem este teste uma
+    mudança no gerador gravaria a contagem errada sem ninguém ver."""
+    from backend.volumetria_catering import auditoria
+
+    aquecer(dim_falsa())
+    _conexao(monkeypatch, resultados=[[_linha_crua("rec"), _linha_crua("rec")]])
+    f = recorte_dw.Filtros(**JAN, movimento="rec").validar()
+    registro = auditoria.abrir(f.como_dict(), "csv", ip="10.0.0.1", usuario="admin")
+    "".join(download_dw.gerar_csv(f, registro))
+
+    linha = next(r for r in auditoria.listar(1000) if r["id"] == registro)
+    assert linha["status"] == "ok" and linha["linhas"] == 2
+
+
+def test_download_dw_csv_interrompido_pelo_cliente_marca_a_auditoria(client, monkeypatch):
+    """Aba fechada no meio: o Starlette descarta o gerador, e isso não é
+    `Exception`. Sem o ramo `GeneratorExit` a linha ficaria `rodando` para sempre."""
+    from backend.volumetria_catering import auditoria
+
+    aquecer(dim_falsa())
+    conexao = _conexao(monkeypatch, resultados=[[_linha_crua("rec")]])
+    f = recorte_dw.Filtros(**JAN, movimento="rec").validar()
+    registro = auditoria.abrir(f.como_dict(), "csv", ip=None, usuario="admin")
+    gerador = download_dw.gerar_csv(f, registro)
+    next(gerador)       # cabeçalho já saiu
+    gerador.close()     # o cliente foi embora
+
+    linha = next(r for r in auditoria.listar(1000) if r["id"] == registro)
+    assert linha["status"] == "erro" and "interrompido" in linha["erro"]
+    assert conexao.fechada
+
+
+def test_download_xlsx_acima_do_teto_e_400_pelo_router_e_marca_a_auditoria(
+    client, admin_headers, com_credencial, monkeypatch
+):
+    """O 400 do teto e o 500 genérico dependem da ORDEM dos `except` do router:
+    um `except Exception` antes de `DownloadGrandeDemais` engoliria o erro do
+    chamador e devolveria 500."""
+    from backend.volumetria_catering import auditoria
+
+    aquecer(dim_falsa())
+    _conexao(monkeypatch, resultados=[[(Decimal(download.TETO_XLSX + 1),)]])
+    antes = {r["id"] for r in auditoria.listar(1000)}
+    r = client.get(f"{BASE}/download", params={**JAN, "formato": "xlsx"}, headers=admin_headers)
+    assert r.status_code == 400
+    assert "CSV" in r.json()["detail"]
+    novas = [x for x in auditoria.listar(1000) if x["id"] not in antes]
+    assert [x["status"] for x in novas] == ["erro"]
+
+
+def test_download_xlsx_com_o_oracle_caindo_no_meio_e_503_pelo_router(
+    client, admin_headers, com_credencial, monkeypatch
+):
+    erro_do_oracle = type("DatabaseError", (Exception,), {"__module__": "oracledb.exceptions"})
+
+    def cai(*_args, **_kwargs):
+        raise erro_do_oracle("ORA-03113")
+
+    _conexao(monkeypatch)
+    monkeypatch.setattr(download_dw, "gerar_xlsx", cai)
+    r = client.get(f"{BASE}/download", params={**JAN, "formato": "xlsx"}, headers=admin_headers)
+    assert r.status_code == 503
+    assert "DW falhou" in r.json()["detail"] and "DatabaseError" in r.json()["detail"]
+
+
+def test_planilha_dw_pagina_alem_do_fim_devolve_vazio_com_aviso(monkeypatch):
+    """O usuário aperta um filtro estando na página 5 e o recorte passa a ter 2
+    páginas: o contrato é vazio + aviso, e não erro."""
+    aquecer(dim_falsa())
+    conexao = _conexao(monkeypatch, resultados=[
+        [(Decimal(150),)], {"descricao": ["NK_CALENDARIO"], "linhas": []},
+    ])
+    f = recorte_dw.Filtros(**JAN, movimento="rec", pagina=5).validar()
+    with conexao.cursor() as cur:
+        d = planilha_dw.planilha(cur, f, dim_falsa())
+    assert d["linhas"] == []
+    assert d["paginacao"]["paginas"] == 2 and d["paginacao"]["total_linhas"] == 150
+    assert d["avisos"] == ["A página 5 está além do fim: são 2 página(s)."]
+
+
 # ========================================================= endpoints (router)
-def test_opcoes_do_dw_traz_listas_procedencia_e_cacheia(client, admin_headers, fonte_dw, monkeypatch):
+def test_opcoes_do_dw_traz_listas_procedencia_e_cacheia(client, admin_headers, com_credencial, monkeypatch):
     conexao = _conexao(monkeypatch, resultados=_fila_da_varredura())
 
     r = client.get(f"{BASE}/opcoes", headers=admin_headers)
     assert r.status_code == 200, r.text
     corpo = r.json()
-    assert corpo["fonte"] == "dw"
     assert corpo["unidades"] == ["RMRJ", "RMSPII", "RMSPIV"]
     assert corpo["tipos_estoque"] == ["CONGELADO", "RESFRIADO", "SECO"]
     assert corpo["clientes"] == [
@@ -1222,12 +1252,13 @@ def test_opcoes_do_dw_traz_listas_procedencia_e_cacheia(client, admin_headers, f
     ]
     assert corpo["operacoes"] == {"rec": ["NAO TROCA NOTA DE ARMAZENAGEM"], "exp": ["SAIDA NORMAL"]}
     assert corpo["periodo"] == {"de": "2023-01-01", "ate": "2026-09-05"}
-    # a procedência muda de significado: sem carga, o frescor é o da FONTE
-    assert corpo["cargas"] == []
+    # sem carga no meio, o frescor é o da própria fonte — e a chave `cargas`,
+    # do tempo do Postgres intermediário, não existe mais (C6)
+    assert "cargas" not in corpo and "fonte" not in corpo
     assert corpo["atualizado_ate"] == {"rec": "2026-09-05T07:05:00", "exp": "2026-09-03T07:10:00"}
     assert corpo["rotulos_calculados_em"]
     assert corpo["processo_dw"] == contrato.PROCESSO_DW
-    # o que a tela já lia continua lá, igual ao Postgres
+    # o que a tela lê além das listas
     for chave in ("abertura", "teto_confirmacao", "teto_xlsx", "lentes", "faixas", "movimentos", "contrato"):
         assert chave in corpo
     assert conexao.fechada
@@ -1239,16 +1270,7 @@ def test_opcoes_do_dw_traz_listas_procedencia_e_cacheia(client, admin_headers, f
     assert r2.json()["unidades"] == corpo["unidades"]
 
 
-def test_opcoes_do_postgres_declara_a_fonte(client, admin_headers, monkeypatch):
-    """O lado Postgres ganhou só a chave `fonte` — para a tela poder dizer de
-    onde veio o que está mostrando, nas duas fontes do mesmo jeito."""
-    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
-    # sem banco o Postgres responde 503; a chave é conferida no `_opcoes_estaticas`
-    # e na resposta do DW — aqui basta provar que a constante existe e é a padrão
-    assert fonte.PADRAO == fonte.POSTGRES
-
-
-def test_matriz_do_dw_responde_no_mesmo_formato(client, admin_headers, fonte_dw, monkeypatch):
+def test_matriz_do_dw_responde_no_mesmo_formato(client, admin_headers, com_credencial, monkeypatch):
     aquecer(dim_falsa())
     _conexao(monkeypatch, resultados=_fila_da_matriz_rec())
     r = client.get(f"{BASE}/matriz", params={**JAN, "movimento": "rec"}, headers=admin_headers)
@@ -1263,7 +1285,7 @@ def test_matriz_do_dw_responde_no_mesmo_formato(client, admin_headers, fonte_dw,
     assert corpo["paginacao"]["total_unidades"] == 2
 
 
-def test_planilha_do_dw_responde_no_mesmo_formato(client, admin_headers, fonte_dw, monkeypatch):
+def test_planilha_do_dw_responde_no_mesmo_formato(client, admin_headers, com_credencial, monkeypatch):
     aquecer(dim_falsa())
     _conexao(monkeypatch, resultados=[
         [(Decimal(1),)],
@@ -1281,7 +1303,7 @@ def test_planilha_do_dw_responde_no_mesmo_formato(client, admin_headers, fonte_d
     assert corpo["paginacao"]["total_linhas"] == 1
 
 
-def test_recusas_do_recorte_valem_igual_no_dw(client, admin_headers, fonte_dw, monkeypatch):
+def test_recusas_do_recorte_valem_igual_no_dw(client, admin_headers, com_credencial, monkeypatch):
     """400 antes de tocar no DW: filtro inválido e visão conjunta fora da Matriz
     são recusas do RECORTE, que é um só para as duas fontes."""
     conexao = _conexao(monkeypatch)
@@ -1292,7 +1314,7 @@ def test_recusas_do_recorte_valem_igual_no_dw(client, admin_headers, fonte_dw, m
     assert conexao.executados == []
 
 
-def test_dw_fora_do_ar_e_503_so_neste_card(client, admin_headers, fonte_dw, monkeypatch):
+def test_dw_fora_do_ar_e_503_so_neste_card(client, admin_headers, com_credencial, monkeypatch):
     class ErroDoDriver(Exception):
         pass
 
@@ -1303,7 +1325,7 @@ def test_dw_fora_do_ar_e_503_so_neste_card(client, admin_headers, fonte_dw, monk
     assert client.get("/api/health").status_code == 200
 
 
-def test_contrato_divergente_no_dw_e_503_com_a_coluna(client, admin_headers, fonte_dw, monkeypatch):
+def test_contrato_divergente_no_dw_e_503_com_a_coluna(client, admin_headers, com_credencial, monkeypatch):
     catalogo = {
         _tabela_curta("rec"): catalogo_do_contrato("rec", NK_CALENDARIO="VARCHAR2"),
         _tabela_curta("exp"): catalogo_do_contrato("exp"),
@@ -1314,7 +1336,7 @@ def test_contrato_divergente_no_dw_e_503_com_a_coluna(client, admin_headers, fon
     assert "NK_CALENDARIO" in r.json()["detail"]
 
 
-def test_download_ticket_e_download_csv_pelo_dw(client, admin_headers, fonte_dw, monkeypatch):
+def test_download_ticket_e_download_csv_pelo_dw(client, admin_headers, com_credencial, monkeypatch):
     aquecer(dim_falsa())
     conexao = _conexao(monkeypatch, resultados=[[_linha_crua("rec")]])
 
@@ -1326,12 +1348,12 @@ def test_download_ticket_e_download_csv_pelo_dw(client, admin_headers, fonte_dw,
     assert r.status_code == 200, r.text
     assert r.headers["content-disposition"].endswith('filename="catering_entrada_2026-01-01_a_2026-01-31.csv"')
     linhas = [l for l in r.content.decode("utf-8-sig").split("\r\n") if l]
-    assert linhas[0] == ";".join(rot for _a, _s, rot in download.colunas("rec"))
+    assert linhas[0] == ";".join(rot for _a, rot in download.colunas("rec"))
     assert linhas[1].startswith("05/01/2026;RMSPIV;CONVIDA;CONGELADO;")
     assert conexao.fechada
 
 
-def test_download_nao_abre_auditoria_quando_o_dw_esta_fora(client, admin_headers, fonte_dw, monkeypatch):
+def test_download_nao_abre_auditoria_quando_o_dw_esta_fora(client, admin_headers, com_credencial, monkeypatch):
     from backend.volumetria_catering import auditoria
 
     class ErroDoDriver(Exception):
@@ -1351,8 +1373,8 @@ def test_dimensoes_e_atualizar_sao_so_admin(client, operador_headers, analista_h
 
 
 def test_atualizar_agora_varre_o_dw_e_o_retrato_fica_visivel(client, admin_headers, com_credencial, monkeypatch):
-    """O botão que o plano previa: independe da chave de fonte, porque o cache
-    é do lado Oracle e aquecê-lo ANTES de virar é justamente o uso."""
+    """O botão "atualizar agora": varre o DW e o retrato fica visível em
+    `/dimensoes`, sem esperar o TTL."""
     conexao = _conexao(monkeypatch, resultados=_fila_da_varredura())
     assert client.get(f"{BASE}/dimensoes", headers=admin_headers).json() == {
         "em_cache": False, "dimensoes": None,
@@ -1423,22 +1445,13 @@ def test_diagnostico_aprova_e_fecha_a_conexao(
     assert conexao.fechada, "conexão com produção não se deixa fechar quando der"
 
 
-def test_diagnostico_declara_a_fonte_da_tela(
+def test_diagnostico_nao_declara_mais_a_fonte_da_tela(
     client, admin_headers, com_credencial, monkeypatch
 ):
-    """"Virou ou não virou?" tem que ter resposta num lugar só-admin, sem abrir
-    o `.env` da VM. Chave inválida aparece escrita, não some num 503."""
+    """Com uma fonte só, "virou ou não virou?" não tem mais pergunta: o campo
+    `fonte_da_tela` do tempo da chave saiu do diagnóstico (C6)."""
     _conexao(monkeypatch)
-    assert client.get(DIAG, headers=admin_headers).json()["fonte_da_tela"] == "postgres"
-
-    monkeypatch.setenv(fonte.ENV_FONTE, "dw")
-    assert client.get(DIAG, headers=admin_headers).json()["fonte_da_tela"] == "dw"
-
-    monkeypatch.setenv(fonte.ENV_FONTE, "oracle")
-    r = client.get(DIAG, headers=admin_headers)
-    assert r.status_code == 200
-    assert "inválida" in r.json()["fonte_da_tela"]
-    assert fonte.ENV_FONTE in r.json()["fonte_da_tela"]
+    assert "fonte_da_tela" not in client.get(DIAG, headers=admin_headers).json()
 
 
 def test_diagnostico_nao_devolve_a_senha(
@@ -1485,9 +1498,9 @@ _PALAVRAS_DE_ESCRITA = (
 )
 _METODOS_DE_ESCRITA = {"commit", "rollback", "executemany", "setinputsizes"}
 
-# TODOS os módulos que falam com o DW. O router NÃO entra: ele tem SQL das duas
-# fontes e mensagens em prosa, então varrê-lo por palavra daria falso positivo
-# eterno. Quem cobre os endpoints dele é a guarda de runtime.
+# TODOS os módulos que falam com o DW. O router NÃO entra: ele tem mensagens em
+# prosa, então varrê-lo por palavra daria falso positivo eterno. Quem cobre os
+# endpoints dele é a guarda de runtime.
 _MODULOS_DO_DW = (
     conexao_dw, schema_dw, dimensoes_dw, recorte_dw, matriz_dw, planilha_dw, download_dw,
 )
@@ -1543,7 +1556,7 @@ def test_guarda_estatica_nenhuma_chamada_de_escrita_no_driver(modulo):
 
 
 def test_guarda_de_runtime_todo_comando_emitido_e_select(
-    client, admin_headers, fonte_dw, monkeypatch
+    client, admin_headers, com_credencial, monkeypatch
 ):
     """A de runtime pega o comando montado por concatenação, que a estática não
     veria — e cobre os endpoints inteiros, do router ao catálogo, nas quatro
@@ -1578,191 +1591,10 @@ def test_nenhum_alter_session_e_emitido(com_credencial, monkeypatch):
     assert conexao.executados == [], "conectar() não emite comando nenhum"
 
 
-# ================================================================ comparador
-def _no(chave, rotulo, nivel, valor, filhos=()):
-    return {"chave": chave, "rotulo": rotulo, "nivel": nivel,
-            "valores": {"2026-01": valor}, "filhos": list(filhos)}
-
-
-def _matriz_sintetica(sanca=Decimal("150.000"), rotulo_cliente="CONVIDA", com_rmspii=True,
-                      total_linhas=4):
-    """Uma Matriz no formato de `matriz.matriz()`: duas unidades, um cliente e
-    uma operação em cada, um mês."""
-    linhas = []
-    if com_rmspii:
-        linhas.append(_no("RMSPII", "RMSPII", "unidade", Decimal("10.000"), [
-            _no("12345678", "SAPORE", "cliente", Decimal("10.000"), [
-                _no("OP B", "OP B", "operacao", Decimal("10.000")),
-            ]),
-        ]))
-    linhas.append(_no("RMSPIV", "RMSPIV", "unidade", sanca, [
-        _no("67945071", rotulo_cliente, "cliente", sanca, [
-            _no("OP A", "OP A", "operacao", sanca),
-        ]),
-    ]))
-    total = sanca + (Decimal("10.000") if com_rmspii else 0)
-    return {
-        "linhas": linhas, "total": {"2026-01": total}, "total_linhas": total_linhas,
-        "paginacao": {"total_unidades": len(linhas)}, "avisos": [],
-    }
-
-
-def test_achatar_percorre_a_arvore_por_chave_e_guarda_o_total():
-    valores, rotulos = comparador.achatar(_matriz_sintetica())
-    assert valores[(("RMSPIV",), "2026-01")] == Decimal("150.000")
-    assert valores[(("RMSPIV", "67945071"), "2026-01")] == Decimal("150.000")
-    assert valores[(("RMSPIV", "67945071", "OP A"), "2026-01")] == Decimal("150.000")
-    assert valores[((comparador.TOTAL,), "2026-01")] == Decimal("160.000")
-    assert rotulos[("RMSPIV", "67945071")] == "CONVIDA"
-
-
-def test_comparar_matriz_bate_quando_tudo_e_igual_mesmo_com_escala_e_tipo_diferentes():
-    """`SUM(integer)` vem `int` do Postgres e `Decimal` do Oracle; `150.000` e
-    `150` são o mesmo número. Nada disso é diferença."""
-    a = _matriz_sintetica(sanca=Decimal("150.000"))
-    b = _matriz_sintetica(sanca=Decimal("150"))
-    b["total"]["2026-01"] = 160  # int, como o Postgres devolveria para volume
-    resultado = comparador.comparar_matriz(a, b)
-    assert resultado["bate"] is True
-    assert resultado["diferencas"] == []
-    assert resultado["celulas_comparadas"] == 7  # 3 níveis x 2 unidades + total
-
-
-def test_comparar_matriz_aponta_a_celula_o_mes_e_os_dois_valores():
-    a = _matriz_sintetica(sanca=Decimal("150.000"))
-    b = _matriz_sintetica(sanca=Decimal("149.5"))
-    resultado = comparador.comparar_matriz(a, b)
-    assert resultado["bate"] is False
-    caminhos = {d["caminho"] for d in resultado["diferencas"]}
-    # a diferença aparece em todo nó do caminho e no total — é assim que se
-    # localiza ONDE ela nasce (a operação) e o quanto ela propaga
-    assert caminhos == {"RMSPIV", "RMSPIV › 67945071", "RMSPIV › 67945071 › OP A", comparador.TOTAL}
-    sanca = next(d for d in resultado["diferencas"] if d["caminho"] == "RMSPIV")
-    assert sanca == {"caminho": "RMSPIV", "mes": "2026-01", "postgres": "150.000", "dw": "149.5"}
-
-
-def test_rotulo_divergente_e_reportado_mas_nao_derruba_o_bate():
-    """Número diferente é bug de SQL; rótulo diferente é a camada de decisões
-    dizendo outra coisa. Saem separados, com diagnósticos separados."""
-    a = _matriz_sintetica(rotulo_cliente="CONVIDA")
-    b = _matriz_sintetica(rotulo_cliente="NOVITA")
-    resultado = comparador.comparar_matriz(a, b)
-    assert resultado["bate"] is True
-    assert resultado["rotulos_divergentes"] == [
-        {"caminho": "RMSPIV › 67945071", "postgres": "CONVIDA", "dw": "NOVITA"},
-    ]
-
-
-def test_caminho_que_so_existe_numa_fonte_e_diferenca():
-    a = _matriz_sintetica(com_rmspii=True)
-    b = _matriz_sintetica(com_rmspii=False)
-    resultado = comparador.comparar_matriz(a, b)
-    assert resultado["bate"] is False
-    assert "RMSPII" in resultado["caminhos_so_no_postgres"]
-    assert resultado["caminhos_so_no_dw"] == []
-    assert resultado["total_unidades"] == {"postgres": 2, "dw": 1}
-    ausente = next(d for d in resultado["diferencas"] if d["caminho"] == "RMSPII")
-    assert ausente["dw"] == "(ausente)"
-
-
-def test_none_e_zero_sao_diferentes_e_total_linhas_conta():
-    a = _matriz_sintetica(sanca=Decimal("0"))
-    b = _matriz_sintetica(sanca=Decimal("0"))
-    b["linhas"][1]["valores"]["2026-01"] = None
-    assert comparador.comparar_matriz(a, b)["bate"] is False
-    c = _matriz_sintetica(total_linhas=5)
-    resultado = comparador.comparar_matriz(_matriz_sintetica(), c)
-    assert resultado["bate"] is False and resultado["diferencas"] == []
-    assert resultado["total_linhas"] == {"postgres": 4, "dw": 5}
-
-
-def test_comparar_opcoes_lista_o_que_so_existe_num_lado():
-    pg = {
-        "unidades": ["RMRJ", "RMSPII", "RMSPIV"],
-        "clientes": [{"chave": "1", "rotulo": "CONVIDA"}, {"chave": "2", "rotulo": "SAPORE"}],
-        "tipos_estoque": ["CONGELADO", "SECO"],
-        "operacoes": {"rec": ["A"], "exp": ["B"]},
-        "periodo": {"de": "2023-01-01", "ate": "2026-09-05"},
-    }
-    dw = {
-        **pg,
-        "clientes": [{"chave": "1", "rotulo": "NOVITA"}, {"chave": "2", "rotulo": "SAPORE"}],
-        "tipos_estoque": ["CONGELADO", "SECO", "RESFRIADO"],
-    }
-    resultado = comparador.comparar_opcoes(pg, dw)
-    assert resultado["bate"] is False
-    assert resultado["unidades"]["bate"] is True
-    assert resultado["clientes"] == {"bate": False, "so_no_postgres": ["1=CONVIDA"], "so_no_dw": ["1=NOVITA"]}
-    assert resultado["tipos_estoque"]["so_no_dw"] == ["RESFRIADO"]
-    assert resultado["operacoes"]["rec"]["bate"] and resultado["periodo"]["bate"]
-    assert comparador.comparar_opcoes(pg, dict(pg))["bate"] is True
-
-
-def test_comparar_e_so_admin(client, operador_headers, analista_headers):
-    for headers in (operador_headers, analista_headers):
-        assert client.get(f"{BASE}/comparar/matriz", params=JAN, headers=headers).status_code == 403
-        assert client.get(f"{BASE}/comparar/opcoes", headers=headers).status_code == 403
-
-
-def test_comparar_matriz_relata_cada_lado_mesmo_quando_um_falha(
-    client, admin_headers, com_credencial, monkeypatch
-):
-    """Nesta suíte não há Postgres: o lado dele reporta o 503 como erro, o lado
-    DW responde, e a comparação fica `None` — sem o endpoint cair. Em produção
-    os dois respondem, e é aí que a comparação existe."""
-    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
-    aquecer(dim_falsa())
-    _conexao(monkeypatch, resultados=_fila_da_matriz_rec())
-
-    r = client.get(f"{BASE}/comparar/matriz", params={**JAN, "movimento": "rec"}, headers=admin_headers)
-    assert r.status_code == 200, r.text
-    corpo = r.json()
-    assert corpo["fonte_da_tela"] == "postgres"
-    assert corpo["postgres"]["ok"] is False
-    assert "VOLUMETRIA_DB_URL" in corpo["postgres"]["erro"]
-    assert corpo["dw"]["ok"] is True
-    assert isinstance(corpo["dw"]["ms"], int)
-    assert corpo["dw"]["resultado"]["total_linhas"] == 4
-    assert corpo["dw"]["resultado"]["total"] == {"2026-01": "160.000"}
-    assert corpo["comparacao"] is None
-    assert corpo["filtros"]["movimento"] == "rec"
-
-
-def test_comparar_le_as_duas_fontes_independentemente_da_chave(
-    client, admin_headers, fonte_dw, monkeypatch
-):
-    """Com a chave em `dw`, o comparador CONTINUA tentando o Postgres — é para
-    ser rodado depois da virada também, enquanto o `nuvem-db` estiver de pé."""
-    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
-    aquecer(dim_falsa())
-    _conexao(monkeypatch, resultados=_fila_da_matriz_rec())
-    corpo = client.get(f"{BASE}/comparar/matriz", params=JAN, headers=admin_headers).json()
-    assert corpo["fonte_da_tela"] == "dw"
-    assert corpo["postgres"]["ok"] is False and corpo["dw"]["ok"] is True
-
-
-def test_comparar_opcoes_endpoint_relata_cada_lado(client, admin_headers, com_credencial, monkeypatch):
-    monkeypatch.delenv("VOLUMETRIA_DB_URL", raising=False)
-    conexao = _conexao(monkeypatch, resultados=_fila_da_varredura())
-    r = client.get(f"{BASE}/comparar/opcoes", headers=admin_headers)
-    assert r.status_code == 200, r.text
-    corpo = r.json()
-    assert corpo["postgres"]["ok"] is False
-    assert corpo["dw"]["ok"] is True
-    assert corpo["dw"]["resultado"]["unidades"] == ["RMRJ", "RMSPII", "RMSPIV"]
-    assert corpo["comparacao"] is None
-    assert conexao.fechada
-
-
-def test_comparar_recusa_filtro_invalido_antes_de_tocar_em_qualquer_fonte(
-    client, admin_headers, com_credencial, monkeypatch
-):
-    conexao = _conexao(monkeypatch)
-    r = client.get(f"{BASE}/comparar/matriz", params={**JAN, "lente": "kg"}, headers=admin_headers)
-    assert r.status_code == 400
-    assert conexao.executados == []
-
-
-def test_cronometrar_devolve_o_resultado_e_milissegundos_inteiros():
-    resultado, ms = comparador.cronometrar(lambda: 42)
-    assert resultado == 42 and isinstance(ms, int) and ms >= 0
+# ============================================== o que o C6 apagou (01/out/2026)
+def test_o_comparador_e_as_rotas_de_comparacao_nao_existem_mais(client, admin_headers):
+    """Com uma fonte só não há o que comparar: as rotas saíram junto com o lado
+    Postgres, e 404 é a prova de que não sobrou nenhuma por descuido."""
+    for rota, params in (("/comparar/matriz", JAN), ("/comparar/opcoes", {})):
+        r = client.get(f"{BASE}{rota}", params=params, headers=admin_headers)
+        assert r.status_code == 404, rota
