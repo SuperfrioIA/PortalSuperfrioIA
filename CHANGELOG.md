@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.1] — 2026-10-01
+### Alterado
+- Volumetria de Catering: reorganização interna do código — a leitura do DW e a montagem do
+  filtro saíram da rota para uma camada de serviço própria. Nada muda para quem usa a tela:
+  mesmos números, mesmas mensagens de erro
+
 ## [0.17.0] — 2026-10-01
 ### Removido
 - Volumetria de Catering lê só o DW Oracle — o caminho antigo pelo banco intermediário da
