@@ -27,6 +27,8 @@ concessão) e devolve o resultado. Este módulo só conversa com o modelo.
 """
 import json
 import logging
+import re
+import threading
 import time
 from decimal import Decimal
 
@@ -43,12 +45,39 @@ _MILHAO = Decimal(1_000_000)
 
 _PARADAS_OK = {"end_turn", "stop_sequence"}
 
-# O SDK escreve a requisição INTEIRA (a pergunta e os dados que o modelo recebe) em log de
-# nível DEBUG. Se alguém ligar DEBUG no processo para investigar outra coisa, a pergunta
-# e o dado iriam para o log do servidor: um nível explícito no logger do SDK impede isso,
-# qualquer que seja o nível do logger raiz. Os de transporte ficam em WARNING também.
-for _nome in ("anthropic", "httpx2", "httpcore2"):
-    logging.getLogger(_nome).setLevel(logging.WARNING)
+def _travar_logs() -> None:
+    """O SDK escreve a requisição INTEIRA (a pergunta e os dados que o modelo recebe) em log
+    DEBUG. Se alguém ligar DEBUG no processo, a pergunta e o dado iriam para o log do servidor:
+    um nível explícito nos loggers do SDK impede isso, qualquer que seja o nível do raiz.
+
+    Tem que valer DEPOIS do `import anthropic`: ao ser importado, o SDK lê `ANTHROPIC_LOG`
+    (`debug`/`info`) e reconfigura os próprios loggers, desfazendo uma trava feita antes. Por
+    isso é chamada no import deste módulo e de novo logo depois de cada `import anthropic`."""
+    for nome in ("anthropic", "httpx2", "httpcore2"):
+        logging.getLogger(nome).setLevel(logging.WARNING)
+
+
+_travar_logs()
+
+# Um cliente do SDK por processo (pool de conexões e TLS reaproveitados entre perguntas), recriado
+# só se a configuração mudar. O provedor é criado a cada pergunta; o cliente não.
+_COMPARTILHADO: dict = {"assinatura": None, "cliente": None}
+_TRAVA_DO_CLIENTE = threading.Lock()
+
+
+def _reiniciar_cliente_compartilhado() -> None:
+    with _TRAVA_DO_CLIENTE:
+        _COMPARTILHADO.update({"assinatura": None, "cliente": None})
+
+
+def _diagnostico(erro: Exception) -> tuple[int | None, str | None]:
+    """O status HTTP e o `error.type` da API (uma palavra de um conjunto fixo), para o primeiro
+    erro real dizer o que foi (400? 401? 404?) sem expor a mensagem."""
+    status = getattr(erro, "status_code", None)
+    corpo = getattr(erro, "body", None)
+    tipo_api = corpo.get("error", {}).get("type") if isinstance(corpo, dict) and isinstance(corpo.get("error"), dict) else None
+    ok = isinstance(tipo_api, str) and re.fullmatch(r"[a-z_]{3,40}", tipo_api) is not None
+    return (status if isinstance(status, int) else None), (tipo_api if ok else None)
 
 
 def _tipo_do_erro(erro: Exception) -> str:
@@ -58,6 +87,7 @@ def _tipo_do_erro(erro: Exception) -> str:
         import anthropic
     except ImportError:  # pragma: no cover  (se o SDK não existe, não houve erro dele)
         return "provedor"
+    _travar_logs()
 
     # a ordem importa: o timeout é um caso da conexão, e a sobrecarga (529) um caso do 5xx
     for classe, tipo in (
@@ -158,7 +188,8 @@ def _bloco_de_volta(bloco) -> dict:
 
 
 def _texto_final(conteudo) -> str:
-    return "".join(b.text for b in conteudo if b.type == "text").strip()
+    # "\n" entre blocos de texto: sem separador, o fim de um bloco colaria no número do seguinte
+    return "\n".join(b.text for b in conteudo if b.type == "text").strip()
 
 
 class ProvedorAnthropic:
@@ -180,9 +211,17 @@ class ProvedorAnthropic:
                 import anthropic
             except ImportError:
                 raise ErroDoProvedor("sdk_ausente") from None
-            self._cliente = anthropic.Anthropic(
-                api_key=chave, timeout=config.timeout_do_provedor_s(),
-                max_retries=config.tentativas_do_provedor())
+            _travar_logs()                      # o import acima pode ter religado o log (ANTHROPIC_LOG)
+            assinatura = (chave, config.timeout_do_provedor_s(), config.tentativas_do_provedor())
+            with _TRAVA_DO_CLIENTE:
+                if _COMPARTILHADO["assinatura"] != assinatura:
+                    antigo = _COMPARTILHADO["cliente"]
+                    _COMPARTILHADO["cliente"] = anthropic.Anthropic(
+                        api_key=chave, timeout=assinatura[1], max_retries=assinatura[2])
+                    _COMPARTILHADO["assinatura"] = assinatura
+                    if antigo is not None and hasattr(antigo, "close"):
+                        antigo.close()
+                self._cliente = _COMPARTILHADO["cliente"]
         return self._cliente
 
     def _chamar(self, requisicao: dict, uso: UsoDaPergunta):
@@ -193,7 +232,9 @@ class ProvedorAnthropic:
         except ErroDoProvedor:
             raise
         except Exception as erro:
-            raise ErroDoProvedor(_tipo_do_erro(erro)) from None   # `from None`: sem a mensagem do SDK
+            status, tipo_api = _diagnostico(erro)
+            # `from None`: sem a mensagem do SDK, que pode trazer trecho da requisição
+            raise ErroDoProvedor(_tipo_do_erro(erro), status=status, tipo_api=tipo_api) from None
         uso.somar(resposta.usage, int((self._relogio() - inicio) * 1000))
         return resposta
 
@@ -223,9 +264,12 @@ class ProvedorAnthropic:
         while True:
             if uso.rodadas >= max_rodadas:
                 raise ErroDoProvedor("rodadas")
-            if self._relogio() - inicio > prazo:
+            restante = prazo - (self._relogio() - inicio)
+            if restante <= 0:
                 raise ErroDoProvedor("prazo")
-            resposta = self._chamar({**requisicao, "messages": mensagens}, uso)
+            # cada tentativa nunca pede mais tempo do que o que resta do prazo (mínimo de 1 s)
+            tempo = max(1.0, min(config.timeout_do_provedor_s(), restante))
+            resposta = self._chamar({**requisicao, "messages": mensagens, "timeout": tempo}, uso)
             parada = resposta.stop_reason
 
             if parada == "tool_use":

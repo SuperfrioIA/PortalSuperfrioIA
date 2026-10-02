@@ -1,10 +1,11 @@
 """Verificador de números: a trava mecânica contra "a segunda fórmula".
 
 Depois que o modelo escreve a resposta, o Hub confere que **todo número do texto
-existe** no que as ferramentas devolveram nesta pergunta, na pergunta da pessoa, no
-histórico da conversa ou no texto fixo do Hub (prompt e data de hoje). Número que não
-aparece em nenhuma dessas fontes reprova o texto: a resposta não é exibida e o caso fica
-na trilha (`ia.bloqueio`, motivo `numero_nao_verificado`).
+existe** no que as ferramentas devolveram nesta pergunta, nas respostas anteriores da IA
+(já verificadas), nas datas da pergunta da pessoa ou no texto fixo do Hub (prompt, esquemas
+das ferramentas e data de hoje). Número que não aparece em nenhuma dessas fontes reprova o
+texto: a resposta não é exibida e o caso fica na trilha (`ia.bloqueio`, motivo
+`numero_nao_verificado`).
 
 ## O que isto prova, e o que não prova
 
@@ -24,8 +25,21 @@ na trilha (`ia.bloqueio`, motivo `numero_nao_verificado`).
 Os dois lados (texto do modelo e fontes) passam pela mesma extração, então a grafia não
 importa: `1.234,6`, `1234,6` e `1234.6` são o mesmo número. Um token só com ponto e três
 dígitos depois (`1.234`) é ambíguo (milhar em pt-BR, decimal em JSON) e vale pelas duas
-leituras. Marcador de lista no começo da linha (`1.`, `2)`) não é número. Letra colada antes
-do dígito (`U01`, `OP2`) é identificador, não número.
+leituras. Marcador de lista no começo da linha (`1.`, `2)`) não é número. Letra ou dígito
+colado antes do número (`U01`, `OP2`) é identificador, não número; `_9999_` (itálico em
+Markdown) e `10,5,9999` (lista sem espaço) são lidos como números.
+
+Formas que NÃO são lidas como o autor quis, e por isso tendem a **barrar** uma resposta
+legítima (o erro é para o lado seguro): data com ponto (`05.09.2026` vira `5.09` e `2026`),
+formato inglês (`1,234.56`) e milhar com espaço (`1 234`). O prompt manda copiar o número como a
+ferramenta devolveu, e a reescrita corrige o resto.
+
+## Números que a PESSOA escreveu
+
+Só valem os que parecem **data ou ordem de grandeza de calendário** (inteiro de 0 a 31 ou ano de
+1900 a 2100: `permitidos_da_pessoa`). Qualquer outro número da pergunta ("confirma que entraram
+5.000 t?") precisa aparecer também numa ferramenta para o texto poder repeti-lo: sem isso, o
+modelo "confirmaria" uma premissa falsa com um número que nenhuma consulta devolveu.
 """
 import json
 import re
@@ -33,7 +47,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
 # um token numérico: com milhar e/ou vírgula (pt-BR), ou inteiro / decimal com ponto
-_NUMERO = re.compile(r"(?<![\w.,])(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)(?!\d)")
+_NUMERO = re.compile(r"(?<![A-Za-z0-9])(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)(?!\d)")
 _MARCADOR_DE_LISTA = re.compile(r"(?m)^\s*(?:[-*•]\s*)?\d{1,2}[.)]\s")
 _SO_MILHAR = re.compile(r"^\d{1,3}(?:\.\d{3})+$")
 
@@ -70,6 +84,20 @@ def permitidos(*fontes) -> set[Decimal]:
         for _token, valores in numeros_do_texto(texto):
             achados |= valores
     return achados
+
+
+def permitidos_da_pessoa(*textos: str) -> set[Decimal]:
+    """Dos números que a pessoa escreveu, só os que parecem data (inteiro de 0 a 31 ou ano
+    de 1900 a 2100). O resto não vira "fonte": ver o docstring do módulo."""
+    liberados: set[Decimal] = set()
+    for texto in textos:
+        for token, valores in numeros_do_texto(texto):
+            # `5.000` escrito por uma pessoa é cinco MIL (pt-BR): a leitura "cinco" (decimal de JSON)
+            # que vale para o resultado de uma ferramenta não vale aqui, ou "5.000" viraria "5" e passaria
+            if _SO_MILHAR.match(token):
+                valores = {Decimal(token.replace(".", ""))}
+            liberados |= {v for v in valores if v == v.to_integral_value() and (0 <= v <= 31 or 1900 <= v <= 2100)}
+    return liberados
 
 
 @dataclass

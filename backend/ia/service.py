@@ -21,6 +21,7 @@ texto **fixo**: o modelo não improvisa sobre um dado que não leu.
 """
 import json
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -50,6 +51,16 @@ _C, _M, _Q = IaConversa.__table__, IaMensagem.__table__, IaConsulta.__table__
 
 def _json(valor) -> str:
     return json.dumps(valor, ensure_ascii=False, default=str)
+
+
+# O que é de OPERAÇÃO (gasto com o provedor, números que o verificador reprovou) fica na
+# mensagem gravada e na trilha, e não volta ao usuário comum: custo e região do contrato
+# não são assunto da tela, e o texto reprovado não pode vazar de volta (T-44).
+_SO_NO_SERVIDOR = ("uso", "numeros_reprovados")
+
+
+def _meta_publica(meta: dict) -> dict:
+    return {k: v for k, v in meta.items() if k not in _SO_NO_SERVIDOR}
 
 
 def _inicio_do_dia_utc() -> str:
@@ -134,7 +145,7 @@ def obter_conversa(user: dict, conversa_id: int) -> dict:
         "id": conversa["id"], "dominio": conversa["dominio"], "titulo": conversa["titulo"],
         "mensagens": [{
             "id": m["id"], "papel": m["papel"], "texto": m["texto"], "blocos": json.loads(m["blocos"]),
-            "meta": json.loads(m["meta"]), "feedback": m["feedback"], "criado_em": m["criado_em"],
+            "meta": _meta_publica(json.loads(m["meta"])), "feedback": m["feedback"], "criado_em": m["criado_em"],
         } for m in rows],
     }
 
@@ -178,8 +189,38 @@ def _resposta_anterior_pediu_a_base(session, conversa_id: int) -> bool:
         return False
 
 
+_EM_ANDAMENTO: dict[int, int] = {}
+_TRAVA_DE_ANDAMENTO = threading.Lock()
+
+
 def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int | None,
               ip: str | None, provedor=None) -> dict:
+    """Uma pergunta. No máximo `IA_MAX_SIMULTANEAS` por usuário ao mesmo tempo (T-42): a
+    cota diária conta e grava em transações separadas, e sem este limite uma rajada de
+    requisições passaria dela e multiplicaria o gasto com o provedor. O limite é por processo
+    (uma instância do Hub): é o que fecha a corrida, não um contador distribuído."""
+    with _TRAVA_DE_ANDAMENTO:
+        agora = _EM_ANDAMENTO.get(user["id"], 0)
+        reservou = agora < config.max_simultaneas()
+        if reservou:
+            _EM_ANDAMENTO[user["id"]] = agora + 1
+    if not reservou:
+        _bloquear(user, ip, str(dominio_slug)[:60], 429, "simultaneas",
+                  "Você já tem perguntas em andamento. Aguarde a resposta antes de enviar outra.", conversa_id)
+    try:
+        return _perguntar(user, dominio_slug=dominio_slug, pergunta=pergunta, conversa_id=conversa_id,
+                          ip=ip, provedor=provedor)
+    finally:
+        with _TRAVA_DE_ANDAMENTO:
+            restante = _EM_ANDAMENTO.get(user["id"], 1) - 1
+            if restante > 0:
+                _EM_ANDAMENTO[user["id"]] = restante
+            else:
+                _EM_ANDAMENTO.pop(user["id"], None)
+
+
+def _perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int | None,
+               ip: str | None, provedor=None) -> dict:
     inicio = time.perf_counter()
     dom = dominios.obter(dominio_slug)
     if dom is None:
@@ -231,9 +272,13 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
 
     prov = provedor or modulo_provedor.obter(config.provedor_nome())
     adaptador = ferramentas._adaptador(dom)
-    estado, texto_da_resposta, ctx, uso, tipo_do_erro = "ok", "", None, None, None
-    fixos = verificador.permitidos(prompt.sistema(), ferramentas.ESQUEMAS, mascarado,
-                                   [h["texto"] for h in historico])
+    estado, texto_da_resposta, ctx, uso, tipo_do_erro, reprovados, falha_http = "ok", "", None, None, None, [], {}
+    # Fontes que não dependem das ferramentas: constantes do Hub, respostas anteriores da IA (já
+    # verificadas) e só as DATAS do que a pessoa escreveu. Número solto da pergunta ("confirma
+    # que entraram 5.000 t?") NÃO é fonte: o modelo não pode "confirmar" o que nada devolveu.
+    fixos = (verificador.permitidos(prompt.sistema(), ferramentas.ESQUEMAS,
+                                    [h["texto"] for h in historico if h["papel"] == "ia"])
+             | verificador.permitidos_da_pessoa(mascarado, *[h["texto"] for h in historico if h["papel"] != "ia"]))
     try:
         ctx = ContextoDaPergunta(usuario=user, dominio=dom.slug, hoje=_hoje(adaptador),
                                  base_autorizada=base_autorizada)
@@ -261,9 +306,12 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
         veredito = verificador.verificar(texto_da_resposta, _liberados())
         if not veredito.ok:
             estado = ESTADO_NUMERO_NAO_VERIFICADO
+            # a trilha guarda só a QUANTIDADE (regra: nada do texto do modelo na trilha); os
+            # números reprovados ficam em `ia_mensagens.meta` (retenção de 90 dias), para
+            # diagnosticar um falso positivo
+            reprovados = veredito.nao_verificados[:5]
             ctx.bloqueios.append({"motivo": ESTADO_NUMERO_NAO_VERIFICADO,
-                                  "quantidade": len(veredito.nao_verificados),
-                                  "numeros": veredito.nao_verificados[:5]})
+                                  "quantidade": len(veredito.nao_verificados)})
             texto_da_resposta = (
                 "Não consegui validar os números da resposta, então não vou exibi-la."
                 + (" Os dados da consulta estão abaixo." if ctx.resultados else "")
@@ -277,6 +325,7 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
         # trazer trecho da requisição
         logger.warning("ia: provedor falhou (%s)", falha.tipo)
         estado, tipo_do_erro, texto_da_resposta = "erro", f"provedor_{falha.tipo}", MENSAGEM_NEUTRA
+        falha_http = {k: v for k, v in (("status", falha.status), ("tipo_api", falha.tipo_api)) if v is not None}
         ctx = ctx or ContextoDaPergunta(usuario=user, dominio=dom.slug, hoje=datetime.now(_FUSO).date())
     except Exception:
         logger.exception("ia: falha inesperada no provedor/ferramentas")
@@ -292,9 +341,14 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
     duracao_ms = int((time.perf_counter() - inicio) * 1000)
     meta = {"provedor": prov.nome, "rotulo_do_provedor": prov.rotulo, "estado": estado,
             "duracao_ms": duracao_ms, "dados_pessoais_mascarados": sorted(set(achados)),
-            "operacoes": ctx.totais(), "aguardando_base": ctx.pediu_base}
+            "operacoes": ctx.totais(),
+            # só vale se a pessoa VIU a pergunta: com o texto retido ou a falha do provedor ela não
+            # viu, e a próxima pergunta não pode herdar a autorização de `base` (DD-11)
+            "aguardando_base": ctx.pediu_base and estado == "ok"}
     if uso:
         meta["uso"] = uso
+    if reprovados:
+        meta["numeros_reprovados"] = reprovados
 
     with db() as session:
         mensagem_id = session.execute(insert(IaMensagem).values(
@@ -321,14 +375,16 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
     if estado == "indisponivel":
         auditoria.erro(user, ip, dominio=dom.slug, tipo="dw_indisponivel", conversa_id=conversa_id)
     if estado == "erro":
-        auditoria.erro(user, ip, dominio=dom.slug, tipo=tipo_do_erro or "provedor", conversa_id=conversa_id)
+        auditoria.erro(user, ip, dominio=dom.slug, tipo=tipo_do_erro or "provedor", conversa_id=conversa_id,
+                       **falha_http)
     auditoria.resposta(user, ip, dominio=dom.slug, conversa_id=conversa_id, estado=estado,
                        duracao_ms=duracao_ms, provedor=prov.nome, operacoes=ctx.totais(), uso=uso)
 
     return {
         "conversa_id": conversa_id,
         "estado": estado,
-        "mensagem": {"id": mensagem_id, "papel": "ia", "texto": texto_da_resposta, "blocos": blocos, "meta": meta},
+        "mensagem": {"id": mensagem_id, "papel": "ia", "texto": texto_da_resposta, "blocos": blocos,
+                     "meta": _meta_publica(meta)},
         "pergunta": mascarado,   # o que foi gravado e enviado: a tela troca o que a pessoa digitou
         "dados_pessoais_mascarados": sorted(set(achados)),
         "perguntas_hoje": usadas + 1,

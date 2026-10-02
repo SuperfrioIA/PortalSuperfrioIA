@@ -76,6 +76,18 @@ def eventos(desde: int, acao: str | None = None, app_slug: str | None = "superfr
     return [{**dict(l), "detalhes": json.loads(l["detalhes"] or "{}")} for l in linhas]
 
 
+def meta_gravada(mensagem_id: int) -> dict:
+    """O `meta` COMPLETO da mensagem, como gravado. A resposta HTTP omite o que é de operação
+    (`uso`, `numeros_reprovados`): quem confere gasto lê daqui ou da trilha."""
+    from sqlalchemy import select
+
+    from backend.core.database import db
+    from backend.ia.models import IaMensagem
+
+    with db() as session:
+        return json.loads(session.execute(select(IaMensagem.meta).where(IaMensagem.id == mensagem_id)).scalar_one())
+
+
 def registros_de_consulta() -> list[dict]:
     from sqlalchemy import select
 

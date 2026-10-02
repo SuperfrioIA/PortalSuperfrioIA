@@ -24,9 +24,10 @@ ferramenta devolve `dict` já pronto: o número vem calculado pelo Hub.
 segue. `EncerrarPergunta` sobe até o orquestrador e termina a pergunta.
 """
 import importlib
+import json
 import time
 
-from backend.ia import dominios
+from backend.ia import config, dominios
 from backend.ia.politicas import ContextoDaPergunta, EncerrarPergunta, ErroDeFerramenta
 
 _PARAMETROS_DA_CONSULTA = {
@@ -137,7 +138,22 @@ def _registro(ctx, inicio, *, situacao, motivo=None, parametros=None, linhas=Non
 
 def executar(nome: str, argumentos: dict, ctx: ContextoDaPergunta) -> dict:
     """Executa uma ferramenta pedida pelo modelo. Nunca levanta `ErroDeFerramenta`;
-    pode levantar `EncerrarPergunta`, que o orquestrador trata."""
+    pode levantar `EncerrarPergunta`, que o orquestrador trata.
+
+    O resultado que volta ao modelo tem teto de tamanho (`IA_TAM_RESULTADO`): acima dele o
+    modelo recebe `resultado_grande` e a recusa fica na trilha. Os blocos exibidos ao usuário
+    (montados pelo Hub, não pelo modelo) não passam por este teto."""
+    saida = _executar(nome, argumentos, ctx)
+    tamanho = len(json.dumps(saida, ensure_ascii=False, default=str))
+    if tamanho > config.tamanho_maximo_do_resultado():
+        _bloqueio(ctx, "resultado_grande", ferramenta=nome, tamanho=tamanho)
+        return {"erro": "resultado_grande",
+                "mensagem": "O resultado é grande demais para ser analisado de uma vez. Restrinja o período, "
+                            "a unidade ou o número de itens e consulte de novo."}
+    return saida
+
+
+def _executar(nome: str, argumentos: dict, ctx: ContextoDaPergunta) -> dict:
     ctx.novo_passo()
     if nome not in NOMES:
         return _bloqueio(ctx, "ferramenta_desconhecida", ferramenta=str(nome)[:60])

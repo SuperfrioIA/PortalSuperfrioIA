@@ -37,12 +37,14 @@ def _rodar(modelo, executar=None, **contexto):
 
 
 @pytest.fixture(autouse=True)
-def _sem_configuracao_de_provedor(monkeypatch):
-    for var in ("IA_ESFORCO", "IA_INFERENCE_GEO", "IA_MODELO", "IA_REPAROS", "IA_MAX_PASSOS", "IA_TIMEOUT_S",
-                "IA_TENTATIVAS", "IA_PRAZO_PERGUNTA_S", "IA_MAX_TOKENS_SAIDA", "ANTHROPIC_API_KEY",
-                "IA_PRECO_ENTRADA_USD_MTOK", "IA_PRECO_SAIDA_USD_MTOK", "IA_PRECO_CACHE_LEITURA_USD_MTOK",
-                "IA_PRECO_CACHE_ESCRITA_USD_MTOK", "IA_CAMBIO_USD_BRL"):
-        monkeypatch.delenv(var, raising=False)
+def _cliente_compartilhado_limpo():
+    """O cliente do SDK é um por processo; um teste não pode herdar o de outro. (O ambiente `IA_*` e
+    `ANTHROPIC_*` já vem limpo do `conftest.py`.)"""
+    from backend.ia import provedor_anthropic
+
+    provedor_anthropic._reiniciar_cliente_compartilhado()
+    yield
+    provedor_anthropic._reiniciar_cliente_compartilhado()
 
 
 # ================================================================= requisição
@@ -229,12 +231,93 @@ def test_cliente_nasce_com_chave_timeout_e_tentativas_da_configuracao(monkeypatc
     monkeypatch.setattr(anthropic, "Anthropic", Cliente)
     monkeypatch.setenv("ANTHROPIC_API_KEY", CHAVE_DE_TESTE)
     ProvedorAnthropic().responder(_contexto(), lambda n, a: {})
-    assert visto == {"api_key": CHAVE_DE_TESTE, "timeout": 45.0, "max_retries": 2}
+    assert visto == {"api_key": CHAVE_DE_TESTE, "timeout": 30.0, "max_retries": 2}
 
     monkeypatch.setenv("IA_TIMEOUT_S", "10")
     monkeypatch.setenv("IA_TENTATIVAS", "0")
     ProvedorAnthropic().responder(_contexto(), lambda n, a: {})
     assert visto["timeout"] == 10.0 and visto["max_retries"] == 0
+
+
+def test_o_cliente_do_sdk_e_um_por_processo_e_so_recriado_se_a_configuracao_mudar(monkeypatch):
+    """Cada pergunta cria um provedor novo, mas o pool de conexões (e o TLS) é reaproveitado."""
+    import anthropic
+
+    criados = []
+    real = ModeloFalso([mensagem([texto("Ok.")]) for _ in range(4)]).cliente()
+
+    class Cliente:
+        def __init__(self, **kwargs):
+            criados.append(kwargs)
+            self.messages = real.messages
+            self.fechado = False
+
+        def close(self):
+            self.fechado = True
+
+    monkeypatch.setattr(anthropic, "Anthropic", Cliente)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", CHAVE_DE_TESTE)
+    for _ in range(3):
+        ProvedorAnthropic().responder(_contexto(), lambda n, a: {})
+    assert len(criados) == 1, "três perguntas, um cliente"
+    monkeypatch.setenv("IA_TENTATIVAS", "0")                       # configuração mudou: cliente novo
+    ProvedorAnthropic().responder(_contexto(), lambda n, a: {})
+    assert len(criados) == 2
+
+
+def test_cada_chamada_pede_no_maximo_o_que_resta_do_prazo(monkeypatch):
+    monkeypatch.setenv("IA_PRAZO_PERGUNTA_S", "10")
+    vistos = []
+    modelo = ModeloFalso([mensagem([texto("Ok.")])])
+    cliente = modelo.cliente()
+    original = cliente.messages.create
+    cliente.messages.create = lambda **kw: (vistos.append(kw.get("timeout")), original(**kw))[1]
+    ProvedorAnthropic(cliente=cliente, relogio=lambda: 0.0).responder(_contexto(), lambda n, a: {})
+    assert vistos == [10.0]                                         # min(30 de IA_TIMEOUT_S, 10 que restam)
+
+    monkeypatch.setenv("IA_PRAZO_PERGUNTA_S", "100")
+    vistos.clear()
+    modelo.respostas.append(mensagem([texto("Ok.")]))
+    ProvedorAnthropic(cliente=cliente, relogio=lambda: 0.0).responder(_contexto(), lambda n, a: {})
+    assert vistos == [30.0]
+
+
+def test_os_padroes_de_tempo_ficam_abaixo_do_tempo_ocioso_do_balanceador(monkeypatch):
+    assert config.timeout_do_provedor_s() == 30.0 and config.prazo_da_pergunta_s() == 55.0
+    assert config.prazo_da_pergunta_s() < 60.0
+
+
+# ============================================================ log do SDK
+def test_o_log_do_sdk_volta_a_ser_travado_depois_de_o_sdk_religa_lo():
+    import logging
+
+    from backend.ia import provedor_anthropic
+
+    for nome in ("anthropic", "httpx2", "httpcore2"):
+        logging.getLogger(nome).setLevel(logging.DEBUG)             # o que ANTHROPIC_LOG=debug faz ao importar o SDK
+    provedor_anthropic._travar_logs()
+    assert all(logging.getLogger(n).level == logging.WARNING for n in ("anthropic", "httpx2", "httpcore2"))
+
+
+def test_com_anthropic_log_debug_no_ambiente_o_sdk_nao_registra_a_requisicao():
+    """Processo NOVO, na ordem de produção (o SDK só é importado na primeira pergunta): o
+    `ANTHROPIC_LOG=debug` religaria o log DEBUG do SDK e desfaria a trava feita antes."""
+    import os
+    import pathlib
+    import subprocess
+    import sys
+
+    codigo = (
+        "import os, logging; os.environ['ANTHROPIC_LOG']='debug'; os.environ['ANTHROPIC_API_KEY']='valor-so-de-teste';"
+        "import backend.ia.provedor_anthropic as p;"
+        "assert 'anthropic' not in __import__('sys').modules, 'o SDK foi importado antes da hora';"
+        "p.ProvedorAnthropic()._cliente_do_sdk();"
+        "print('NIVEIS', logging.getLogger('anthropic').level, logging.getLogger('httpx2').level, logging.getLogger('httpcore2').level)")
+    r = subprocess.run([sys.executable, "-c", codigo], cwd=pathlib.Path(__file__).resolve().parent.parent,
+                       env={k: v for k, v in os.environ.items() if not k.startswith(("IA_", "ANTHROPIC_"))},
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr[-800:]
+    assert "NIVEIS 30 30 30" in r.stdout, r.stdout + r.stderr[-400:]
 
 
 def test_criar_o_provedor_e_listar_dominios_nao_exige_chave_nem_toca_a_rede(monkeypatch, usuario_ia, client):
@@ -262,6 +345,36 @@ def test_falha_do_sdk_vira_uma_palavra_sem_o_texto_do_erro(resposta, tipo):
     assert erro.value.tipo == tipo
     assert "SEGREDO-DO-CORPO-DE-ERRO" not in repr(erro.value) and erro.value.__cause__ is None
     assert erro.value.__suppress_context__ is True
+
+
+def test_erro_http_leva_o_status_e_o_tipo_da_api_para_diagnosticar_o_primeiro_400_sem_a_mensagem():
+    with pytest.raises(ErroDoProvedor) as erro:
+        _rodar(ModeloFalso([erro_http(400, "invalid_request_error")]))
+    assert erro.value.tipo == "requisicao_invalida"
+    assert erro.value.status == 400 and erro.value.tipo_api == "invalid_request_error"
+    assert "SEGREDO-DO-CORPO-DE-ERRO" not in repr(vars(erro.value))
+
+
+def test_falha_de_conexao_nao_tem_status_nem_tipo_da_api():
+    with pytest.raises(ErroDoProvedor) as erro:
+        _rodar(ModeloFalso([httpx2.ConnectError("falhou")]))
+    assert erro.value.status is None and erro.value.tipo_api is None
+
+
+def test_tipo_da_api_fora_do_formato_esperado_e_descartado():
+    from backend.ia.provedor_anthropic import _diagnostico
+
+    class Falso(Exception):
+        status_code = 400
+        body = {"error": {"type": "Texto livre com a pergunta do usuário!"}}
+
+    assert _diagnostico(Falso()) == (400, None)
+
+
+def test_blocos_de_texto_da_resposta_sao_juntados_com_quebra_de_linha():
+    modelo = ModeloFalso([mensagem([texto("Entrou 1.234,6"), texto("5 mil")])])
+    _, resposta = _rodar(modelo)
+    assert resposta.texto == "Entrou 1.234,6\n5 mil"                   # sem "1.234,65 mil" fabricado pela colagem
 
 
 @pytest.mark.parametrize("parada, tipo", [

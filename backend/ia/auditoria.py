@@ -65,10 +65,17 @@ def bloqueio(user, ip, *, dominio, motivo, conversa_id=None, **extra):
         alvo_id=conversa_id, detalhes={"dominio": dominio, "motivo": motivo, **extra})
 
 
-def erro(user, ip, *, dominio, tipo, conversa_id=None):
-    """`tipo` é uma palavra (`dw_indisponivel`, `provedor`...), nunca o texto do erro."""
+def erro(user, ip, *, dominio, tipo, conversa_id=None, status=None, tipo_api=None):
+    """`tipo` é uma palavra (`dw_indisponivel`, `provedor_timeout`...), nunca o texto do erro.
+    `status` (HTTP) e `tipo_api` (o `error.type` da API, palavra de conjunto fixo) só existem
+    para falha do provedor: dizem se foi 400, 401, 404... sem a mensagem."""
+    detalhes = {"dominio": dominio, "tipo": tipo}
+    if status is not None:
+        detalhes["status"] = status
+    if tipo_api is not None:
+        detalhes["tipo_api"] = tipo_api
     _ev("ia.erro", "erro", user, ip, alvo_tipo="conversa" if conversa_id else None,
-        alvo_id=conversa_id, detalhes={"dominio": dominio, "tipo": tipo})
+        alvo_id=conversa_id, detalhes=detalhes)
 
 
 def resposta(user, ip, *, dominio, conversa_id, estado, duracao_ms, provedor, operacoes, uso=None):

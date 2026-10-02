@@ -101,9 +101,13 @@ class ErroDoProvedor(Exception):
     pergunta termina com a mensagem **neutra** do serviço; o `tipo` (uma palavra, nunca o
     texto do erro nem corpo de requisição ou resposta) vai para a trilha."""
 
-    def __init__(self, tipo: str):
+    def __init__(self, tipo: str, *, status: int | None = None, tipo_api: str | None = None):
         super().__init__(tipo)
         self.tipo = tipo
+        # diagnóstico do primeiro erro real: o status HTTP e o `error.type` da API, que são
+        # palavras de um conjunto fixo. A MENSAGEM do erro nunca entra (pode trazer a requisição)
+        self.status = status
+        self.tipo_api = tipo_api
 
 
 class Recusa(Exception):

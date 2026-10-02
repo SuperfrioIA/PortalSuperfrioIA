@@ -134,7 +134,8 @@
   tipo: atendida
   pergunta: "Qual o peso líquido dos cinco primeiros dias de cada mês, de janeiro a agosto de 2026?"
   gabarito: [{movimento: rec, lente: liq, de: "2026-01-01", ate: "2026-08-31", dias: [1, 2, 3, 4, 5]}]
-  esperar_texto_qualquer: ["primeiros", "dia 1", "1 a 5", "cinco"]
+  # a resposta tem que DECLARAR o filtro aplicado (não basta repetir a pergunta: "primeiros" e "cinco" estão nela)
+  esperar_texto_qualquer: ["dias 1 a 5", "dia 1 ao dia 5", "do dia 1 ao 5", "1º ao 5º", "1 a 5 de cada mês", "filtro de dia"]
 
 - id: A17
   catalogo: 17
@@ -142,14 +143,17 @@
   pergunta: "Quantos pallets saíram em agosto de 2026?"
   gabarito: [{movimento: exp, lente: pal, faixa: atendido, de: "2026-08-01", ate: "2026-08-31"}]
   esperar: []
-  esperar_texto_qualquer: ["só existe", "somente", "apenas", "não existe", "não há", "entrada"]
+  # a explicação do aviso da ferramenta, não a palavra "entrada" (que aparece em qualquer resposta)
+  esperar_texto_qualquer: ["só existe na entrada", "somente na entrada", "apenas na entrada", "existe apenas na entrada",
+                           "só existe para a entrada", "não existe para a saída", "não existe na saída"]
 
 - id: A18
   catalogo: 18
   tipo: atendida
   pergunta: "Quanto entrou este mês até agora?"
   gabarito: [{movimento: rec, lente: liq, de: "2026-09-01", ate: "2026-09-06"}]
-  esperar_texto_qualquer: ["incompleto", "parcial", "até o dia", "até agora", "atualizado"]
+  # o mês é parcial: a resposta tem que dizer (não vale "até agora", que está na pergunta)
+  esperar_texto_qualquer: ["incompleto", "parcial", "até o dia", "ainda não terminou", "mês em curso"]
 
 - id: A19
   catalogo: 19

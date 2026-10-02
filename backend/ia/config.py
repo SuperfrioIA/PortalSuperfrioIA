@@ -120,14 +120,18 @@ def anthropic_api_key() -> str | None:
 
 
 def timeout_do_provedor_s() -> float:
-    """Tempo máximo de UMA chamada HTTP ao modelo."""
-    return _numero("IA_TIMEOUT_S", 45.0, minimo=0.0)
+    """Tempo máximo de UMA tentativa HTTP ao modelo (o SDK refaz até `IA_TENTATIVAS` vezes)."""
+    return _numero("IA_TIMEOUT_S", 30.0, minimo=0.0)
 
 
 def prazo_da_pergunta_s() -> float:
-    """Tempo máximo da pergunta inteira no provedor (todas as rodadas e novas tentativas).
-    Passou disso, a pergunta termina com a mensagem neutra em vez de ficar pendurada."""
-    return _numero("IA_PRAZO_PERGUNTA_S", 90.0, minimo=0.0)
+    """Prazo da pergunta inteira no provedor. É conferido ANTES de cada rodada, e cada chamada
+    nunca pede mais tempo do que o que resta dele; mas uma chamada que já começou pode passar
+    do prazo em até `IA_TIMEOUT_S` x (`IA_TENTATIVAS` + 1), mais a espera entre tentativas.
+    O padrão (55 s) fica abaixo do tempo ocioso padrão do balanceador (60 s): uma pergunta que
+    demora mais do que isso termina neutra no Hub em vez de dar 504 enquanto o servidor segue
+    gastando. Confirmar o tempo do balanceador real antes do piloto (runbook)."""
+    return _numero("IA_PRAZO_PERGUNTA_S", 55.0, minimo=0.0)
 
 
 def tentativas_do_provedor() -> int:
@@ -177,6 +181,39 @@ def precos() -> dict:
         "cache_escrita": _numero("IA_PRECO_CACHE_ESCRITA_USD_MTOK", None),
         "cambio_brl": _numero("IA_CAMBIO_USD_BRL", None),
     }
+
+
+# ----------------------------------------------------- endurecimento (Lote 4)
+def max_simultaneas() -> int:
+    """Perguntas em andamento por usuário (no mesmo processo). Fecha, dentro do limite,
+    a corrida da cota diária (várias requisições ao mesmo tempo passavam do teto de 30)
+    e a rajada de custo de um script em laço (T-42)."""
+    return _inteiro("IA_MAX_SIMULTANEAS", 2)
+
+
+def tamanho_maximo_do_resultado() -> int:
+    """Caracteres do resultado de UMA ferramenta enviado ao modelo. Acima disso o modelo
+    recebe um erro pedindo recorte menor, em vez de um resultado que estoura o contexto e
+    o custo (T-43). Hoje um ranking de 20 itens com 12 meses tem ~6 mil; a margem é larga."""
+    return _inteiro("IA_TAM_RESULTADO", 20000)
+
+
+def avisos_de_ativacao() -> list[str]:
+    """Combinações que o Hub deixa subir mas que o piloto não admite. O boot registra cada
+    uma como WARNING; não derrubam a subida (a chave mestra desliga tudo e continua sendo o
+    caminho de emergência). Só olham configuração: nunca leem nem mostram a chave."""
+    if not habilitado():
+        return []
+    avisos = []
+    nome = provedor_nome()
+    if nome != "falso" and autoaprovacao_permitida():
+        avisos.append("IA_AUTOAPROVACAO está ligada com provedor real: a autoaprovação é proibida antes "
+                      "do piloto (DD-13). Defina IA_AUTOAPROVACAO=false.")
+    if nome == "anthropic" and not anthropic_api_key():
+        avisos.append("IA_PROVEDOR=anthropic sem ANTHROPIC_API_KEY: toda pergunta vai responder a mensagem neutra.")
+    if nome == "falso" and os.environ.get("SUPERFRIO_ENV", "dev").strip().lower() == "prod":
+        avisos.append("provedor de teste (falso) com a chave mestra ligada em produção: as respostas não são de modelo.")
+    return avisos
 
 
 def autoaprovacao_permitida() -> bool:

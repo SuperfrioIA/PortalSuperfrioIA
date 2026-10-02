@@ -30,6 +30,12 @@ def _banco_seedado():
     yield
 
 
+class RedeBloqueada(BaseException):
+    """`BaseException` de propósito: um `except Exception` do código sob teste (como o do
+    provedor, que converte falha de rede em mensagem neutra) não pode engolir a trava e fazer
+    um teste que esqueceu de simular o transporte passar em silêncio."""
+
+
 @pytest.fixture(autouse=True)
 def _sem_rede_externa(monkeypatch):
     """A suíte nunca sai da máquina (Lote 3: o provedor do modelo tem SDK de verdade, e um
@@ -42,10 +48,19 @@ def _sem_rede_externa(monkeypatch):
     def guardado(self, endereco):
         host = endereco[0] if isinstance(endereco, tuple) else None
         if host is not None and host not in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
-            raise AssertionError(f"rede bloqueada nos testes: {host}")
+            raise RedeBloqueada(f"rede bloqueada nos testes: {host}")
         return original(self, endereco)
 
     monkeypatch.setattr(socket.socket, "connect", guardado)
+
+
+@pytest.fixture(autouse=True)
+def _ambiente_de_ia_limpo(monkeypatch):
+    """Nenhum teste depende do ambiente de quem roda: a chave, os preços, os limites e o
+    provedor da máquina da Duda (que vai ter `IA_PRECO_*` e `ANTHROPIC_API_KEY` no shell para a
+    avaliação) não podem mudar o resultado nem fazer um teste usar a conta paga."""
+    for nome in [n for n in os.environ if n.startswith("IA_") or n.startswith("ANTHROPIC_")]:
+        monkeypatch.delenv(nome)
 
 
 @pytest.fixture(autouse=True)

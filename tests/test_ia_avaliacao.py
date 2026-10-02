@@ -115,9 +115,11 @@ def test_percentil_por_posto_mais_proximo(avaliar):
 # ================================================================ as travas
 def _rodar(*args, **env):
     ambiente = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "DATABASE_URL", "SUPERFRIO_ENV")}
-    ambiente.update({"IA_AVALIACAO_SEM_ENV_LOCAL": "1", **env})
+    ambiente.update({"IA_AVALIACAO_SEM_ENV_LOCAL": "1", "PYTHONIOENCODING": "utf-8", **env})
+    # utf-8 nos dois lados: com a página de código do Windows o texto sairia trocado e um `not in`
+    # sobre uma frase com acento passaria à toa
     return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=RAIZ, env=ambiente, capture_output=True,
-                          text=True, timeout=180)
+                          text=True, encoding="utf-8", timeout=180)
 
 
 def test_sem_chave_o_script_recusa_e_nao_mede_nada():
@@ -135,6 +137,65 @@ def test_o_script_recusa_producao_e_banco_externo():
 def test_teto_de_custo_sem_preco_configurado_e_recusado():
     r = _rodar("--provedor", "falso", "--teto-brl", "5")
     assert r.returncode != 0 and "IA_PRECO_ENTRADA_USD_MTOK" in (r.stderr + r.stdout)
+
+
+def test_o_provedor_nao_tem_padrao_a_rodada_paga_precisa_ser_pedida_por_escrito():
+    r = _rodar()
+    assert r.returncode != 0 and "--provedor" in r.stderr
+
+
+def test_provedor_real_sem_teto_e_sem_confirmacao_de_que_nao_quer_teto_e_recusado():
+    """Com a chave configurada, `python scripts/avaliar_ia.py --provedor anthropic` não pode sair gastando."""
+    r = _rodar("--provedor", "anthropic", ANTHROPIC_API_KEY="valor-so-de-teste")
+    texto = r.stderr + r.stdout
+    assert r.returncode != 0 and "PAGA" in texto and "--teto-brl" in texto and "--sem-teto" in texto
+    assert "Avaliação — provedor" not in texto, "nenhuma pergunta pode ter sido feita"
+
+
+def test_teto_exige_tambem_o_preco_de_saida_senao_o_teto_nunca_vigoraria():
+    r = _rodar("--provedor", "anthropic", "--teto-brl", "5", ANTHROPIC_API_KEY="valor-so-de-teste",
+               IA_PRECO_ENTRADA_USD_MTOK="3", IA_CAMBIO_USD_BRL="5")             # falta o de SAÍDA
+    assert r.returncode != 0 and "IA_PRECO_SAIDA_USD_MTOK" in (r.stderr + r.stdout)
+    assert "Avaliação — provedor" not in (r.stderr + r.stdout)
+
+
+def test_o_script_nao_sobe_o_lifespan_que_agenda_os_jobs_de_ftp():
+    fonte = SCRIPT.read_text(encoding="utf-8")
+    assert "with TestClient(app) as client" not in fonte and "nullcontext(TestClient(app))" in fonte
+    assert 'startswith(("DW_LEITURA_", "FTP_"))' in fonte
+    servidor = (RAIZ / "scripts" / "ia_servidor_de_teste.py").read_text(encoding="utf-8")
+    assert 'startswith(("DW_LEITURA_", "FTP_"))' in servidor
+
+
+def test_estado_de_limite_nao_conta_como_atendida_respondida(avaliar, ia_ligada, ia_dw):
+    import dw_falso
+
+    ia_dw()
+    passo = {"pergunta": "Quanto entrou em agosto de 2026?", "esperar": []}
+    resposta = {"estado": "limite_consultas", "mensagem": {"texto": "Passou do limite."}}
+    r = avaliar._avaliar(passo, "atendida", resposta, [], [], [], dw_falso, {})
+    assert not r["ok"] and "estado:limite_consultas" in r["falhas"]
+    recusada = avaliar._avaliar(passo, "recusada", resposta, [], [], [], dw_falso, {})
+    assert "estado:limite_consultas" not in recusada["falhas"] and not recusada["ok"]
+
+
+def test_rodada_parcial_ou_ensaio_nunca_marca_criterio_como_atingido(avaliar):
+    import argparse
+    from decimal import Decimal
+
+    import dw_falso
+
+    passo = {"pergunta": "x", "estado": "ok", "texto": "t", "falhas": [], "ok": True, "latencia_s": 1.0, "uso": {},
+             "numeros_ok": True, "passos": 1, "consultas_logicas": 1, "recorte_e_data": True}
+    execucao = {"resultados": [{"id": "A01", "tipo": "atendida", "catalogo": 1, "ok": True, "passos": [passo]}],
+                "interrompida": None, "custo_brl": Decimal(0)}
+    base = dict(provedor="anthropic", ids="", limite=0, cliente_hostil=False)
+    parcial = avaliar._relatorio(argparse.Namespace(**{**base, "ids": "A01"}), execucao, [], dw_falso)
+    assert "RODADA PARCIAL" in parcial and "**atingido**" not in parcial and "**NÃO atingido**" not in parcial
+    interrompida = avaliar._relatorio(argparse.Namespace(**base), {**execucao, "interrompida": "teto"}, [], dw_falso)
+    assert "RODADA INTERROMPIDA" in interrompida and "**atingido**" not in interrompida
+    completa = avaliar._relatorio(argparse.Namespace(**base), execucao, [], dw_falso)
+    assert "**atingido**" in completa, "só a rodada completa com o modelo real pode atingir critério"
 
 
 def test_ensaio_com_provedor_falso_nao_aprova_nenhum_criterio(tmp_path):

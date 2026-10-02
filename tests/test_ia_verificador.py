@@ -85,6 +85,44 @@ def test_fontes_aceitam_texto_e_estrutura_e_somam():
     assert {Decimal("2026"), Decimal("10.5"), Decimal(7), Decimal(33)} <= liberados
 
 
+# ===================================== furos de regex achados na revisão do Lote 3
+def test_numero_depois_de_virgula_colada_tambem_e_conferido():
+    ok, ruins = _ok("valores 10,5,9999", "só 10,5")
+    assert not ok and ruins == ["9999"]
+    ok, ruins = _ok("100,200,300", "só 100,2")
+    assert not ok and "300" in ruins
+
+
+def test_numero_entre_sublinhados_do_markdown_tambem_e_conferido():
+    assert _ok("o total foi _9999_ t", "nada")[1] == ["9999"]
+    assert _ok("o total foi _1.234,6_ t", "1.234,6")[0]
+
+
+def test_formatos_que_nao_sao_pt_br_barram_a_resposta_legitima_e_isso_e_declarado():
+    """Falso positivo (o lado seguro): o prompt manda copiar como a ferramenta devolveu."""
+    assert not _ok("em 05.09.2026", "05/09/2026")[0]              # data com ponto vira 5,09 e 2026
+    assert not _ok("foram 1,234.56 t", "1.234,56 t")[0]           # formato inglês
+    assert not _ok("foram 1 234 t", "1.234 t")[0]                 # milhar com espaço: dois tokens, nenhum dos dois na fonte
+
+
+def test_letra_ou_digito_colado_antes_continua_sendo_identificador():
+    assert _ok("unidades U01, OP2 e A1B2", "nada")[0]
+
+
+# ============================================== números que a pessoa escreveu
+@pytest.mark.parametrize("escrito, vale", [
+    ("2026", True), ("1900", True), ("2100", True), ("15", True), ("31", True), ("0", True),
+    ("32", False), ("100", False), ("1899", False), ("2101", False), ("5.000", False), ("3,5", False),
+    ("18.408,0", False),
+])
+def test_so_data_e_calendario_da_pergunta_viram_fonte(escrito, vale):
+    assert bool(v.permitidos_da_pessoa(f"Confirma {escrito} t?")) is vale
+
+
+def test_varios_textos_da_pessoa_se_somam():
+    assert v.permitidos_da_pessoa("dia 15", "ano 2026 e 5.000") == {Decimal(15), Decimal(2026)}
+
+
 def test_limite_conhecido_inteiro_pequeno_coincide_com_data_ou_posicao():
     """Documenta o que o verificador NÃO pega: 3 aparece na data, então "3 unidades" passa.
     Se isto deixar de ser verdade, o docstring do módulo tem que mudar junto."""

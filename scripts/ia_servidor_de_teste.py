@@ -47,7 +47,9 @@ def main() -> None:
     os.environ["SUPERFRIO_ENV"] = "dev"
     os.environ["IA_HABILITADO"] = "true"
     os.environ["IA_PROVEDOR"] = "falso"
-    for var in ("DW_LEITURA_USUARIO", "DW_LEITURA_SENHA"):
+    # sem credencial de DW real e sem FTP: o Hub sobe com o `lifespan` e agenda os jobs diários, inclusive
+    # os de FTP das 08:05 e 08:30; sem estas variáveis eles não têm como conectar em nada
+    for var in [v for v in os.environ if v.startswith(("DW_LEITURA_", "FTP_"))]:
         os.environ.pop(var, None)
 
     sys.path[:0] = [str(RAIZ), str(RAIZ / "tests")]

@@ -21,6 +21,7 @@ from backend.core.limiter import limiter
 from backend.core.scheduler import agendar_diario
 from backend.core.scheduler import iniciar as iniciar_agendador
 from backend.core.scheduler import parar as parar_agendador
+from backend.ia import config as ia_config
 from backend.ia import dominios as ia_dominios
 from backend.ia import retencao as ia_retencao
 from backend.ia.router import router as ia_router
@@ -58,6 +59,8 @@ async def lifespan(_app: FastAPI):
     # `IA_HABILITADO` desligada. Contrato inconsistente derruba a subida com uma
     # mensagem que nomeia o erro — melhor no deploy do que na primeira pergunta.
     ia_dominios.carregar()
+    for aviso in ia_config.avisos_de_ativacao():
+        logging.getLogger("backend.ia").warning("SuperfrioIA: %s", aviso)
     init_db()
     seed_initial()
 

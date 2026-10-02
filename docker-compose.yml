@@ -53,6 +53,27 @@ services:
       DW_TABELA_TRN: ${DW_TABELA_TRN:-}
       # Volumetria de Estoque (backend/volumetria_estoque/) — idem.
       DW_TABELA_EST: ${DW_TABELA_EST:-}
+      # SuperfrioIA (backend/ia/) — DESLIGADO por padrão: sem nada no .env o deploy não expõe
+      # nada. A chave da Anthropic é digitada à mão no .env da VM (fora do Git, do chat e dos
+      # scripts). A autoaprovação de concessão fica DESLIGADA aqui (DD-13: proibida antes do
+      # piloto); ligar é uma decisão por ambiente. Vazio = vale o padrão do código.
+      IA_HABILITADO: ${IA_HABILITADO:-false}
+      IA_PROVEDOR: ${IA_PROVEDOR:-falso}
+      IA_AUTOAPROVACAO: ${IA_AUTOAPROVACAO:-false}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      IA_MODELO: ${IA_MODELO:-}
+      IA_ESFORCO: ${IA_ESFORCO:-}
+      IA_INFERENCE_GEO: ${IA_INFERENCE_GEO:-}
+      IA_COTA_DIA: ${IA_COTA_DIA:-}
+      IA_TIMEOUT_S: ${IA_TIMEOUT_S:-}
+      IA_PRAZO_PERGUNTA_S: ${IA_PRAZO_PERGUNTA_S:-}
+      IA_TENTATIVAS: ${IA_TENTATIVAS:-}
+      IA_REPAROS: ${IA_REPAROS:-}
+      IA_PRECO_ENTRADA_USD_MTOK: ${IA_PRECO_ENTRADA_USD_MTOK:-}
+      IA_PRECO_SAIDA_USD_MTOK: ${IA_PRECO_SAIDA_USD_MTOK:-}
+      IA_PRECO_CACHE_LEITURA_USD_MTOK: ${IA_PRECO_CACHE_LEITURA_USD_MTOK:-}
+      IA_PRECO_CACHE_ESCRITA_USD_MTOK: ${IA_PRECO_CACHE_ESCRITA_USD_MTOK:-}
+      IA_CAMBIO_USD_BRL: ${IA_CAMBIO_USD_BRL:-}
     volumes:
       - ./data:/app/data
     depends_on:

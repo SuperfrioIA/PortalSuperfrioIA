@@ -3,6 +3,7 @@
 Duas varreduras baratas que valem como o "varredura do diff por padrão de chave = 0" do
 plano, e uma trava de rede: a suíte inteira roda sem sair da máquina.
 """
+import os
 import pathlib
 import re
 import socket
@@ -47,6 +48,25 @@ def test_o_env_local_com_a_chave_esta_no_gitignore():
 def test_a_suite_nao_consegue_abrir_conexao_para_fora_da_maquina():
     """A trava de `conftest.py` vale: tentar conectar fora do loopback falha na hora."""
     import pytest
+    from conftest import RedeBloqueada
 
-    with pytest.raises(AssertionError, match="rede bloqueada"):
+    with pytest.raises(RedeBloqueada, match="rede bloqueada"):
         socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("203.0.113.7", 443))
+
+
+def test_a_trava_de_rede_nao_pode_ser_engolida_por_um_except_exception():
+    """O provedor converte qualquer `Exception` em mensagem neutra; a trava tem que passar por isso."""
+    import pytest
+    from conftest import RedeBloqueada
+
+    assert not issubclass(RedeBloqueada, Exception)
+    with pytest.raises(RedeBloqueada):
+        try:
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("203.0.113.7", 443))
+        except Exception:                                    # noqa: BLE001  (é exatamente o que se testa)
+            pass
+
+
+def test_o_ambiente_da_maquina_nao_vaza_para_os_testes(monkeypatch):
+    """`conftest.py` limpa `IA_*` e `ANTHROPIC_*` antes de cada teste."""
+    assert not [n for n in os.environ if n.startswith(("IA_", "ANTHROPIC_"))]
