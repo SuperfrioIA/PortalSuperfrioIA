@@ -195,9 +195,17 @@ def _avaliar(passo: dict, tipo: str, resposta: dict, registros: list, modelos: l
         r["falhas"].append(f"numero_nao_verificado:{','.join(meta.get('numeros_reprovados', []))}")
 
     # números verdadeiros mas fora do gabarito (ex.: o valor de outro mês)
+    # Os FATOS DO DOMÍNIO (`descrever`: datas de atualização do dado, período existente, limites) valem
+    # para qualquer pergunta: toda resposta com dado cita "atualizado até ..." no rodapé, e uma recusa
+    # também. Sem isto, a data do rodapé de uma recusa (sem gabarito) virava "número fora do gabarito".
+    fatos_do_dominio = _gabarito({"gabarito": {"ferramenta": "descrever"}}, dw_falso) + _listas_do_dominio(dw_falso)
+    # `aceitar_tambem`: respostas legítimas que o gabarito principal não é o único a admitir (pergunta
+    # sem movimento: entrada OU saída OU as duas). Entram só na lista de números permitidos, nunca na
+    # lista de números ESPERADOS: o modelo não é obrigado a dar todas, mas o que der tem que ser verdadeiro.
+    aceitos = _gabarito({"gabarito": passo.get("aceitar_tambem")}, dw_falso) if passo.get("aceitar_tambem") else []
     liberados = verificador.permitidos(
         prompt.sistema(), ferramentas.ESQUEMAS, prompt.cabecalho_da_pergunta(dw_falso.HOJE, "volumetria-catering"),
-        modelos, [passo["pergunta"]], acumulado)
+        modelos, fatos_do_dominio, aceitos, [passo["pergunta"]], acumulado)
     fora = verificador.verificar(texto, liberados).nao_verificados if not r["retida"] and estado == "ok" else []
     if fora:
         r["falhas"].append(f"numero_fora_do_gabarito:{','.join(fora)}")
@@ -210,7 +218,8 @@ def _avaliar(passo: dict, tipo: str, resposta: dict, registros: list, modelos: l
                      if not any(vs & {Decimal(n)} for _t, vs in verificador.numeros_do_texto(texto))]
         if ausentes:
             r["falhas"].append(f"numero_esperado_ausente:{','.join(ausentes)}")
-        baixo = texto.lower()
+        # sem os asteriscos do negrito: "só existe para a **entrada**" é a mesma frase que sem eles
+        baixo = texto.lower().replace("*", "")
         for trecho in passo.get("esperar_texto", []):
             if trecho.lower() not in baixo:
                 r["falhas"].append(f"texto_ausente:{trecho}")
@@ -245,6 +254,19 @@ def _avaliar(passo: dict, tipo: str, resposta: dict, registros: list, modelos: l
                 r["falhas"].append(f"texto_proibido:{trecho}")
     r["ok"] = not r["falhas"]
     return r
+
+
+def _listas_do_dominio(dw_falso) -> list:
+    """O que `amostrar_valores` devolve para cada dimensão (unidades, clientes, tipos de estoque,
+    operações), com o `total_encontrado`. É fato do domínio, não dado de indicador: "existem 4 tipos de
+    estoque" cita um campo da ferramenta, e a 2ª rodada real reprovou isso como 'fora do gabarito'."""
+    from backend.ia import dominios, ferramentas
+    from backend.ia.politicas import ContextoDaPergunta
+
+    dominio = dominios.obter("volumetria-catering")
+    adaptador = ferramentas._adaptador(dominio)
+    ctx = ContextoDaPergunta(usuario={}, dominio=dominio.slug, hoje=dw_falso.HOJE)
+    return [adaptador.amostrar_valores(dominio, dim, "", ctx) for dim in ("unidade", "cliente", "tipo_estoque", "operacao")]
 
 
 def _falta_da_lista(dimensao: str, baixo: str) -> list[str]:
