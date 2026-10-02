@@ -17,7 +17,7 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = RAIZ / "scripts" / "avaliar_ia.py"
 CATALOGO = RAIZ / "tests" / "ia_avaliacao" / "perguntas.yaml"
 
-CAMPOS_DO_PASSO = {"pergunta", "gabarito", "esperar", "esperar_numeros", "esperar_texto_de", "esperar_texto",
+CAMPOS_DO_PASSO = {"pergunta", "gabarito", "aceitar_tambem", "esperar", "esperar_numeros", "esperar_texto_de", "esperar_texto",
                    "esperar_texto_qualquer", "esperar_lista", "esperar_aguardando_base", "proibir_texto",
                    "sem_consulta_ok", "oraculo"}
 CAMPOS_DA_PERGUNTA = {"id", "catalogo", "tipo", "turnos"} | CAMPOS_DO_PASSO
@@ -83,6 +83,8 @@ def test_todo_gabarito_calcula_pelo_servico_e_o_oraculo_independente_confere(
         for passo in avaliar._passos(p):
             modelos = avaliar._gabarito(passo, dw_falso)
             assert avaliar._conferir_oraculo(passo, modelos, dw_falso) is None, (p["id"], passo["pergunta"])
+            if passo.get("aceitar_tambem"):                      # também tem que calcular pelo serviço
+                assert avaliar._gabarito({"gabarito": passo["aceitar_tambem"]}, dw_falso), p["id"]
             conferidos += bool(passo.get("oraculo"))
             if passo.get("gabarito") and passo.get("esperar", ["x"]) != []:
                 assert avaliar._esperados(passo, modelos), (p["id"], "gabarito sem valor esperado")
@@ -177,6 +179,81 @@ def test_estado_de_limite_nao_conta_como_atendida_respondida(avaliar, ia_ligada,
     assert not r["ok"] and "estado:limite_consultas" in r["falhas"]
     recusada = avaliar._avaliar(passo, "recusada", resposta, [], [], [], dw_falso, {})
     assert "estado:limite_consultas" not in recusada["falhas"] and not recusada["ok"]
+
+
+def test_a_data_de_atualizacao_do_rodape_de_uma_recusa_nao_e_numero_fora_do_gabarito(avaliar, ia_ligada, ia_dw):
+    """Achado da 1ª rodada com o modelo real: a R01 (recusa, sem gabarito) foi reprovada porque o rodapé
+    "atualizado até 05/09/2026 07:05" tinha números que o gabarito dela não trazia. Era defeito do instrumento."""
+    import dw_falso
+
+    ia_dw()
+    passo = {"pergunta": "Quanto entrou em cada tipo de estoque em agosto de 2026?"}
+    texto = ("Não consigo responder a essa pergunta: o limite é de 3 consultas por pergunta.\n"
+             "Fonte: Volumetria de Catering · dado do DW atualizado até 05/09/2026 07:05 (entrada)")
+    resposta = {"estado": "ok", "mensagem": {"texto": texto}}
+    r = avaliar._avaliar(passo, "recusada", resposta, [], [], [], dw_falso, {})
+    assert not [f for f in r["falhas"] if f.startswith("numero_fora")], r["falhas"]
+    assert r["recusa_ok"] and r["ok"]
+
+
+def test_resposta_legitima_com_as_duas_leituras_nao_e_reprovada_mas_numero_de_fora_continua_sendo(avaliar, ia_ligada, ia_dw):
+    """`aceitar_tambem` (pergunta sem movimento: entrada, saída ou as duas) libera os números da saída;
+    o modelo não é OBRIGADO a dá-los, e um número que nenhuma das leituras traz segue reprovado."""
+    import dw_falso
+
+    ia_dw()
+    entrada = {"movimento": "rec", "lente": "liq", "de": "2026-08-01", "ate": "2026-08-31"}
+    saida = {**entrada, "movimento": "exp", "faixa": "atendido"}
+    passo = {"pergunta": "Quanto de peso líquido em agosto?", "gabarito": [entrada], "aceitar_tambem": [saida], "esperar": []}
+    modelos = avaliar._gabarito(passo, dw_falso)
+    valor_saida = avaliar._gabarito({"gabarito": [saida]}, dw_falso)[0]["total_por_mes"][0]["valor"].split()[0]
+    certa = {"estado": "ok", "mensagem": {"texto": f"Saída: {valor_saida} t. Atualizado até 05/09/2026."}}
+    errada = {"estado": "ok", "mensagem": {"texto": "Saída: 99.999,9 t."}}
+    assert not [f for f in avaliar._avaliar(passo, "atendida", certa, [], modelos, [], dw_falso, {})["falhas"]
+                if f.startswith("numero_fora")]
+    assert any(f.startswith("numero_fora") for f in avaliar._avaliar(passo, "atendida", errada, [], modelos, [], dw_falso, {})["falhas"])
+    sem = {k: v for k, v in passo.items() if k != "aceitar_tambem"}
+    assert any(f.startswith("numero_fora") for f in avaliar._avaliar(sem, "atendida", certa, [], modelos, [], dw_falso, {})["falhas"])
+
+
+def test_contar_os_tipos_de_estoque_citando_a_ferramenta_nao_e_numero_fora_do_gabarito(avaliar, ia_ligada, ia_dw):
+    """R01 na 2ª rodada real: "Existem 4 tipos de estoque" (campo `total_encontrado` de `amostrar_valores`)."""
+    import dw_falso
+
+    ia_dw()
+    fatos = avaliar._listas_do_dominio(dw_falso)
+    assert {f["dimensao"] for f in fatos} == {"unidade", "cliente", "tipo_estoque", "operacao"}
+    n_tipos = next(f for f in fatos if f["dimensao"] == "tipo_estoque")["total_encontrado"]
+    passo = {"pergunta": "Quanto entrou em cada tipo de estoque?"}
+    resposta = {"estado": "ok", "mensagem": {"texto": f"Não consigo: existem {n_tipos} tipos e o limite é de consultas por pergunta."}}
+    r = avaliar._avaliar(passo, "recusada", resposta, [], [], [], dw_falso, {})
+    assert not [f for f in r["falhas"] if f.startswith("numero_fora")], r["falhas"]
+
+
+def test_o_negrito_do_markdown_nao_atrapalha_a_busca_de_trechos(avaliar, ia_ligada, ia_dw):
+    """A 2ª rodada real reprovou A17 por "só existe para a **entrada**" (com negrito) contra "só existe para a entrada"."""
+    import dw_falso
+
+    ia_dw()
+    passo = {"pergunta": "Quantos pallets saíram?", "esperar": [], "esperar_texto_qualquer": ["só existe para a entrada"]}
+    resposta = {"estado": "ok", "mensagem": {"texto": "A medida de pallets só existe para a **entrada**."}}
+    r = avaliar._avaliar(passo, "atendida", resposta, [], [], [], dw_falso, {})
+    assert not [f for f in r["falhas"] if f.startswith("texto_ausente")], r["falhas"]
+
+
+def test_a_palavra_embarque_no_aviso_obrigatorio_nao_e_afirmar_embarque(perguntas):
+    a03 = next(p for p in perguntas if p["id"] == "A03")
+    assert "embarque" not in a03["proibir_texto"] and "embarcado" in a03["proibir_texto"]
+
+
+def test_numero_que_nao_e_fato_do_dominio_continua_sendo_apontado(avaliar, ia_ligada, ia_dw):
+    import dw_falso
+
+    ia_dw()
+    passo = {"pergunta": "Quanto entrou em agosto de 2026?"}
+    resposta = {"estado": "ok", "mensagem": {"texto": "Não consigo responder. Foram 4.321,0 t."}}
+    r = avaliar._avaliar(passo, "recusada", resposta, [], [], [], dw_falso, {})
+    assert any(f.startswith("numero_fora_do_gabarito") and "4.321,0" in f for f in r["falhas"])
 
 
 def test_rodada_parcial_ou_ensaio_nunca_marca_criterio_como_atingido(avaliar):
