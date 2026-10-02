@@ -127,6 +127,19 @@ def filtros_de(**campos) -> recorte.Filtros:
     return filtros.validar()
 
 
+def hoje():
+    """"Hoje" no fuso de exibição (não o relógio do container, que é UTC). Sem DW.
+
+    É a mesma data que `opcoes()["abertura"]["ate"]` usa. Existe para quem
+    precisa resolver "este mês" sem abrir conexão (SuperfrioIA, Lote 2).
+    Levanta `VolumetriaIndisponivel` se o fuso configurado for inválido."""
+    try:
+        contrato.fuso_exibicao()
+    except contrato.FusoInvalido as erro:
+        raise VolumetriaIndisponivel(str(erro)) from None
+    return dimensoes_dw.hoje_no_fuso()
+
+
 def matriz(filtros: recorte.Filtros) -> dict:
     """A Matriz do recorte, lida do DW. É a função que a tela chama.
 

@@ -467,7 +467,12 @@ function openApp(app) {
     headers: { Authorization: `Bearer ${state.token}` },
   }).catch(() => {});
   if (app.tipo_acesso === "interno") {
-    // Tela nativa do próprio SPA (ex.: Projetos IA) — sem iframe, sem nova aba.
+    // Tela nativa do próprio SPA (ex.: Projetos IA, SuperfrioIA) — sem iframe, sem
+    // nova aba. Quem abre cada uma é decidido pelo slug do card.
+    if (app.slug === "superfrioia") {
+      if (window.SF && window.SF.openSuperfrioIa) window.SF.openSuperfrioIa();
+      return;
+    }
     if (window.SF && window.SF.openProjetosIa) window.SF.openProjetosIa();
     return;
   }

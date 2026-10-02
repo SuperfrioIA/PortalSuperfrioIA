@@ -2,6 +2,7 @@
 from sqlalchemy import insert, select, update
 
 from backend.portal.models import App, Secao
+from backend.portal.service import app_liberado
 
 SECOES = [
     {
@@ -267,6 +268,23 @@ APPS = [
         "badge": None,
         "ordem": 1,
     },
+    {
+        # SuperfrioIA (Lote 2): perguntas aos dados em linguagem natural. Tela
+        # nativa, como Projetos IA. **Só é semeado com `IA_HABILITADO` ligada**
+        # (ver o filtro em `seed()` e `portal/service.registrar_chave_de_app`):
+        # o deploy do código não cria nem expõe o card.
+        "secao": "inovacao",
+        "slug": "superfrioia",
+        "nome": "SuperfrioIA",
+        "nome_es": "SuperfrioIA",
+        "descricao": "Pergunte aos dados do Hub em linguagem natural. As respostas vêm das mesmas funções das telas, com fonte e data do dado.",
+        "descricao_es": "Pregunte a los datos del Hub en lenguaje natural. Las respuestas vienen de las mismas funciones de las pantallas, con fuente y fecha del dato.",
+        "icone": "radar",
+        "url": "/superfrioia",
+        "tipo_acesso": "interno",
+        "badge": "beta",
+        "ordem": 2,
+    },
     # Tecnologia
     {
         # Existiam como botão fixo na sidebar, fora do catálogo — ou seja, sem
@@ -342,6 +360,10 @@ def seed(session) -> set[str]:
     }
 
     for a in APPS:
+        # App com chave de funcionalidade desligada não é semeado (DD-27): o deploy
+        # do código não cria nada. Ligar a chave e reiniciar semeia.
+        if not app_liberado(a["slug"]):
+            continue
         existe = session.execute(
             select(App.id).where(App.slug == a["slug"])
         ).scalar_one_or_none()

@@ -34,10 +34,10 @@ def sistemas(user: dict = Depends(get_current_user)):
     """Lista de apps ativos ordenada por data de criação — base da timeline pública."""
     with db() as session:
         if user.get("is_admin"):
-            apps = service.apps_ativos_com_secao(session)
+            apps = service.apps_ativos_com_secao(session, apenas_liberados=True)
         else:
             permitidos = usuarios_service.app_ids_permitidos(session, user["id"])
-            apps = service.apps_ativos_com_secao(session, app_ids=permitidos)
+            apps = service.apps_ativos_com_secao(session, app_ids=permitidos, apenas_liberados=True)
     return sorted(
         [
             {
@@ -87,10 +87,10 @@ def home(user: dict = Depends(get_current_user)):
     """
     with db() as session:
         if user.get("is_admin"):
-            apps = service.apps_ativos_com_secao(session)
+            apps = service.apps_ativos_com_secao(session, apenas_liberados=True)
         else:
             permitidos = usuarios_service.app_ids_permitidos(session, user["id"])
-            apps = service.apps_ativos_com_secao(session, app_ids=permitidos)
+            apps = service.apps_ativos_com_secao(session, app_ids=permitidos, apenas_liberados=True)
 
     indicadores: list[dict] = []
     secoes: dict[str, dict] = {}
@@ -140,7 +140,9 @@ def abrir(slug: str, request: Request, user: dict = Depends(get_current_user)):
         row = session.execute(
             select(App.__table__.c).where(App.slug == slug, App.ativo == 1)
         ).mappings().fetchone()
-        if not row:
+        # App com a chave de funcionalidade desligada responde como se não existisse
+        # (DD-27), inclusive para admin.
+        if not row or not service.app_liberado(slug):
             raise HTTPException(404, f"app '{slug}' não encontrado")
         if not user.get("is_admin"):
             permitidos = usuarios_service.app_ids_permitidos(session, user["id"])

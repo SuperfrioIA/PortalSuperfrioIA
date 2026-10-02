@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.18.0] — 2026-10-01
+### Adicionado
+- SuperfrioIA — base técnica, **ainda não liberada para uso** (chave `IA_HABILITADO` desligada
+  por padrão): perguntas aos dados do Hub em linguagem natural, com tela nativa na seção
+  Inovação, conversas, pedido e aprovação de acesso por domínio e trilha de auditoria. Por
+  enquanto o provedor é **de teste** (sem rede, sem chave, sem modelo real) e o único domínio é
+  a Volumetria de Catering, que responde pelas mesmas funções da tela. Com a chave desligada
+  nada aparece para ninguém
+- SuperfrioIA — provedor Claude pronto para ser ligado (ainda desligado): conferência de todo
+  número da resposta contra o que a consulta devolveu (texto com número fora da consulta não é
+  exibido), medição de tokens, tempo e custo por pergunta, e mensagem neutra quando o provedor
+  falha. Nada disso é exercido sem a chave da conta e a chave mestra ligada
+- Nova permissão `Volumetria de Catering — Administrar`: aprovar, negar e revogar os pedidos de
+  acesso do SuperfrioIA a esse domínio. Não dá nem tira o acesso ao app e não exporta
+### Alterado
+- A matriz de acesso ganha a coluna Administrar para a Volumetria de Catering
+
 ## [0.17.1] — 2026-10-01
 ### Alterado
 - Volumetria de Catering: reorganização interna do código — a leitura do DW e a montagem do

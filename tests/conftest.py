@@ -30,6 +30,39 @@ def _banco_seedado():
     yield
 
 
+class RedeBloqueada(BaseException):
+    """`BaseException` de propósito: um `except Exception` do código sob teste (como o do
+    provedor, que converte falha de rede em mensagem neutra) não pode engolir a trava e fazer
+    um teste que esqueceu de simular o transporte passar em silêncio."""
+
+
+@pytest.fixture(autouse=True)
+def _sem_rede_externa(monkeypatch):
+    """A suíte nunca sai da máquina (Lote 3: o provedor do modelo tem SDK de verdade, e um
+    teste que esquecesse de simular o transporte chamaria a API paga). Conectar fora do
+    loopback falha na hora. Não afeta o libpq (Postgres local) nem o TestClient."""
+    import socket
+
+    original = socket.socket.connect
+
+    def guardado(self, endereco):
+        host = endereco[0] if isinstance(endereco, tuple) else None
+        if host is not None and host not in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+            raise RedeBloqueada(f"rede bloqueada nos testes: {host}")
+        return original(self, endereco)
+
+    monkeypatch.setattr(socket.socket, "connect", guardado)
+
+
+@pytest.fixture(autouse=True)
+def _ambiente_de_ia_limpo(monkeypatch):
+    """Nenhum teste depende do ambiente de quem roda: a chave, os preços, os limites e o
+    provedor da máquina da Duda (que vai ter `IA_PRECO_*` e `ANTHROPIC_API_KEY` no shell para a
+    avaliação) não podem mudar o resultado nem fazer um teste usar a conta paga."""
+    for nome in [n for n in os.environ if n.startswith("IA_") or n.startswith("ANTHROPIC_")]:
+        monkeypatch.delenv(nome)
+
+
 @pytest.fixture(autouse=True)
 def _sem_rate_limit():
     """Rate limit atrapalha os logins repetidos dos testes; o teste de
@@ -67,3 +100,97 @@ def operador_headers(client):
 @pytest.fixture
 def analista_headers(client):
     return _auth_header(client, "analista.bo", "backoffice123")
+
+
+# ======================================================== SuperfrioIA (Lote 2)
+# O banco é um só para a sessão inteira, e há testes com contagem fixa de apps
+# (`total_apps == 11`...). Por isso o app `superfrioia` e as tabelas `ia_*` só
+# existem DENTRO dos testes que pedem `ia_ligada`, e são desfeitos no fim.
+
+@pytest.fixture
+def ia_ligada(monkeypatch):
+    """`IA_HABILITADO` ligada e o app `superfrioia` no catálogo, desfeitos no fim."""
+    from sqlalchemy import delete, select
+
+    from backend.core.database import db
+    from backend.ia import dominios as ia_dominios
+    from backend.ia.models import IaConcessao, IaConsulta, IaConversa, IaMensagem
+    from backend.portal import seed as portal_seed
+    from backend.portal.models import App
+    from backend.usuarios.models import role_apps
+
+    def _limpar():
+        with db() as session:
+            for tabela in (IaConsulta, IaMensagem, IaConversa, IaConcessao):
+                session.execute(delete(tabela))
+            app_id = session.execute(select(App.id).where(App.slug == "superfrioia")).scalar_one_or_none()
+            if app_id is not None:
+                session.execute(delete(role_apps).where(role_apps.c.app_id == app_id))
+                session.execute(delete(App).where(App.id == app_id))
+
+    monkeypatch.setenv("IA_HABILITADO", "true")
+    ia_dominios.carregar()
+    with db() as session:
+        portal_seed.seed(session)
+    yield
+    _limpar()
+
+
+@pytest.fixture
+def ia_dw(monkeypatch):
+    """Fábrica do DW de mentira (`tests/dw_falso.py`). Chame `ia_dw()` ou
+    `ia_dw(n_unidades=14)`; os caches do módulo são zerados no fim."""
+    import dw_falso
+
+    from backend.volumetria_catering import dimensoes_dw, schema_dw
+
+    def _ligar(**kwargs):
+        return dw_falso.instalar(monkeypatch, **kwargs)
+
+    yield _ligar
+    dimensoes_dw.invalidar()
+    schema_dw.invalidar()
+
+
+@pytest.fixture
+def usuario_ia(ia_ligada, ia_dw, criar_usuario_ia, client, admin_headers):
+    """Usuário comum com `ver` do app, `ver` do card e concessão ativa, e o DW de
+    mentira ligado. É o ponto de partida da maioria dos testes do SuperfrioIA."""
+    ia_dw()
+    u = criar_usuario_ia("analista")
+    r = client.post("/api/ia/concessoes/pedidos", headers=u["headers"],
+                    json={"dominio": "volumetria-catering", "motivo": "análise de volumetria"})
+    assert r.status_code == 201, r.text
+    r = client.post(f"/api/ia/administracao/concessoes/{r.json()['id']}/aprovar", headers=admin_headers, json={})
+    assert r.status_code == 200, r.text
+    u["concessao_id"] = r.json()["id"]
+    return u
+
+
+@pytest.fixture
+def criar_usuario_ia(client, admin_headers):
+    """Fábrica de usuário comum com as células da matriz que o teste pedir.
+
+    `ver_sistema`: `volumetria-catering:ver`; `ver_ia`: `superfrioia:ver` (o card);
+    `administrar`: `volumetria-catering:administrar`. Nome único por chamada: o
+    banco da sessão é compartilhado e o admin não tem exclusão de usuário."""
+    import uuid
+
+    def _criar(prefixo="ia", *, ver_sistema=True, ver_ia=True, administrar=False):
+        sufixo = uuid.uuid4().hex[:8]
+        apps = (["volumetria-catering"] if ver_sistema else []) + (["superfrioia"] if ver_ia else [])
+        permissoes = ["volumetria-catering:administrar"] if administrar else []
+        role = f"ia-{sufixo}"
+        r = client.post("/api/admin/roles", headers=admin_headers,
+                        json={"slug": role, "nome": f"IA {sufixo}", "apps": apps, "permissoes": permissoes})
+        assert r.status_code == 201, r.text
+        username = f"{prefixo}.{sufixo}"
+        r = client.post("/api/admin/usuarios", headers=admin_headers,
+                        json={"username": username, "senha": "senha-de-teste-123", "roles": [role]})
+        assert r.status_code == 201, r.text
+        token = client.post("/api/auth/login",
+                            data={"username": username, "password": "senha-de-teste-123"}).json()["access_token"]
+        return {"headers": {"Authorization": f"Bearer {token}"}, "username": username,
+                "id": r.json()["id"], "role": role}
+
+    return _criar
