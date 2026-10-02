@@ -51,6 +51,12 @@ _LISTAS = ("unidades", "clientes", "tipos_estoque", "operacoes", "dias")
 _CAMPOS_DO_FILTRO = frozenset(f.name for f in fields(recorte.Filtros))
 
 
+def com_limite_de_execucao(segundos):
+    """Dentro do bloco, as consultas ao DW desta thread têm prazo de execução. A tela não usa
+    isto e segue sem prazo; o SuperfrioIA usa (uma pergunta não pode ficar pendurada)."""
+    return conexao_dw.com_limite_de_execucao(segundos)
+
+
 class VolumetriaIndisponivel(Exception):
     """A volumetria não consegue responder agora: DW fora do ar, credencial
     ausente, contrato divergente do schema, ou configuração inválida (fuso,

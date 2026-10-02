@@ -224,9 +224,19 @@ def _filtrar(termo: str, universo: list[str]) -> list[str]:
     return sorted(_candidatos(termo, universo) if _norm(termo) else universo, key=str.casefold)
 
 
+def _com_prazo(funcao):
+    """A mesma função do serviço, mas com prazo de EXECUÇÃO no DW (`IA_DW_TIMEOUT_S`): uma
+    consulta que não volta termina a pergunta como 'fonte indisponível' em vez de segurar a
+    thread e a vaga do usuário. O prazo vale só para a IA; a tela não passa por aqui."""
+    def chamar(*args, **kwargs):
+        with service.com_limite_de_execucao(config.limite_de_execucao_dw_s()):
+            return funcao(*args, **kwargs)
+    return chamar
+
+
 def _opcoes(ctx) -> dict:
     try:
-        return ctx.opcoes(service.opcoes)
+        return ctx.opcoes(_com_prazo(service.opcoes))
     except service.VolumetriaIndisponivel:
         raise EncerrarPergunta("indisponivel", MENSAGEM_INDISPONIVEL) from None
 
@@ -432,7 +442,7 @@ def _ler(ctx, filtros: recorte.Filtros, *, todas_as_paginas: bool) -> list[dict]
     def uma(f):
         ctx.reservar_chamada_ao_servico(movimento=f.movimento, pagina=True)
         try:
-            return service.matriz(f)
+            return _com_prazo(service.matriz)(f)
         except service.VolumetriaIndisponivel:
             raise EncerrarPergunta("indisponivel", MENSAGEM_INDISPONIVEL) from None
 
