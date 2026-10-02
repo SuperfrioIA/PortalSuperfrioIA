@@ -284,6 +284,19 @@
     if (["indisponivel", "erro"].includes(estado)) {
       return `<div class="ia-msg ia-msg--ia">${cab}<div class="balao">${avisoHtml("ia-aviso--indisponivel", t("ia.aviso.indisponivel"), m.texto, true)}</div></div>`;
     }
+    if (estado === "numero_nao_verificado") {
+      // o texto do modelo foi retido (número que nenhuma consulta devolveu); os blocos são do Hub e ficam
+      const blocosDoHub = (m.blocos || []).map(blocoHtml).join("");
+      return `
+      <div class="ia-msg ia-msg--ia" data-mensagem="${Number(m.id) || 0}">
+        ${cab}
+        <div class="balao">
+          ${avisoHtml("ia-aviso--escopo", t("ia.aviso.verificador"), t("ia.aviso.verificador.texto"))}
+          ${blocosDoHub ? `<div class="ia-blocos">${blocosDoHub}</div>` : ""}
+          ${feedbackHtml(m)}
+        </div>
+      </div>`;
+    }
     const foraDeEscopo = /^\*\*Isso está fora do que este domínio responde/.test(m.texto || "");
     const corpo = foraDeEscopo
       ? avisoHtml("ia-aviso--escopo", t("ia.aviso.escopo"), String(m.texto).replace(/^\*\*[^*]+\*\*\s*/, ""))

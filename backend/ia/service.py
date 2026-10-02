@@ -28,9 +28,13 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, insert, select, update
 
 from backend.core.database import _now, db
-from backend.ia import auditoria, config, dominios, ferramentas, permissoes, provedor as modulo_provedor
+from backend.ia import (
+    auditoria, config, dominios, ferramentas, permissoes, prompt, provedor as modulo_provedor, verificador,
+)
 from backend.ia.models import IaConsulta, IaConversa, IaMensagem
-from backend.ia.politicas import ContextoDaPergunta, EncerrarPergunta, Recusa, mascarar, mencionou_a_base
+from backend.ia.politicas import (
+    ContextoDaPergunta, EncerrarPergunta, ErroDoProvedor, Recusa, mascarar, mencionou_a_base,
+)
 
 logger = logging.getLogger("backend.ia")
 
@@ -38,6 +42,8 @@ _FUSO = ZoneInfo("America/Sao_Paulo")
 HISTORICO_PARA_O_MODELO = 6   # mensagens anteriores enviadas ao provedor
 TITULO_MAXIMO = 60
 ESCOPO = "integral (indicador sem alcance por usuário)"
+ESTADO_NUMERO_NAO_VERIFICADO = "numero_nao_verificado"
+MENSAGEM_NEUTRA = "Não consegui responder agora. Tente novamente em instantes."
 
 _C, _M, _Q = IaConversa.__table__, IaMensagem.__table__, IaConsulta.__table__
 
@@ -225,32 +231,70 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
 
     prov = provedor or modulo_provedor.obter(config.provedor_nome())
     adaptador = ferramentas._adaptador(dom)
-    estado, texto_da_resposta, ctx = "ok", "", None
+    estado, texto_da_resposta, ctx, uso, tipo_do_erro = "ok", "", None, None, None
+    fixos = verificador.permitidos(prompt.sistema(), ferramentas.ESQUEMAS, mascarado,
+                                   [h["texto"] for h in historico])
     try:
         ctx = ContextoDaPergunta(usuario=user, dominio=dom.slug, hoje=_hoje(adaptador),
                                  base_autorizada=base_autorizada)
+
+        def _executar(nome, argumentos):
+            saida = ferramentas.executar(nome, argumentos, ctx)
+            ctx.saidas.append(saida)
+            return saida
+
+        def _liberados() -> set:
+            return fixos | verificador.permitidos(
+                ctx.saidas, prompt.cabecalho_da_pergunta(ctx.hoje, dom.slug))
+
         resposta = prov.responder(
             modulo_provedor.ContextoDoModelo(
-                sistema=modulo_provedor.PROMPT_BASE, historico=historico, pergunta=mascarado,
-                ferramentas=ferramentas.ESQUEMAS, hoje=ctx.hoje, dominio=dom.slug),
-            lambda nome, argumentos: ferramentas.executar(nome, argumentos, ctx),
+                sistema=prompt.sistema(), historico=historico, pergunta=mascarado,
+                ferramentas=ferramentas.ESQUEMAS, hoje=ctx.hoje, dominio=dom.slug,
+                verificar=lambda texto: verificador.verificar(texto, _liberados()).nao_verificados),
+            _executar,
         )
         texto_da_resposta = resposta.texto
+        uso = resposta.uso or None
+        # A trava mecânica (Lote 3): texto com número que nenhuma ferramenta devolveu não
+        # é exibido. A conferência é do Hub e vale para QUALQUER provedor.
+        veredito = verificador.verificar(texto_da_resposta, _liberados())
+        if not veredito.ok:
+            estado = ESTADO_NUMERO_NAO_VERIFICADO
+            ctx.bloqueios.append({"motivo": ESTADO_NUMERO_NAO_VERIFICADO,
+                                  "quantidade": len(veredito.nao_verificados),
+                                  "numeros": veredito.nao_verificados[:5]})
+            texto_da_resposta = (
+                "Não consegui validar os números da resposta, então não vou exibi-la."
+                + (" Os dados da consulta estão abaixo." if ctx.resultados else "")
+                + " Tente reformular a pergunta.")
     except EncerrarPergunta as fim:
         estado, texto_da_resposta = fim.motivo, fim.mensagem
         if ctx is None:
             ctx = ContextoDaPergunta(usuario=user, dominio=dom.slug, hoje=datetime.now(_FUSO).date())
+    except ErroDoProvedor as falha:
+        # só o TIPO (uma palavra) é registrado: nunca o texto do erro do SDK, que pode
+        # trazer trecho da requisição
+        logger.warning("ia: provedor falhou (%s)", falha.tipo)
+        estado, tipo_do_erro, texto_da_resposta = "erro", f"provedor_{falha.tipo}", MENSAGEM_NEUTRA
+        ctx = ctx or ContextoDaPergunta(usuario=user, dominio=dom.slug, hoje=datetime.now(_FUSO).date())
     except Exception:
         logger.exception("ia: falha inesperada no provedor/ferramentas")
-        estado = "erro"
-        texto_da_resposta = "Não consegui responder agora. Tente novamente em instantes."
+        estado, tipo_do_erro, texto_da_resposta = "erro", "provedor", MENSAGEM_NEUTRA
         ctx = ctx or ContextoDaPergunta(usuario=user, dominio=dom.slug, hoje=datetime.now(_FUSO).date())
+
+    # o que o modelo gastou, também quando a pergunta terminou por limite ou por erro
+    parcial = getattr(prov, "uso_da_pergunta", None)
+    if uso is None and parcial is not None:
+        uso = parcial.como_dict()
 
     blocos = [b for r in ctx.resultados for b in r["blocos"]]
     duracao_ms = int((time.perf_counter() - inicio) * 1000)
     meta = {"provedor": prov.nome, "rotulo_do_provedor": prov.rotulo, "estado": estado,
             "duracao_ms": duracao_ms, "dados_pessoais_mascarados": sorted(set(achados)),
             "operacoes": ctx.totais(), "aguardando_base": ctx.pediu_base}
+    if uso:
+        meta["uso"] = uso
 
     with db() as session:
         mensagem_id = session.execute(insert(IaMensagem).values(
@@ -277,9 +321,9 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
     if estado == "indisponivel":
         auditoria.erro(user, ip, dominio=dom.slug, tipo="dw_indisponivel", conversa_id=conversa_id)
     if estado == "erro":
-        auditoria.erro(user, ip, dominio=dom.slug, tipo="provedor", conversa_id=conversa_id)
+        auditoria.erro(user, ip, dominio=dom.slug, tipo=tipo_do_erro or "provedor", conversa_id=conversa_id)
     auditoria.resposta(user, ip, dominio=dom.slug, conversa_id=conversa_id, estado=estado,
-                       duracao_ms=duracao_ms, provedor=prov.nome, operacoes=ctx.totais())
+                       duracao_ms=duracao_ms, provedor=prov.nome, operacoes=ctx.totais(), uso=uso)
 
     return {
         "conversa_id": conversa_id,

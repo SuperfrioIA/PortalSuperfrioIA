@@ -96,6 +96,16 @@ class EncerrarPergunta(Exception):
         self.mensagem = mensagem
 
 
+class ErroDoProvedor(Exception):
+    """O provedor do modelo falhou (sem chave, rede, limite, resposta inválida...). A
+    pergunta termina com a mensagem **neutra** do serviço; o `tipo` (uma palavra, nunca o
+    texto do erro nem corpo de requisição ou resposta) vai para a trilha."""
+
+    def __init__(self, tipo: str):
+        super().__init__(tipo)
+        self.tipo = tipo
+
+
 class Recusa(Exception):
     """Recusa na porta de entrada (antes de qualquer ferramenta), com o status HTTP
     que a rota deve devolver."""
@@ -141,6 +151,9 @@ class ContextoDaPergunta:
     # `pediu_base` marca que ESTA resposta pediu, para a próxima pergunta herdar.
     base_autorizada: bool = False
     pediu_base: bool = False
+    # TUDO que as ferramentas devolveram ao modelo nesta pergunta (inclusive `descrever`
+    # e `amostrar_valores`): é a fonte dos números que o texto pode citar (verificador)
+    saidas: list = field(default_factory=list)
     # o que as ferramentas devolveram com sucesso, para montar os blocos exibidos
     resultados: list = field(default_factory=list)
     # uma linha por consulta ao indicador, para `ia_consultas`

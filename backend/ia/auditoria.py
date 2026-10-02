@@ -71,13 +71,16 @@ def erro(user, ip, *, dominio, tipo, conversa_id=None):
         alvo_id=conversa_id, detalhes={"dominio": dominio, "tipo": tipo})
 
 
-def resposta(user, ip, *, dominio, conversa_id, estado, duracao_ms, provedor, operacoes):
+def resposta(user, ip, *, dominio, conversa_id, estado, duracao_ms, provedor, operacoes, uso=None):
     """`operacoes` é o trabalho da pergunta INTEIRA (`ContextoDaPergunta.totais()`):
-    cobre também o que `amostrar_valores` e `descrever` leram, que não são consulta."""
-    _ev("ia.resposta", "ok", user, ip, alvo_tipo="conversa", alvo_id=conversa_id, detalhes={
-        "dominio": dominio, "estado": estado, "duracao_ms": duracao_ms, "provedor": provedor,
-        "operacoes": operacoes,
-    })
+    cobre também o que `amostrar_valores` e `descrever` leram, que não são consulta.
+    `uso` (provedor real): modelo, versão do prompt, rodadas, tokens, latência e custo
+    estimado. Só números e nomes de configuração, nunca texto da pergunta ou da resposta."""
+    detalhes = {"dominio": dominio, "estado": estado, "duracao_ms": duracao_ms, "provedor": provedor,
+                "operacoes": operacoes}
+    if uso:
+        detalhes["uso"] = uso
+    _ev("ia.resposta", "ok", user, ip, alvo_tipo="conversa", alvo_id=conversa_id, detalhes=detalhes)
 
 
 def concessao(session, acao, ator, ip, *, dominio, concessao_id, usuario, detalhes=None):

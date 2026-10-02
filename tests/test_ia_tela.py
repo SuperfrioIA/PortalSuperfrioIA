@@ -91,13 +91,13 @@ def test_o_script_e_carregado_depois_do_app_e_com_versao():
     ordem = [m for m in re.findall(r'<script src="js/([a-z]+)\.js\?v=(\d+[a-z]?)"', HTML)]
     nomes = [n for n, _ in ordem]
     assert nomes.index("superfrioia") > nomes.index("app")
-    assert dict(ordem)["superfrioia"] == "20261001a"
+    assert dict(ordem)["superfrioia"] == "20261002a"
 
 
 def test_cache_bust_foi_subido_nos_assets_que_mudaram():
     """Regra do repositório: mexeu em frontend/css|js, sobe o `?v=` no index.html."""
     assert 'css/styles.css?v=20261001a' in HTML
-    assert 'js/i18n.js?v=20261001a' in HTML and 'js/app.js?v=20261001a' in HTML
+    assert 'js/i18n.js?v=20261002a' in HTML and 'js/app.js?v=20261001a' in HTML
     # e o que NÃO mudou não foi bumpado à toa
     assert 'js/admin.js?v=20260903a' in HTML and 'js/projetos.js?v=20260730b' in HTML
 
@@ -186,3 +186,15 @@ def test_a_tela_nao_estoura_a_largura_do_celular():
 
 def test_a_bolha_do_usuario_passa_a_mostrar_a_pergunta_ja_mascarada():
     assert "bolha.texto = r.pergunta" in JS
+
+
+# ================================================= Lote 3: texto retido pelo verificador
+def test_texto_retido_pelo_verificador_mostra_aviso_traduzido_e_ainda_mostra_os_blocos_do_hub():
+    corpo = JS[JS.index('if (estado === "numero_nao_verificado")'):]
+    corpo = corpo[:corpo.index("\n    }\n")]
+    assert 't("ia.aviso.verificador")' in corpo and 't("ia.aviso.verificador.texto")' in corpo
+    assert "m.blocos" in corpo and "blocoHtml" in corpo
+    assert "texto(m.texto)" not in corpo and "${m.texto}" not in corpo   # o texto do modelo não é exibido
+    pt, es = _chaves_do_dicionario("pt"), _chaves_do_dicionario("es")
+    for chave in ("ia.aviso.verificador", "ia.aviso.verificador.texto"):
+        assert pt[chave] and es[chave] and pt[chave] != es[chave]

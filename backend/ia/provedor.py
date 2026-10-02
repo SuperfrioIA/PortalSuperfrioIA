@@ -37,6 +37,10 @@ class ContextoDoModelo:
     ferramentas: list[dict]
     hoje: date
     dominio: str
+    # Confere um texto contra o que as ferramentas devolveram até agora e devolve os
+    # números reprovados (lista vazia = ok). O provedor real usa para pedir UMA reescrita
+    # antes de a resposta ser retida (T-31); o serviço confere de novo no fim, sempre.
+    verificar: Callable[[str], list[str]] | None = None
 
 
 @dataclass
@@ -386,8 +390,13 @@ class ProvedorFalso:
 
 
 def obter(nome: str) -> Provedor:
-    """O provedor configurado em `IA_PROVEDOR`. Só `falso` existe no Lote 2 — um
-    nome desconhecido falha alto em vez de cair em outro provedor sem avisar."""
+    """O provedor configurado em `IA_PROVEDOR`: `falso` (Lote 2) ou `anthropic` (Lote 3).
+    Um nome desconhecido falha alto em vez de cair em outro provedor sem avisar. Criar o
+    provedor não toca a rede nem a chave (ver `provedor_anthropic`)."""
     if nome == "falso":
         return ProvedorFalso()
-    raise ValueError(f"provedor {nome!r} não existe neste lote (disponível: falso)")
+    if nome == "anthropic":
+        from backend.ia.provedor_anthropic import ProvedorAnthropic  # import tardio: evita ciclo
+
+        return ProvedorAnthropic()
+    raise ValueError(f"provedor {nome!r} não existe (disponíveis: falso, anthropic)")

@@ -13,3 +13,4 @@ APScheduler==3.11.3
 tzdata==2026.3
 oracledb==4.0.2
 PyYAML==6.0.3
+anthropic==1.11.0

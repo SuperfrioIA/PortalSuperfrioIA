@@ -94,6 +94,91 @@ def validade_concessao_dias() -> int:
     return _inteiro("IA_VALIDADE_CONCESSAO_DIAS", 180)
 
 
+# ----------------------------------------------------------- provedor (Lote 3)
+# Nada aqui tem valor "de produção" embutido: modelo, tempos e preços são ajuste de
+# operação (DD-30 / T-29+). Preço e câmbio NÃO têm padrão de propósito: um valor
+# inventado viraria "custo medido" no relatório. Sem preço, os tokens são medidos e o
+# custo sai como "não calculado".
+
+def _numero(nome: str, padrao: float | None, *, minimo: float = 0.0) -> float | None:
+    try:
+        valor = float(os.environ[nome].replace(",", "."))
+    except (KeyError, ValueError):
+        return padrao
+    return valor if valor > minimo else padrao
+
+
+def modelo() -> str:
+    """D-2: Sonnet 5.5, configurável (`IA_MODELO`)."""
+    return os.environ.get("IA_MODELO", "").strip() or "claude-sonnet-5-5"
+
+
+def anthropic_api_key() -> str | None:
+    """A chave só é lida aqui, na hora de criar o cliente. Nunca vai a log, a erro, a
+    resposta da API ou à trilha."""
+    return os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
+
+
+def timeout_do_provedor_s() -> float:
+    """Tempo máximo de UMA chamada HTTP ao modelo."""
+    return _numero("IA_TIMEOUT_S", 45.0, minimo=0.0)
+
+
+def prazo_da_pergunta_s() -> float:
+    """Tempo máximo da pergunta inteira no provedor (todas as rodadas e novas tentativas).
+    Passou disso, a pergunta termina com a mensagem neutra em vez de ficar pendurada."""
+    return _numero("IA_PRAZO_PERGUNTA_S", 90.0, minimo=0.0)
+
+
+def tentativas_do_provedor() -> int:
+    """Novas tentativas do SDK em 429, 5xx e falha de conexão (0 desliga)."""
+    try:
+        valor = int(os.environ["IA_TENTATIVAS"])
+    except (KeyError, ValueError):
+        return 2
+    return valor if 0 <= valor <= 5 else 2
+
+
+def max_tokens_de_saida() -> int:
+    return _inteiro("IA_MAX_TOKENS_SAIDA", 1024)
+
+
+def esforco() -> str | None:
+    """`low`... `max` (D-2 sugere low/medium para chat). Sem padrão: o parâmetro só vai
+    na requisição se for configurado, para a primeira rodada real não quebrar por um
+    parâmetro que o modelo possa recusar."""
+    valor = os.environ.get("IA_ESFORCO", "").strip().lower()
+    return valor if valor in {"low", "medium", "high", "xhigh", "max"} else None
+
+
+def inference_geo() -> str | None:
+    """Região de processamento pedida ao provedor (D-1). Sem padrão: valor e
+    disponibilidade dependem do contrato da conta; o dossiê registra o que valer."""
+    return os.environ.get("IA_INFERENCE_GEO", "").strip() or None
+
+
+def reparos_do_verificador() -> int:
+    """Quantas vezes o modelo pode reescrever um texto que o verificador de números
+    reprovou, antes de a resposta ser retida (T-31)."""
+    try:
+        valor = int(os.environ["IA_REPAROS"])
+    except (KeyError, ValueError):
+        return 1
+    return valor if 0 <= valor <= 3 else 1
+
+
+def precos() -> dict:
+    """Preço por milhão de tokens (USD) e câmbio, para estimar o custo por pergunta.
+    Valores `None` = não configurado = custo não calculado."""
+    return {
+        "entrada": _numero("IA_PRECO_ENTRADA_USD_MTOK", None),
+        "saida": _numero("IA_PRECO_SAIDA_USD_MTOK", None),
+        "cache_leitura": _numero("IA_PRECO_CACHE_LEITURA_USD_MTOK", None),
+        "cache_escrita": _numero("IA_PRECO_CACHE_ESCRITA_USD_MTOK", None),
+        "cambio_brl": _numero("IA_CAMBIO_USD_BRL", None),
+    }
+
+
 def autoaprovacao_permitida() -> bool:
     """DD-13: permitida durante a PoC (o evento sai marcado `autoaprovacao`),
     **proibida antes do piloto**. Para proibir: `IA_AUTOAPROVACAO=false`."""

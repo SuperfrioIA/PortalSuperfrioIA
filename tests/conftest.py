@@ -31,6 +31,24 @@ def _banco_seedado():
 
 
 @pytest.fixture(autouse=True)
+def _sem_rede_externa(monkeypatch):
+    """A suíte nunca sai da máquina (Lote 3: o provedor do modelo tem SDK de verdade, e um
+    teste que esquecesse de simular o transporte chamaria a API paga). Conectar fora do
+    loopback falha na hora. Não afeta o libpq (Postgres local) nem o TestClient."""
+    import socket
+
+    original = socket.socket.connect
+
+    def guardado(self, endereco):
+        host = endereco[0] if isinstance(endereco, tuple) else None
+        if host is not None and host not in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+            raise AssertionError(f"rede bloqueada nos testes: {host}")
+        return original(self, endereco)
+
+    monkeypatch.setattr(socket.socket, "connect", guardado)
+
+
+@pytest.fixture(autouse=True)
 def _sem_rate_limit():
     """Rate limit atrapalha os logins repetidos dos testes; o teste de
     lockout religa explicitamente. Reseta o storage entre cada teste."""

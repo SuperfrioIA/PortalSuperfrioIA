@@ -8,6 +8,10 @@
   enquanto o provedor é **de teste** (sem rede, sem chave, sem modelo real) e o único domínio é
   a Volumetria de Catering, que responde pelas mesmas funções da tela. Com a chave desligada
   nada aparece para ninguém
+- SuperfrioIA — provedor Claude pronto para ser ligado (ainda desligado): conferência de todo
+  número da resposta contra o que a consulta devolveu (texto com número fora da consulta não é
+  exibido), medição de tokens, tempo e custo por pergunta, e mensagem neutra quando o provedor
+  falha. Nada disso é exercido sem a chave da conta e a chave mestra ligada
 - Nova permissão `Volumetria de Catering — Administrar`: aprovar, negar e revogar os pedidos de
   acesso do SuperfrioIA a esse domínio. Não dá nem tira o acesso ao app e não exporta
 ### Alterado
