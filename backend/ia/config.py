@@ -191,6 +191,13 @@ def max_simultaneas() -> int:
     return _inteiro("IA_MAX_SIMULTANEAS", 2)
 
 
+def limite_de_execucao_dw_s() -> float:
+    """Prazo de execução de CADA chamada ao DW feita pela IA (`call_timeout`). As consultas da
+    Volumetria medidas levam de 0,1 a 1,3 s; 20 s é folga larga que ainda corta uma consulta
+    pendurada. Só vale para a IA: a tela não tem esse limite."""
+    return _numero("IA_DW_TIMEOUT_S", 20.0, minimo=0.0)
+
+
 def tamanho_maximo_do_resultado() -> int:
     """Caracteres do resultado de UMA ferramenta enviado ao modelo. Acima disso o modelo
     recebe um erro pedindo recorte menor, em vez de um resultado que estoura o contexto e

@@ -72,8 +72,10 @@ Ligar isso no import seria mais curto e pior: quem importasse o módulo mudaria 
 comportamento global do driver sem pedir.
 """
 
+import contextvars
 import logging
 import os
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,24 @@ TIMEOUT_CONEXAO_SEGUNDOS = 8
 # Linhas por round trip. O default do driver é 100, e com ele uma leitura de
 # 40 mil linhas custa 400 idas e voltas na rede.
 LOTE_LEITURA = 1_000
+
+
+# Prazo de EXECUÇÃO de cada chamada ao DW (`call_timeout` do driver), só dentro de
+# `com_limite_de_execucao`. Fora dele vale `None`: a tela da Volumetria, que sempre abriu
+# conexão sem esse limite, segue exatamente como estava. Quem o abre hoje é o SuperfrioIA
+# (uma pergunta não pode ficar pendurada numa consulta que não volta: segura a thread e a vaga
+# do usuário). `ContextVar` e não parâmetro: a conexão é aberta bem fundo, dentro do serviço.
+_LIMITE_DE_EXECUCAO_S: contextvars.ContextVar = contextvars.ContextVar("dw_limite_de_execucao_s", default=None)
+
+
+@contextmanager
+def com_limite_de_execucao(segundos):
+    """Dentro do bloco, toda conexão aberta nesta thread leva `call_timeout` de `segundos`."""
+    marca = _LIMITE_DE_EXECUCAO_S.set(segundos)
+    try:
+        yield
+    finally:
+        _LIMITE_DE_EXECUCAO_S.reset(marca)
 
 
 class DWIndisponivel(Exception):
@@ -194,12 +214,16 @@ def conectar():
     oracledb = configurar_driver()
     destino = dsn()
     try:
-        return oracledb.connect(
+        conexao = oracledb.connect(
             user=usuario,
             password=senha,
             dsn=destino,
             tcp_connect_timeout=TIMEOUT_CONEXAO_SEGUNDOS,
         )
+        limite = _LIMITE_DE_EXECUCAO_S.get()
+        if limite:                       # só quando alguém pediu (SuperfrioIA); a tela não pede
+            conexao.call_timeout = int(limite * 1000)       # milissegundos, por chamada ao DW
+        return conexao
     except Exception as erro:
         # `oracledb.Error` cobriria o esperado (`ORA-01017` senha errada,
         # `DPY-6005` rota fechada), mas erro de configuração do próprio driver
