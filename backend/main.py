@@ -59,8 +59,7 @@ async def lifespan(_app: FastAPI):
     # `IA_HABILITADO` desligada. Contrato inconsistente derruba a subida com uma
     # mensagem que nomeia o erro — melhor no deploy do que na primeira pergunta.
     ia_dominios.carregar()
-    for aviso in ia_config.avisos_de_ativacao():
-        logging.getLogger("backend.ia").warning("SuperfrioIA: %s", aviso)
+    ia_config.registrar_avisos_de_ativacao()
     init_db()
     seed_initial()
 

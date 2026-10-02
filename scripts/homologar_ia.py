@@ -22,9 +22,16 @@ para o relatório. O alvo é impresso antes de qualquer chamada e exige `--confi
 
 Uso (PowerShell):
 
-    .\\.venv\\Scripts\\python.exe scripts\\homologar_ia.py --url https://<dev> --confirmo-ambiente-de-teste ^
+    .\\.venv\\Scripts\\python.exe scripts\\homologar_ia.py --url https://<host-da-dev> ^
+        --confirmo-ambiente-de-teste <host-da-dev> --hosts-proibidos <host-de-producao> ^
         --usuario <login> --admin-usuario <login-admin> --sem-concessao-usuario <login> ^
         --gabarito docs\\GABARITO_REAL_VOLUMETRIA.yaml
+
+`--confirmo-ambiente-de-teste` exige o HOST digitado (igual ao de `--url`): é a sua confirmação de que o alvo
+é de TESTE, e uma flag sem valor seria copiada sem pensar. `--hosts-proibidos` é uma segunda trava: ponha
+nele o host de produção. `--usuario` deve ser uma conta de TESTE dedicada: o passo `revogacao` revoga e
+reaprova a concessão dela, e o relatório diz como ela terminou. Se a rede cair no meio, o relatório sai
+mesmo assim, com o que deu para ver.
 """
 import argparse
 import getpass
@@ -34,7 +41,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -47,12 +54,22 @@ _NUMERO = re.compile(r"(?<![A-Za-z0-9])\d{1,3}(?:\.\d{3})+(?:,\d+)?|(?<![A-Za-z0
 
 
 # ====================================================================== HTTP
+class _SemRedirecionar(urllib.request.HTTPRedirectHandler):
+    """Não segue redirecionamento: um 301 de http para https transformaria o POST em GET (o login
+    'falharia' sem dizer por quê) e mandaria a senha para onde o servidor mandar. 3xx vira o status."""
+
+    def redirect_request(self, *a, **k):
+        return None
+
+
 class Http:
-    """`pedir(metodo, caminho, corpo, token) -> (status, json)`. Os testes trocam por um adaptador de TestClient."""
+    """`pedir(metodo, caminho, corpo, token) -> (status, json)`. Os testes trocam por um adaptador de TestClient.
+    Falha de rede (reset, timeout, DNS) devolve `(0, None)`: o roteiro registra a falha e ainda escreve o relatório."""
 
     def __init__(self, base: str, tempo: float = 120.0):
         self.base = base.rstrip("/")
         self.tempo = tempo
+        self._abrir = urllib.request.build_opener(_SemRedirecionar).open
 
     def pedir(self, metodo: str, caminho: str, corpo=None, token: str | None = None, form: dict | None = None):
         dados, cabecalhos = None, {"Accept": "application/json"}
@@ -66,10 +83,12 @@ class Http:
             cabecalhos["Authorization"] = f"Bearer {token}"
         pedido = urllib.request.Request(self.base + caminho, data=dados, method=metodo, headers=cabecalhos)
         try:
-            with urllib.request.urlopen(pedido, timeout=self.tempo) as r:
+            with self._abrir(pedido, timeout=self.tempo) as r:
                 return r.status, _json(r.read())
         except urllib.error.HTTPError as erro:
             return erro.code, _json(erro.read())
+        except (urllib.error.URLError, OSError, TimeoutError):
+            return 0, None
 
 
 def _json(bruto: bytes):
@@ -200,20 +219,31 @@ def passo_revogacao(http, ctx) -> Passo:
     if minha is None:
         p.falha("o usuário de teste não tem concessão ativa para revogar")
         return p.fim()
-    status, _ = http.pedir("POST", f"/api/ia/administracao/concessoes/{minha['id']}/revogar",
-                           {"motivo": "homologação do SuperfrioIA"}, ctx["token_admin"])
-    (p.ok if status == 200 else p.falha)(f"revogar -> {status}")
-    status, _ = perguntar(http, ctx["token"], ctx.get("pergunta", PERGUNTA_PADRAO))
-    (p.ok if status == 403 else p.falha)(f"pergunta logo depois da revogação -> {status} (esperado 403, sem esperar nada)")
-    status, pedido = http.pedir("POST", "/api/ia/concessoes/pedidos",
-                                {"dominio": DOMINIO, "motivo": "homologação do SuperfrioIA: voltar ao teste"}, ctx["token"])
-    if status == 201:
-        status, _ = http.pedir("POST", f"/api/ia/administracao/concessoes/{pedido['id']}/aprovar", {}, ctx["token_admin"])
-        (p.ok if status == 200 else p.falha)(f"aprovar o novo pedido -> {status}")
+    ctx["revogou"] = True       # a partir daqui o estado do usuário mudou: o relatório tem que dizer como ele terminou
+    try:
+        status, _ = http.pedir("POST", f"/api/ia/administracao/concessoes/{minha['id']}/revogar",
+                               {"motivo": "homologação do SuperfrioIA"}, ctx["token_admin"])
+        (p.ok if status == 200 else p.falha)(f"revogar -> {status}")
         status, _ = perguntar(http, ctx["token"], ctx.get("pergunta", PERGUNTA_PADRAO))
-        (p.ok if status == 200 else p.falha)(f"pergunta depois de aprovar de novo -> {status}")
-    else:
-        p.falha(f"pedir a concessão de novo -> {status}")
+        (p.ok if status == 403 else p.falha)(f"pergunta logo depois da revogação -> {status} (esperado 403, sem esperar nada)")
+        status, pedido = http.pedir("POST", "/api/ia/concessoes/pedidos",
+                                    {"dominio": DOMINIO, "motivo": "homologação do SuperfrioIA: voltar ao teste"}, ctx["token"])
+        if status == 201:
+            status, _ = http.pedir("POST", f"/api/ia/administracao/concessoes/{pedido['id']}/aprovar", {}, ctx["token_admin"])
+            (p.ok if status == 200 else p.falha)(f"aprovar o novo pedido -> {status}")
+            status, _ = perguntar(http, ctx["token"], ctx.get("pergunta", PERGUNTA_PADRAO))
+            (p.ok if status == 200 else p.falha)(f"pergunta depois de aprovar de novo -> {status}")
+        else:
+            p.falha(f"pedir a concessão de novo -> {status}")
+    finally:
+        # mesmo se algo acima quebrar: como o usuário de teste terminou
+        status, minhas = http.pedir("GET", "/api/ia/concessoes/minhas", token=ctx["token"])
+        vigente = status == 200 and any(c.get("vigente") for c in (minhas or []))
+        if vigente:
+            p.ok(f"estado final: o usuário '{ctx['usuario']}' TEM concessão ativa")
+        else:
+            p.falha(f"estado final: o usuário '{ctx['usuario']}' ficou SEM concessão ativa (ou não deu para conferir, "
+                    f"status {status}). RESTAURE: peça e aprove o acesso na tela do SuperfrioIA")
     return p.fim()
 
 
@@ -227,9 +257,12 @@ def passo_auditoria(http, ctx) -> Passo:
     if status != 200:
         p.falha(f"GET /api/admin/auditoria -> {status}")
         return p.fim()
-    eventos = corpo.get("eventos") or corpo.get("itens") or corpo.get("items") or []
+    todos = corpo.get("eventos") or corpo.get("itens") or corpo.get("items") or []
+    # só vale o que nasceu DEPOIS do início desta rodada: na DEV há eventos de outras pessoas e de
+    # rodadas anteriores, e eles não podem fazer o passo passar quando esta rodada não gravou nada
+    eventos = [e for e in todos if str(e.get("ocorrido_em", "")) >= ctx.get("inicio_utc", "")]
     acoes = {e["acao"] for e in eventos}
-    p.ok(f"{len(eventos)} eventos do SuperfrioIA hoje; ações: {sorted(acoes)}")
+    p.ok(f"{len(eventos)} eventos desta rodada ({len(todos)} do SuperfrioIA hoje); ações: {sorted(acoes)}")
     for esperado in EVENTOS_ESPERADOS:
         (p.ok if esperado in acoes else p.falha)(f"evento {esperado} {'presente' if esperado in acoes else 'AUSENTE'}")
     if ctx.get("revogou"):
@@ -310,7 +343,9 @@ def relatorio(url: str, ctx: dict, passos: list[Passo]) -> str:
 
 def executar(http, args, senha_de, interativo=False) -> tuple[list[Passo], dict]:
     ctx: dict = {"usuario": args.usuario, "pergunta": args.pergunta, "gabarito": args.gabarito,
-                 "exigir_provedor": args.exigir_provedor, "interativo": interativo}
+                 "exigir_provedor": args.exigir_provedor, "interativo": interativo,
+                 # relógio do servidor é UTC e sem fuso na trilha; 5 s de folga para a diferença de relógio
+                 "inicio_utc": (datetime.now(timezone.utc) - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S")}
     passos: list[Passo] = []
     escolhidos = [p.strip() for p in args.passos.split(",")] if args.passos else PADRAO
     desconhecidos = [p for p in escolhidos if p not in PASSOS]
@@ -322,22 +357,34 @@ def executar(http, args, senha_de, interativo=False) -> tuple[list[Passo], dict]
             falhou = Passo("login")
             falhou.falha("o login do usuário de teste falhou (senha errada, conta inexistente ou bloqueada)")
             return [falhou.fim()], ctx
-        if args.admin_usuario:
-            ctx["token_admin"] = login(http, args.admin_usuario, senha_de("admin"))
-        if args.sem_concessao_usuario:
-            ctx["token_sem"] = login(http, args.sem_concessao_usuario, senha_de("sem"))
+        for chave, usuario, quem, nome in (("token_admin", args.admin_usuario, "admin", "login-admin"),
+                                           ("token_sem", args.sem_concessao_usuario, "sem", "login-sem-concessao")):
+            if usuario:
+                ctx[chave] = login(http, usuario, senha_de(quem))
+                if not ctx[chave]:   # informado e não entrou: FALHA, e não 'pulado: sem --admin-usuario'
+                    falhou = Passo(nome)
+                    falhou.falha(f"o login de '{usuario}' falhou: os passos que dependem dele NÃO foram verificados")
+                    passos.append(falhou.fim())
     for nome in escolhidos:
-        passo = PASSOS[nome](http, ctx)
-        if nome == "revogacao" and passo.situacao != "PULADO":
-            ctx["revogou"] = True
+        try:
+            passo = PASSOS[nome](http, ctx)
+        except (KeyboardInterrupt, Exception) as erro:   # o relatório sai sempre, com o que deu para ver
+            passo = Passo(nome)
+            passo.falha(f"INTERROMPIDO por {type(erro).__name__}: os passos seguintes não rodaram")
+            passos.append(passo.fim())
+            break
         passos.append(passo)
+        if passo.situacao == "FALHOU" and nome == "saude":
+            break    # sem Hub respondendo, o resto só geraria ruído
     return passos, ctx
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Homologação do SuperfrioIA (ambiente de teste)")
     ap.add_argument("--url", required=True)
-    ap.add_argument("--confirmo-ambiente-de-teste", action="store_true", required=True)
+    ap.add_argument("--confirmo-ambiente-de-teste", required=True, metavar="HOST",
+                    help="digite aqui o host do alvo (o mesmo de --url): uma flag sozinha seria copiada sem pensar")
+    ap.add_argument("--hosts-proibidos", default="", help="hosts separados por vírgula que este roteiro NUNCA pode tocar (ponha os de produção)")
     ap.add_argument("--usuario", required=True)
     ap.add_argument("--admin-usuario", default="")
     ap.add_argument("--sem-concessao-usuario", default="")
@@ -351,6 +398,16 @@ def main() -> None:
     alvo = urlparse(args.url)
     if alvo.scheme not in ("http", "https") or not alvo.netloc:
         sys.exit("URL inválida")
+    if alvo.username or alvo.password or "@" in alvo.netloc:
+        sys.exit("URL inválida: não ponha usuário nem senha na URL (iriam para o relatório e para o histórico do terminal)")
+    if args.confirmo_ambiente_de_teste.strip().lower() != alvo.netloc.lower():
+        sys.exit(f"RECUSADO: --confirmo-ambiente-de-teste tem que ser exatamente o host do alvo ({alvo.netloc}). "
+                 "Digite o host de propósito: é a sua confirmação de que ele é de TESTE. Nenhuma chamada foi feita.")
+    proibidos = {h.strip().lower() for h in args.hosts_proibidos.split(",") if h.strip()}
+    if alvo.netloc.lower() in proibidos or alvo.hostname.lower() in proibidos:
+        sys.exit(f"RECUSADO: {alvo.netloc} está em --hosts-proibidos. Nenhuma chamada foi feita.")
+    if alvo.scheme == "http" and alvo.hostname not in ("localhost", "127.0.0.1", "::1"):
+        print("AVISO: http sem TLS fora da sua máquina: a senha e o token trafegam em claro.")
     print(f"ALVO: {alvo.scheme}://{alvo.netloc}  (você confirmou que é ambiente de TESTE; nenhuma chamada fez ainda)")
 
     def senha_de(quem: str) -> str:

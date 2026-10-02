@@ -15,8 +15,10 @@ Uso (PowerShell, raiz do projeto):
     .\\.venv\\Scripts\\python.exe scripts\\comparar_exibicao.py            # grade completa (Node) + navegadores
     .\\.venv\\Scripts\\python.exe scripts\\comparar_exibicao.py --rapido    # grade pequena
 
-Não toca banco, rede nem DW. Os navegadores abrem sozinhos e fecham sozinhos (`--dump-dom`); o
-script confere no fim que nenhum ficou ativo. Sai com código 1 se houver divergência.
+Não toca banco, rede nem DW. Os navegadores abrem sozinhos e se encerram sozinhos (`--dump-dom`); o script
+NÃO os monitora: quem roda confere, pela linha de comando (`--user-data-dir=...comparar_exibicao_br_...`) e
+nunca por nome, que nada ficou. Aos navegadores vai uma AMOSTRA da grade (1 em 13, ~209 mil valores); a
+grade inteira roda só no Node. Sai com código 1 se houver divergência.
 """
 import argparse
 import html
@@ -100,35 +102,41 @@ def rodar_no_node(entradas: list[tuple[str, str]]) -> list[str]:
     if not node:
         raise SystemExit("node não encontrado no PATH")
     pasta = Path(tempfile.mkdtemp(prefix="comparar_exibicao_"))
-    (pasta / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
-    (pasta / "rodar.js").write_text(
-        _PREAMBULO + fonte_do_fmt() + "\n"
-        "const fs = require('fs');\n"
-        f"const e = JSON.parse(fs.readFileSync({json.dumps(str(pasta / 'entradas.json'))}, 'utf8'));\n"
-        f"fs.writeFileSync({json.dumps(str(pasta / 'saida.json'))}, JSON.stringify(e.map(([u, v]) => fmt(v, u))));\n",
-        encoding="utf-8")
-    subprocess.run([node, str(pasta / "rodar.js")], check=True, timeout=600)
-    return json.loads((pasta / "saida.json").read_text(encoding="utf-8"))
+    try:
+        (pasta / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+        (pasta / "rodar.js").write_text(
+            _PREAMBULO + fonte_do_fmt() + "\n"
+            "const fs = require('fs');\n"
+            f"const e = JSON.parse(fs.readFileSync({json.dumps(str(pasta / 'entradas.json'))}, 'utf8'));\n"
+            f"fs.writeFileSync({json.dumps(str(pasta / 'saida.json'))}, JSON.stringify(e.map(([u, v]) => fmt(v, u))));\n",
+            encoding="utf-8")
+        subprocess.run([node, str(pasta / "rodar.js")], check=True, timeout=600)
+        return json.loads((pasta / "saida.json").read_text(encoding="utf-8"))
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
 
 
 def rodar_no_navegador(exe: Path, entradas: list[tuple[str, str]]) -> list[str]:
     pasta = Path(tempfile.mkdtemp(prefix="comparar_exibicao_br_"))
-    pagina = pasta / "pagina.html"
-    pagina.write_text(
-        "<!doctype html><meta charset='utf-8'><pre id='out'></pre><script>\n"
-        + _PREAMBULO + fonte_do_fmt() + "\n"
-        f"const e = {json.dumps(entradas)};\n"
-        "document.getElementById('out').textContent = JSON.stringify(e.map(([u, v]) => fmt(v, u)));\n"
-        "</script>", encoding="utf-8")
-    perfil = pasta / "perfil"
-    proc = subprocess.run(
-        [str(exe), "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-         f"--user-data-dir={perfil}", "--dump-dom", pagina.as_uri()],
-        capture_output=True, text=True, timeout=300, encoding="utf-8")
-    achado = re.search(r"<pre id=\"out\">(.*?)</pre>", proc.stdout, re.S)
-    if not achado:
-        raise RuntimeError(f"{exe.name}: saída sem o resultado (código {proc.returncode})")
-    return json.loads(html.unescape(achado.group(1)))
+    try:
+        pagina = pasta / "pagina.html"
+        pagina.write_text(
+            "<!doctype html><meta charset='utf-8'><pre id='out'></pre><script>\n"
+            + _PREAMBULO + fonte_do_fmt() + "\n"
+            f"const e = {json.dumps(entradas)};\n"
+            "document.getElementById('out').textContent = JSON.stringify(e.map(([u, v]) => fmt(v, u)));\n"
+            "</script>", encoding="utf-8")
+        perfil = pasta / "perfil"
+        proc = subprocess.run(
+            [str(exe), "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+             f"--user-data-dir={perfil}", "--dump-dom", pagina.as_uri()],
+            capture_output=True, text=True, timeout=300, encoding="utf-8")
+        achado = re.search(r"<pre id=\"out\">(.*?)</pre>", proc.stdout, re.S)
+        if not achado:
+            raise RuntimeError(f"{exe.name}: saída sem o resultado (código {proc.returncode})")
+        return json.loads(html.unescape(achado.group(1)))
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
 
 
 def versao_do_navegador(exe: Path) -> str:

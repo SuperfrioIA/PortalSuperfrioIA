@@ -139,6 +139,15 @@ def test_a_auditoria_reprova_quando_falta_um_evento_esperado(hom):
     assert p.situacao == "FALHOU" and "ia.consulta AUSENTE" in " ".join(p.evidencias)
 
 
+def test_a_auditoria_ignora_evento_de_antes_desta_rodada(hom):
+    """Na DEV há eventos de outras pessoas e de rodadas anteriores; eles não podem fazer o passo passar."""
+    velhos = [{"acao": a, "ocorrido_em": "2026-01-01 10:00:00", "detalhes": {}} for a in ("ia.pergunta", "ia.consulta", "ia.resposta")]
+    p = hom.passo_auditoria(_TrilhaFabricada(velhos), {"token_admin": "t", "inicio_utc": "2026-10-02 12:00:00"}).fim()
+    assert p.situacao == "FALHOU" and "0 eventos desta rodada" in " ".join(p.evidencias)
+    novos = [{**e, "ocorrido_em": "2026-10-02 12:00:30"} for e in velhos]
+    assert hom.passo_auditoria(_TrilhaFabricada(novos), {"token_admin": "t", "inicio_utc": "2026-10-02 12:00:00"}).fim().situacao == "PASSOU"
+
+
 def test_a_auditoria_passa_com_os_eventos_sem_texto(hom):
     eventos = [{"acao": a, "detalhes": {"dominio": "x", "hash": "abc"}} for a in ("ia.pergunta", "ia.consulta", "ia.resposta")]
     assert hom.passo_auditoria(_TrilhaFabricada(eventos), {"token_admin": "t"}).fim().situacao == "PASSOU"
@@ -188,6 +197,43 @@ def test_o_relatorio_diz_nao_aprovado_quando_algum_passo_falha(hom):
     assert "**NÃO aprovado**: falharam pergunta" in texto
 
 
+def test_login_do_admin_que_falha_e_falha_do_roteiro_e_nao_pulado(hom, client, usuario_ia):
+    args = _args(usuario=usuario_ia["username"], passos="dominios,revogacao,auditoria")
+    passos, _ = hom.executar(HttpDeTeste(client), args, lambda quem: SENHA if quem == "usuario" else "senha-errada")
+    nomes = _situacoes(passos)
+    assert nomes["login-admin"] == "FALHOU"
+    assert "NÃO foram verificados" in " ".join(passos[0].evidencias)
+    relatorio = hom.relatorio("http://x", {}, passos)
+    assert "**NÃO aprovado**" in relatorio and "login-admin" in relatorio
+
+
+class _AprovacaoQueFalha(HttpDeTeste):
+    def pedir(self, metodo, caminho, corpo=None, token=None, form=None):
+        if caminho.endswith("/aprovar") and "administracao" in caminho and corpo == {} and self.derrubar:
+            return 0, None                          # a rede cai justo na reaprovação
+        return super().pedir(metodo, caminho, corpo, token, form)
+
+    derrubar = True
+
+
+def test_se_a_reaprovacao_falha_o_relatorio_diz_que_o_usuario_ficou_sem_concessao(hom, client, usuario_ia):
+    args = _args(usuario=usuario_ia["username"], passos="dominios,revogacao")
+    passos, _ = hom.executar(_AprovacaoQueFalha(client), args, _senhas())
+    revogacao = next(p for p in passos if p.nome == "revogacao")
+    texto = " ".join(revogacao.evidencias)
+    assert revogacao.situacao == "FALHOU" and "ficou SEM concessão ativa" in texto and "RESTAURE" in texto
+
+
+def test_excecao_no_meio_do_roteiro_nao_perde_o_relatorio(hom, client, usuario_ia, monkeypatch):
+    def quebra(http, ctx):
+        raise RuntimeError("falha inesperada")
+
+    monkeypatch.setitem(hom.PASSOS, "pergunta", quebra)
+    passos, _ = _rodar(hom, client, usuario_ia, passos="dominios,pergunta,auditoria")
+    assert [p.nome for p in passos] == ["dominios", "pergunta"] and passos[-1].situacao == "FALHOU"
+    assert "INTERROMPIDO por RuntimeError" in " ".join(passos[-1].evidencias)
+
+
 def test_passo_desligar_so_roda_em_terminal_interativo(hom, client, usuario_ia):
     passos, _ = _rodar(hom, client, usuario_ia, passos="dominios,desligar")
     assert _situacoes(passos)["desligar"] == "PULADO"
@@ -198,17 +244,64 @@ def test_passo_desconhecido_e_recusado(hom, client, usuario_ia):
         _rodar(hom, client, usuario_ia, passos="saude,inventado")
 
 
+def _script(*args, tmp=None):
+    return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=RAIZ, capture_output=True, text=True,
+                          encoding="utf-8", timeout=120, env={**os.environ, "PYTHONIOENCODING": "utf-8",
+                                                              "IA_HOMOLOG_SENHA": "x"})
+
+
 def test_o_script_exige_confirmar_que_o_alvo_e_ambiente_de_teste():
-    r = subprocess.run([sys.executable, str(SCRIPT), "--url", "http://x.interno", "--usuario", "u"], cwd=RAIZ,
-                       capture_output=True, text=True, encoding="utf-8", timeout=60,
-                       env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    r = _script("--url", "http://x.interno", "--usuario", "u")
     assert r.returncode == 2 and "--confirmo-ambiente-de-teste" in r.stderr
 
 
+def test_a_confirmacao_e_o_host_digitado_e_nao_uma_flag_copiada(hom):
+    """O runbook não pode entregar uma linha que funcione contra qualquer URL: o host tem que ser digitado."""
+    r = _script("--url", "https://prod.exemplo.interno", "--confirmo-ambiente-de-teste", "dev.exemplo.interno", "--usuario", "u")
+    assert r.returncode != 0 and "RECUSADO" in r.stdout + r.stderr and "prod.exemplo.interno" in r.stdout + r.stderr
+    assert "ALVO:" not in r.stdout, "nenhuma chamada pode ter sido feita"
+
+
+def test_host_proibido_e_recusado_mesmo_com_a_confirmacao_certa():
+    r = _script("--url", "https://prod.exemplo.interno", "--confirmo-ambiente-de-teste", "prod.exemplo.interno",
+                "--hosts-proibidos", "outro.interno,PROD.exemplo.interno", "--usuario", "u")
+    assert r.returncode != 0 and "--hosts-proibidos" in r.stdout + r.stderr and "ALVO:" not in r.stdout
+
+
+def test_url_com_usuario_e_senha_e_recusada():
+    r = _script("--url", "https://fulana:segredo@dev.interno", "--confirmo-ambiente-de-teste", "fulana:segredo@dev.interno",
+                "--usuario", "u")
+    assert r.returncode != 0 and "não ponha usuário nem senha na URL" in r.stdout + r.stderr
+    assert "segredo" not in r.stdout.replace("não ponha usuário nem senha", "")
+
+
 def test_o_script_recusa_url_que_nao_e_http(hom):
-    r = subprocess.run([sys.executable, str(SCRIPT), "--url", "ftp://x", "--confirmo-ambiente-de-teste", "--usuario", "u"],
-                       cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", timeout=60)
+    r = _script("--url", "ftp://x", "--confirmo-ambiente-de-teste", "x", "--usuario", "u")
     assert r.returncode != 0 and "URL inválida" in (r.stderr + r.stdout)
+
+
+def test_queda_de_rede_nao_derruba_o_script_e_o_relatorio_sai(tmp_path):
+    saida = tmp_path / "rel.md"
+    r = _script("--url", "http://127.0.0.1:9", "--confirmo-ambiente-de-teste", "127.0.0.1:9", "--passos", "saude",
+                "--usuario", "u", "--saida", str(saida))
+    assert r.returncode == 1 and "Traceback" not in r.stderr
+    texto = saida.read_text(encoding="utf-8")
+    assert "**FALHOU**" in texto and "GET /api/health -> 0" in texto and "**NÃO aprovado**" in texto
+
+
+def test_http_sem_tls_fora_da_maquina_avisa_e_o_redirecionamento_nao_e_seguido():
+    """Não dá para provar o aviso conectando a um endereço remoto (a suíte não sai da máquina): confere o código."""
+    fonte = SCRIPT.read_text(encoding="utf-8")
+    assert 'alvo.scheme == "http" and alvo.hostname not in ("localhost", "127.0.0.1", "::1")' in fonte
+    assert "AVISO: http sem TLS" in fonte and "_SemRedirecionar" in fonte
+
+
+def test_redirecionamento_vira_status_e_nao_e_seguido(hom):
+    import io
+    import urllib.error
+
+    manipulador = hom._SemRedirecionar()
+    assert manipulador.redirect_request(None, None, 301, "Moved", {}, "https://outro/") is None
 
 
 def test_senha_nunca_e_argumento_e_o_script_so_fala_http():

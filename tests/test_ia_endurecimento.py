@@ -184,8 +184,43 @@ def test_provedor_de_teste_ligado_em_producao_avisa(limpo):
     assert config.avisos_de_ativacao() == []
 
 
-def test_o_boot_registra_os_avisos():
+def test_registrar_os_avisos_escreve_warning_no_log_do_boot_sem_a_chave(limpo, caplog):
+    import logging
+
+    limpo.setenv("IA_HABILITADO", "true")
+    limpo.setenv("IA_PROVEDOR", "anthropic")
+    limpo.setenv("ANTHROPIC_API_KEY", "valor-so-de-teste")
+    with caplog.at_level(logging.WARNING, logger="backend.ia"):
+        avisos = config.registrar_avisos_de_ativacao()
+    registros = [r for r in caplog.records if r.name == "backend.ia" and r.levelno == logging.WARNING]
+    assert avisos and len(registros) == len(avisos)
+    assert "SuperfrioIA: IA_AUTOAPROVACAO" in registros[0].getMessage()
+    assert "valor-so-de-teste" not in caplog.text
+
+
+def test_o_boot_chama_o_registro_dos_avisos():
+    """A LIGAÇÃO no `lifespan` é conferida por leitura: exercitar o lifespan inteiro agendaria os jobs de FTP.
+    O registro em si (acima) é executado."""
     import pathlib
 
     fonte = (pathlib.Path(__file__).resolve().parent.parent / "backend" / "main.py").read_text(encoding="utf-8")
-    assert "ia_config.avisos_de_ativacao()" in fonte and 'warning("SuperfrioIA: %s"' in fonte
+    corpo = fonte[fonte.index("async def lifespan"):fonte.index("yield")]
+    assert "\n    ia_config.registrar_avisos_de_ativacao()" in corpo and "# ia_config" not in corpo
+
+
+def test_o_maior_ranking_possivel_cabe_no_teto_com_folga(client, usuario_ia, ia_dw):
+    """T-43 diz que 20 itens x 12 meses ficam em ~6 mil caracteres. Aqui MEDIDO com 20 unidades e 12 meses."""
+    from backend.ia import ferramentas
+    from backend.ia.politicas import ContextoDaPergunta
+    from ia_ajuda import DOMINIO
+
+    ia_dw(n_unidades=20)
+    import dw_falso
+
+    ctx = ContextoDaPergunta(usuario={}, dominio=DOMINIO, hoje=dw_falso.HOJE)
+    saida = ferramentas._executar("consultar_indicador", {"dominio": DOMINIO, "parametros": {
+        "de": "2025-09-01", "ate": "2026-08-31", "movimento": "rec", "detalhe": "unidade", "limite": 20}}, ctx)
+    tamanho = len(json.dumps(saida, ensure_ascii=False, default=str))
+    # 20 unidades na fonte, mas RMSPV e RMSPIV colidem no nome exibido (modelado no DW sintético): 19 itens
+    assert "erro" not in saida and len(saida["itens"]) >= 19
+    assert tamanho < config.tamanho_maximo_do_resultado() / 2, tamanho

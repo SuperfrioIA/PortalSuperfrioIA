@@ -197,8 +197,13 @@ def perguntar(user: dict, *, dominio_slug: str, pergunta: str, conversa_id: int 
               ip: str | None, provedor=None) -> dict:
     """Uma pergunta. No máximo `IA_MAX_SIMULTANEAS` por usuário ao mesmo tempo (T-42): a
     cota diária conta e grava em transações separadas, e sem este limite uma rajada de
-    requisições passaria dela e multiplicaria o gasto com o provedor. O limite é por processo
-    (uma instância do Hub): é o que fecha a corrida, não um contador distribuído."""
+    requisições passaria dela e multiplicaria o gasto com o provedor.
+
+    O que isto garante, sem exagero: a cota pode passar em NO MÁXIMO (simultâneas - 1) perguntas
+    (duas requisições veem `usadas = 29` e ambas passam: 31 no dia), e não em N. O limite é por
+    PROCESSO: vale com um worker do uvicorn (o `Dockerfile` roda um); `--workers N` ou uma segunda
+    instância multiplicam o teto por N. E uma vaga só volta quando a pergunta termina: uma consulta
+    ao DW pendurada segura a vaga (ver o runbook)."""
     with _TRAVA_DE_ANDAMENTO:
         agora = _EM_ANDAMENTO.get(user["id"], 0)
         reservou = agora < config.max_simultaneas()

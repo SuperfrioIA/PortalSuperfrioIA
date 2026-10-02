@@ -23,6 +23,26 @@ def test_o_compose_repassa_as_variaveis_do_superfrioia():
     assert esperadas <= set(AMBIENTE), esperadas - set(AMBIENTE)
 
 
+def test_toda_variavel_ia_que_o_codigo_le_chega_ao_container():
+    """Um ajuste no `.env` da VM que o compose não repassa seria ignorado em silêncio. O que o código lê é
+    o conjunto de literais `IA_*` / `ANTHROPIC_*` de `backend/ia`; o compose tem que cobrir todos."""
+    lidas = set()
+    for arquivo in (RAIZ / "backend" / "ia").rglob("*.py"):
+        lidas |= set(re.findall(r'"((?:IA|ANTHROPIC)_[A-Z0-9_]+)"', arquivo.read_text(encoding="utf-8")))
+    lidas -= {"IA_AVALIACAO_SEM_ENV_LOCAL"}              # só do script de avaliação, nunca do Hub
+    assert lidas, "a varredura não achou nenhuma variável: o padrão quebrou"
+    faltam = lidas - set(AMBIENTE)
+    assert not faltam, f"o código lê mas o compose não repassa: {sorted(faltam)}"
+
+
+def test_o_env_de_exemplo_documenta_o_que_o_codigo_le_com_os_padroes_certos():
+    exemplo = (RAIZ / ".env.example").read_text(encoding="utf-8")
+    assert "IA_TIMEOUT_S=30" in exemplo and "IA_PRAZO_PERGUNTA_S=55" in exemplo
+    assert "IA_TIMEOUT_S=45" not in exemplo and "IA_PRAZO_PERGUNTA_S=90" not in exemplo
+    assert "IA_MAX_SIMULTANEAS" in exemplo and "IA_TAM_RESULTADO" in exemplo
+    assert "docker compose up -d" in exemplo, "em Docker, desligar exige recriar o container"
+
+
 def test_os_padroes_do_compose_sao_os_seguros():
     assert AMBIENTE["IA_HABILITADO"] == "${IA_HABILITADO:-false}"            # desligado
     assert AMBIENTE["IA_PROVEDOR"] == "${IA_PROVEDOR:-falso}"                # sem chave, sem rede

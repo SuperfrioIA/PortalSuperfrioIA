@@ -185,9 +185,9 @@ def precos() -> dict:
 
 # ----------------------------------------------------- endurecimento (Lote 4)
 def max_simultaneas() -> int:
-    """Perguntas em andamento por usuário (no mesmo processo). Fecha, dentro do limite,
-    a corrida da cota diária (várias requisições ao mesmo tempo passavam do teto de 30)
-    e a rajada de custo de um script em laço (T-42)."""
+    """Perguntas em andamento por usuário (no mesmo processo). LIMITA a corrida da cota diária
+    (ela pode passar em até `valor - 1` perguntas, não em N) e a rajada de custo de um script em
+    laço (T-42). Por processo: com mais de um worker o teto multiplica."""
     return _inteiro("IA_MAX_SIMULTANEAS", 2)
 
 
@@ -213,6 +213,16 @@ def avisos_de_ativacao() -> list[str]:
         avisos.append("IA_PROVEDOR=anthropic sem ANTHROPIC_API_KEY: toda pergunta vai responder a mensagem neutra.")
     if nome == "falso" and os.environ.get("SUPERFRIO_ENV", "dev").strip().lower() == "prod":
         avisos.append("provedor de teste (falso) com a chave mestra ligada em produção: as respostas não são de modelo.")
+    return avisos
+
+
+def registrar_avisos_de_ativacao() -> list[str]:
+    """Registra cada aviso como WARNING (é o que o boot chama). Devolve a lista, para o teste."""
+    import logging
+
+    avisos = avisos_de_ativacao()
+    for aviso in avisos:
+        logging.getLogger("backend.ia").warning("SuperfrioIA: %s", aviso)
     return avisos
 
 
